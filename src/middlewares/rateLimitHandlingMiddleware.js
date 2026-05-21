@@ -2,11 +2,11 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { env } from '#configs/environment.js'
 
-const isDev = env.NODE_ENV === 'dev'
+const isDev = env.server.nodeEnv === 'dev' || env.server.nodeEnv === 'development'
 
 const rateLimitStore = new Map()
 
-setInterval(() => {
+const cleanupInterval = setInterval(() => {
   const now = Date.now()
   for (const [key, value] of rateLimitStore.entries()) {
     if (value.resetTime < now) {
@@ -14,6 +14,8 @@ setInterval(() => {
     }
   }
 }, 60000)
+
+cleanupInterval.unref?.()
 
 export const createRateLimiter = (options = {}) => {
   const {
@@ -99,14 +101,14 @@ export const sensitiveRateLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
   max: 100,
   message: 'Quá nhiều yêu cầu, vui lòng thử lại sau một giờ',
-  keyGenerator: (req) => `sensitive:${req.ip || 'unknown'}:${req.user?.userId || 'anon'}`
+  keyGenerator: (req) => `sensitive:${req.ip || 'unknown'}:${req.user?.id || 'anon'}`
 })
 
 export const userRateLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 200,
   message: 'Quá nhiều yêu cầu, vui lòng thử lại sau',
-  keyGenerator: (req) => `user:${req.user?.userId || req.ip || 'unknown'}`
+  keyGenerator: (req) => `user:${req.user?.id || req.ip || 'unknown'}`
 })
 
 export const guestRateLimiter = createRateLimiter({

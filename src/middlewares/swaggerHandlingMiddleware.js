@@ -1,8 +1,12 @@
 import basicAuth from 'express-basic-auth'
 import { env } from '#configs/environment.js'
 
-export const swaggerHandlingMiddleware = basicAuth({
-  users: { [env.SWAGGER_USER]: env.SWAGGER_PASSWORD },
-  challenge: true,
-  realm: 'Swagger API Documentation'
-})
+const hasSwaggerCredentials = Boolean(env.swagger.user && env.swagger.password)
+
+export const swaggerHandlingMiddleware = hasSwaggerCredentials
+  ? basicAuth({
+    users: { [env.swagger.user]: env.swagger.password },
+    challenge: true,
+    realm: 'Swagger API Documentation'
+  })
+  : (req, res, next) => next()

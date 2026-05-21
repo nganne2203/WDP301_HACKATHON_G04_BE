@@ -13,6 +13,18 @@ const userSchema = new Schema(
     },
     passwordHash: { type: String },
     fullName: { type: String, required: true, trim: true },
+    studentType: {
+      type: String,
+      enum: ['FPT', 'EXTERNAL']
+    },
+    studentId: { type: String, trim: true },
+    schoolName: {
+      type: String,
+      trim: true,
+      required: function () {
+        return this.studentType === 'EXTERNAL'
+      }
+    },
     status: {
       type: String,
       enum: ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'],
@@ -26,7 +38,6 @@ const userSchema = new Schema(
   { timestamps: true }
 )
 
-userSchema.index({ email: 1 }, { unique: true })
 userSchema.index({ googleId: 1 }, { unique: true, sparse: true })
 userSchema.index({ roles: 1 })
 

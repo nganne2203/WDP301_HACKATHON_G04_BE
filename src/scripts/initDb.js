@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import { env } from '#configs/environment.js'
+import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
 
 import User from '#models/user.model.js'
 import Role from '#models/role.model.js'
@@ -101,9 +102,12 @@ const seedSampleData = async () => {
     description: 'Basic authenticated user'
   })
 
+  const seededPasswordHash = await BCRYPT_UTILS.hashPassword('Password123!')
+
   const adminUser = await User.create({
     email: 'admin@seal.local',
-    passwordHash: 'seeded',
+    authProvider: 'LOCAL',
+    passwordHash: seededPasswordHash,
     fullName: 'Admin User',
     status: 'APPROVED',
     roles: [adminRole._id]
@@ -111,7 +115,8 @@ const seedSampleData = async () => {
 
   const coordinatorUser = await User.create({
     email: 'coordinator@seal.local',
-    passwordHash: 'seeded',
+    authProvider: 'LOCAL',
+    passwordHash: seededPasswordHash,
     fullName: 'Event Coordinator',
     status: 'APPROVED',
     roles: [coordinatorRole._id]
@@ -119,7 +124,8 @@ const seedSampleData = async () => {
 
   const judgeUser = await User.create({
     email: 'judge@seal.local',
-    passwordHash: 'seeded',
+    authProvider: 'LOCAL',
+    passwordHash: seededPasswordHash,
     fullName: 'Judge User',
     status: 'APPROVED',
     roles: [judgeRole._id]
@@ -127,7 +133,8 @@ const seedSampleData = async () => {
 
   const mentorUser = await User.create({
     email: 'mentor@seal.local',
-    passwordHash: 'seeded',
+    authProvider: 'LOCAL',
+    passwordHash: seededPasswordHash,
     fullName: 'Mentor User',
     status: 'APPROVED',
     roles: [mentorRole._id]
@@ -135,7 +142,8 @@ const seedSampleData = async () => {
 
   const participantUser = await User.create({
     email: 'participant@seal.local',
-    passwordHash: 'seeded',
+    authProvider: 'LOCAL',
+    passwordHash: seededPasswordHash,
     fullName: 'Participant User',
     status: 'APPROVED',
     roles: [userRole._id]

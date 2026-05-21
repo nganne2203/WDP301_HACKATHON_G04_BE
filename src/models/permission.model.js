@@ -10,8 +10,6 @@ const permissionSchema = new Schema(
   { timestamps: true }
 )
 
-permissionSchema.index({ code: 1 }, { unique: true })
-
 const Permission = mongoose.model('Permission', permissionSchema)
 
 export default Permission

@@ -19,7 +19,7 @@
     "#constants/*": "./src/constants/*",
     "#middlewares/*": "./src/middlewares/*",
     "#models/*": "./src/models/*",
-    "#modules/*": "./src/modules/*/index.js",
+    "#modules/*": "./src/modules/*",
     "#routes/*": "./src/routes/*",
     "#utils/*": "./src/utils/*",
     "#repositories/*": "./src/repositories/*",
