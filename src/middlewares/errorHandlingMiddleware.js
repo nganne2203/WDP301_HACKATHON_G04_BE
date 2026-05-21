@@ -20,7 +20,7 @@ export const errorHandlingMiddleware = (err, req, res, next) => {
     errors: err.errors || []
   }
 
-  if (env.NODE_ENV === 'dev') {
+  if (env.server.nodeEnv === 'dev' || env.server.nodeEnv === 'development') {
     responseError.stack = err.stack
     // eslint-disable-next-line no-console
     console.error(err)

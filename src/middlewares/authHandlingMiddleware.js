@@ -1,7 +1,7 @@
 import { JWT_UTILS } from '#utils/jwtUtil.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
-import { USER_SERVICE } from '#services/userService.js'
+import { USER_SERVICE } from '#modules/users/user.service.js'
 
 export const authorizationMiddleware = async (req, res, next) => {
   try {
@@ -11,15 +11,19 @@ export const authorizationMiddleware = async (req, res, next) => {
     const token = authHeader.split(' ')[1]
     const decoded = JWT_UTILS.verifyAccessToken(token)
 
-    const user = await USER_SERVICE.getUserById(decoded.id)
+    const user = await USER_SERVICE.getRawUserById(decoded.id)
 
-    if (!user.isActive) throw new ApiError(ERROR_CODES.ACCOUNT_DISABLED, ['Tài khoản của bạn đã bị vô hiệu hóa'])
+    if (user.status !== 'APPROVED') {
+      throw new ApiError(ERROR_CODES.ACCOUNT_DISABLED, [`Account status is ${user.status}`])
+    }
+
+    const roles = USER_SERVICE.getRoleNames(user)
 
     req.user = {
       id: user._id.toString(),
       email: user.email,
-      role: user.role,
-      branch: user.branch ? user.branch.toString() : null
+      roles,
+      role: roles[0] || null
     }
 
     next()
