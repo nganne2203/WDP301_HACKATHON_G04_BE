@@ -1,0 +1,55 @@
+import Joi from 'joi'
+
+const objectId = Joi.string().hex().length(24)
+
+const idParam = Joi.object({
+  id: objectId.required()
+})
+
+const listUsers = {
+  query: Joi.object({
+    page: Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).max(100).default(10),
+    status: Joi.string().valid('PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'),
+    search: Joi.string().trim().max(100)
+  })
+}
+
+const getUserById = {
+  params: idParam
+}
+
+const updateProfile = {
+  body: Joi.object({
+    fullName: Joi.string().trim().min(2).max(120),
+    avatarUrl: Joi.string().uri().allow('', null),
+    phone: Joi.string().trim().max(30).allow('', null),
+    bio: Joi.string().trim().max(500).allow('', null)
+  }).min(1)
+}
+
+const updateStatus = {
+  params: idParam,
+  body: Joi.object({
+    status: Joi.string().valid('PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED').required()
+  })
+}
+
+const assignRoles = {
+  params: idParam,
+  body: Joi.object({
+    roles: Joi.array()
+      .items(Joi.string().trim().uppercase().valid('ADMIN', 'COORDINATOR', 'JUDGE', 'MENTOR', 'USER'))
+      .min(1)
+      .unique()
+      .required()
+  })
+}
+
+export const USER_VALIDATION = {
+  listUsers,
+  getUserById,
+  updateProfile,
+  updateStatus,
+  assignRoles
+}

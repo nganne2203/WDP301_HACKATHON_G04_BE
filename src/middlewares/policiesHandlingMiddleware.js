@@ -8,7 +8,10 @@ export const requireRoles = (...allowedRoles) => {
       if (!user) {
         throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Bạn cần đăng nhập để thực hiện hành động này'])
       }
-      if (!allowedRoles.includes(user.role)) {
+      const userRoles = user.roles || (user.role ? [user.role] : [])
+      const hasAllowedRole = userRoles.some(role => allowedRoles.includes(role))
+
+      if (!hasAllowedRole) {
         throw new ApiError(ERROR_CODES.FORBIDDEN, ['Bạn không có quyền thực hiện hành động này'])
       }
 

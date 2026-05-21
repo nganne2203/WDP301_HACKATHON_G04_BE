@@ -26,7 +26,6 @@ const userSchema = new Schema(
   { timestamps: true }
 )
 
-userSchema.index({ email: 1 }, { unique: true })
 userSchema.index({ googleId: 1 }, { unique: true, sparse: true })
 userSchema.index({ roles: 1 })
 
