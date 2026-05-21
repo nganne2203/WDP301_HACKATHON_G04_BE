@@ -4,7 +4,14 @@ const register = {
   body: Joi.object({
     email: Joi.string().email().trim().lowercase().required(),
     password: Joi.string().min(8).max(128).required(),
-    fullName: Joi.string().trim().min(2).max(120).required()
+    fullName: Joi.string().trim().min(2).max(120).required(),
+    studentType: Joi.string().trim().uppercase().valid('FPT', 'EXTERNAL').required(),
+    studentId: Joi.string().trim().min(2).max(50).required(),
+    schoolName: Joi.when('studentType', {
+      is: 'EXTERNAL',
+      then: Joi.string().trim().min(2).max(200).required(),
+      otherwise: Joi.string().trim().max(200).allow('', null)
+    })
   })
 }
 

@@ -67,6 +67,49 @@ const router = Router()
  *           nullable: true
  *           maxLength: 500
  *           example: I build hackathon projects.
+ *     CreateUserRequest:
+ *       type: object
+ *       required: [email, password, fullName, roles]
+ *       properties:
+ *         email:
+ *           type: string
+ *           format: email
+ *           example: judge.new@seal.local
+ *         password:
+ *           type: string
+ *           minLength: 8
+ *           maxLength: 128
+ *           example: Password123!
+ *         fullName:
+ *           type: string
+ *           minLength: 2
+ *           maxLength: 120
+ *           example: New Judge
+ *         roles:
+ *           type: array
+ *           minItems: 1
+ *           uniqueItems: true
+ *           items:
+ *             type: string
+ *             enum: [ADMIN, COORDINATOR, JUDGE, MENTOR, USER]
+ *           example: [JUDGE]
+ *         status:
+ *           type: string
+ *           enum: [PENDING, APPROVED, REJECTED, SUSPENDED]
+ *           default: PENDING
+ *         studentType:
+ *           type: string
+ *           enum: [FPT, EXTERNAL]
+ *           description: Required when roles includes USER
+ *           example: FPT
+ *         studentId:
+ *           type: string
+ *           description: Required when roles includes USER
+ *           example: SE123456
+ *         schoolName:
+ *           type: string
+ *           description: Required when studentType is EXTERNAL
+ *           example: University of Science
  *     UpdateStatusRequest:
  *       type: object
  *       required: [status]
@@ -149,6 +192,53 @@ router.get(
   requireRoles('ADMIN', 'COORDINATOR'),
   validationHandlingMiddleware(USER_VALIDATION.listUsers),
   USER_CONTROLLER.listUsers
+)
+
+/**
+ * @swagger
+ * /api/users:
+ *   post:
+ *     summary: Create a local user account with assigned roles
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/CreateUserRequest'
+ *     responses:
+ *       201:
+ *         description: User created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UserSuccessResponse'
+ *       400:
+ *         description: Invalid request data or unknown role
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: Requires ADMIN or COORDINATOR role
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       409:
+ *         description: Email already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.post(
+  '/',
+  requireRoles('ADMIN', 'COORDINATOR'),
+  validationHandlingMiddleware(USER_VALIDATION.createUser),
+  USER_CONTROLLER.createUser
 )
 
 /**

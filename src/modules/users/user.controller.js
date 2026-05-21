@@ -30,6 +30,19 @@ const getUserById = async (req, res, next) => {
   }
 }
 
+const createUser = async (req, res, next) => {
+  try {
+    const user = await USER_SERVICE.createUser(req.body, req.user)
+
+    res.status(StatusCodes.CREATED).json(responseSuccess({
+      message: 'Create user successfully',
+      data: user
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const updateMe = async (req, res, next) => {
   try {
     const user = await USER_SERVICE.updateProfile(req.user.id, req.body)
@@ -111,6 +124,7 @@ const assignRoles = async (req, res, next) => {
 export const USER_CONTROLLER = {
   listUsers,
   getUserById,
+  createUser,
   updateMe,
   updateStatus,
   approveUser,

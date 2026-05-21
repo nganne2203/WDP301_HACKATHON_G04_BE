@@ -99,6 +99,19 @@ const router = Router()
  *           type: string
  *           nullable: true
  *           example: Full-stack developer
+ *         studentType:
+ *           type: string
+ *           nullable: true
+ *           enum: [FPT, EXTERNAL]
+ *           example: FPT
+ *         studentId:
+ *           type: string
+ *           nullable: true
+ *           example: SE123456
+ *         schoolName:
+ *           type: string
+ *           nullable: true
+ *           example: FPT University
  *         createdAt:
  *           type: string
  *           format: date-time
@@ -151,7 +164,7 @@ const router = Router()
  *           example: null
  *     RegisterRequest:
  *       type: object
- *       required: [email, password, fullName]
+ *       required: [email, password, fullName, studentType, studentId]
  *       properties:
  *         email:
  *           type: string
@@ -167,6 +180,19 @@ const router = Router()
  *           minLength: 2
  *           maxLength: 120
  *           example: New User
+ *         studentType:
+ *           type: string
+ *           enum: [FPT, EXTERNAL]
+ *           description: FPT for FPT students, EXTERNAL for students from another school
+ *           example: FPT
+ *         studentId:
+ *           type: string
+ *           description: FPT student code or external school student code
+ *           example: SE123456
+ *         schoolName:
+ *           type: string
+ *           description: Required when studentType is EXTERNAL
+ *           example: University of Science
  *     LoginRequest:
  *       type: object
  *       required: [email, password]

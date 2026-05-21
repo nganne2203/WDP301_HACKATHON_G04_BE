@@ -5,9 +5,11 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
+import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
 
 const PROFILE_FIELDS = ['fullName', 'avatarUrl', 'phone', 'bio']
 const ALLOWED_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED']
+const PARTICIPANT_ROLE = 'USER'
 
 const buildUserFilter = (query = {}) => {
   const filter = {}
@@ -67,6 +69,9 @@ const normalizeUser = (user) => {
     avatarUrl: plainUser.avatarUrl,
     phone: plainUser.phone,
     bio: plainUser.bio,
+    studentType: plainUser.studentType,
+    studentId: plainUser.studentId,
+    schoolName: plainUser.schoolName,
     createdAt: plainUser.createdAt,
     updatedAt: plainUser.updatedAt
   }
@@ -129,6 +134,65 @@ const getUserByEmail = async (email) => {
   return await USER_REPOSITORY.findByEmail(email)
 }
 
+const ensureParticipantStudentInfo = (payload = {}) => {
+  if (!payload.studentType || !payload.studentId) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Participant users must include studentType and studentId'])
+  }
+
+  if (payload.studentType === 'EXTERNAL' && !payload.schoolName) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['External students must include schoolName'])
+  }
+}
+
+const ensureCanCreateRoles = (actor = {}, roleNames = []) => {
+  if (!actor.roles?.includes('ADMIN') && roleNames.includes('ADMIN')) {
+    throw new ApiError(ERROR_CODES.FORBIDDEN, ['Coordinator cannot create admin users'])
+  }
+}
+
+const createUser = async (payload = {}, actor = {}) => {
+  const roleNames = (payload.roles || []).map(role => String(role).toUpperCase())
+  if (roleNames.length === 0) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['At least one role is required'])
+  }
+
+  const existingUser = await USER_REPOSITORY.findByEmail(payload.email)
+  if (existingUser) {
+    throw new ApiError(ERROR_CODES.CONFLICT, ['Email already exists'])
+  }
+
+  ensureCanCreateRoles(actor, roleNames)
+
+  const roles = await USER_REPOSITORY.findRolesByNames(roleNames)
+  if (roles.length !== roleNames.length) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more roles do not exist'])
+  }
+
+  if (roleNames.includes(PARTICIPANT_ROLE)) {
+    ensureParticipantStudentInfo(payload)
+  }
+
+  const passwordHash = await BCRYPT_UTILS.hashPassword(payload.password)
+  const createdUser = await USER_REPOSITORY.create({
+    email: payload.email,
+    fullName: payload.fullName,
+    passwordHash,
+    authProvider: 'LOCAL',
+    status: payload.status || 'PENDING',
+    roles: roles.map(role => role._id),
+    phone: payload.phone,
+    bio: payload.bio,
+    avatarUrl: payload.avatarUrl,
+    studentType: payload.studentType,
+    studentId: payload.studentId,
+    schoolName: payload.studentType === 'EXTERNAL' ? payload.schoolName : undefined
+  })
+
+  const user = await USER_REPOSITORY.findById(createdUser._id)
+
+  return normalizeUser(user)
+}
+
 const updateProfile = async (id, payload = {}) => {
   await ensureUserExists(id)
 
@@ -181,6 +245,7 @@ export const USER_SERVICE = {
   getUserById,
   getRawUserById,
   getUserByEmail,
+  createUser,
   updateProfile,
   updateStatus,
   approveUser,

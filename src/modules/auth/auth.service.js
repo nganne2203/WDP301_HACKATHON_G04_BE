@@ -40,6 +40,9 @@ const register = async (payload) => {
   const createdUser = await AUTH_REPOSITORY.createUser({
     email: payload.email,
     fullName: payload.fullName,
+    studentType: payload.studentType,
+    studentId: payload.studentId,
+    schoolName: payload.studentType === 'EXTERNAL' ? payload.schoolName : undefined,
     passwordHash,
     authProvider: 'LOCAL',
     status: 'PENDING',
