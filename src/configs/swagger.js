@@ -1,5 +1,26 @@
 import swaggerJSDoc from 'swagger-jsdoc'
 
+const buildSwaggerSpec = (swaggerOptions) => {
+  const emitWarning = process.emitWarning
+
+  process.emitWarning = (...args) => {
+    const warning = args[0]
+    const warningCode = warning?.code || args[2]
+
+    if (warningCode === 'DEP0169') {
+      return
+    }
+
+    return emitWarning.apply(process, args)
+  }
+
+  try {
+    return swaggerJSDoc(swaggerOptions)
+  } finally {
+    process.emitWarning = emitWarning
+  }
+}
+
 const options = {
   definition: {
     openapi: '3.0.0',
@@ -22,4 +43,4 @@ const options = {
   apis: ['./src/routes/**/*.js', './src/modules/**/*.js', './src/models/**/*.js']
 }
 
-export const swaggerSpec = swaggerJSDoc(options)
+export const swaggerSpec = buildSwaggerSpec(options)
