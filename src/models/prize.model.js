@@ -7,14 +7,33 @@ const prizeSchema = new Schema(
     eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
     title: { type: String, required: true, trim: true },
     description: { type: String },
+    prizeType: {
+      type: String,
+      enum: ['TEAM', 'INDIVIDUAL'],
+      default: 'TEAM'
+    },
+    rank: { type: Number },
     amount: { type: Number },
     sponsor: { type: String },
-    teamId: { type: Schema.Types.ObjectId, ref: 'Team' }
+    teamId: { type: Schema.Types.ObjectId, ref: 'Team' },
+    participantId: { type: Schema.Types.ObjectId, ref: 'Participant' }
   },
   { timestamps: true }
 )
 
 prizeSchema.index({ eventId: 1 })
+
+prizeSchema.pre('validate', function validatePrizeTarget(next) {
+  if (this.prizeType === 'TEAM' && !this.teamId) {
+    this.invalidate('teamId', 'teamId is required for TEAM prize')
+  }
+
+  if (this.prizeType === 'INDIVIDUAL' && !this.participantId) {
+    this.invalidate('participantId', 'participantId is required for INDIVIDUAL prize')
+  }
+
+  next()
+})
 
 const Prize = mongoose.model('Prize', prizeSchema)
 

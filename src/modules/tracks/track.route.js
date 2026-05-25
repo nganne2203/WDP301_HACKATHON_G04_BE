@@ -25,13 +25,29 @@ const router = Router()
  *         event:
  *           type: object
  *           nullable: true
+ *         code:
+ *           type: string
+ *           example: A
  *         name:
  *           type: string
- *           example: Web Development
+ *           example: Bảng A
  *         description:
  *           type: string
  *           nullable: true
- *           example: Web-focused projects
+ *           example: AI cho Thu thập Yêu cầu & Thiết kế
+ *         type:
+ *           type: string
+ *           example: PRELIMINARY_GROUP
+ *         teamIds:
+ *           type: array
+ *           items:
+ *             type: string
+ *         maxTeams:
+ *           type: integer
+ *           example: 20
+ *         status:
+ *           type: string
+ *           example: LOCKED
  *         createdAt:
  *           type: string
  *           format: date-time
@@ -45,14 +61,29 @@ const router = Router()
  *         eventId:
  *           type: string
  *           example: 664c3f6a3a6d4a5f3f93b101
+ *         code:
+ *           type: string
+ *           example: A
  *         name:
  *           type: string
  *           minLength: 2
  *           maxLength: 120
- *           example: Web Development
+ *           example: Bảng A
  *         description:
  *           type: string
  *           nullable: true
+ *         type:
+ *           type: string
+ *           enum: [PRELIMINARY_GROUP, FINAL_POOL, GENERAL]
+ *         teamIds:
+ *           type: array
+ *           items:
+ *             type: string
+ *         maxTeams:
+ *           type: integer
+ *         status:
+ *           type: string
+ *           enum: [DRAFT, OPEN, LOCKED, COMPLETED]
  */
 
 router.use(authorizationMiddleware)
