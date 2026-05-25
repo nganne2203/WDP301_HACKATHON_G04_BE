@@ -7,7 +7,24 @@ import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 
 const EVENT_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED']
-const EVENT_FIELDS = ['title', 'description', 'semester', 'startDate', 'endDate', 'status']
+const EVENT_FIELDS = [
+  'title',
+  'description',
+  'semester',
+  'seriesName',
+  'season',
+  'year',
+  'theme',
+  'registrationStart',
+  'registrationEnd',
+  'startDate',
+  'endDate',
+  'minTeamMembers',
+  'maxTeamMembers',
+  'finalistSlotsPerTrack',
+  'totalFinalistSlots',
+  'status'
+]
 
 const ensureObjectId = (id, fieldName = 'event id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -16,13 +33,30 @@ const ensureObjectId = (id, fieldName = 'event id') => {
 }
 
 const ensureDateRange = (payload = {}) => {
-  if (!payload.startDate || !payload.endDate) return
+  if (payload.startDate && payload.endDate) {
+    const startDate = new Date(payload.startDate)
+    const endDate = new Date(payload.endDate)
 
-  const startDate = new Date(payload.startDate)
-  const endDate = new Date(payload.endDate)
+    if (startDate > endDate) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['startDate must be before or equal to endDate'])
+    }
+  }
 
-  if (startDate > endDate) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['startDate must be before or equal to endDate'])
+  if (payload.registrationStart && payload.registrationEnd) {
+    const registrationStart = new Date(payload.registrationStart)
+    const registrationEnd = new Date(payload.registrationEnd)
+
+    if (registrationStart > registrationEnd) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['registrationStart must be before or equal to registrationEnd'])
+    }
+  }
+}
+
+const ensureTeamRule = (payload = {}) => {
+  if (!payload.minTeamMembers || !payload.maxTeamMembers) return
+
+  if (payload.minTeamMembers > payload.maxTeamMembers) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['minTeamMembers must be less than or equal to maxTeamMembers'])
   }
 }
 
@@ -46,6 +80,14 @@ const buildEventFilter = (query = {}) => {
 
   if (query.semester) {
     filter.semester = query.semester
+  }
+
+  if (query.season) {
+    filter.season = query.season
+  }
+
+  if (query.year) {
+    filter.year = Number(query.year)
   }
 
   if (query.search) {
@@ -83,8 +125,18 @@ const normalizeEvent = (event) => {
     title: plainEvent.title,
     description: plainEvent.description,
     semester: plainEvent.semester,
+    seriesName: plainEvent.seriesName,
+    season: plainEvent.season,
+    year: plainEvent.year,
+    theme: plainEvent.theme,
+    registrationStart: plainEvent.registrationStart,
+    registrationEnd: plainEvent.registrationEnd,
     startDate: plainEvent.startDate,
     endDate: plainEvent.endDate,
+    minTeamMembers: plainEvent.minTeamMembers,
+    maxTeamMembers: plainEvent.maxTeamMembers,
+    finalistSlotsPerTrack: plainEvent.finalistSlotsPerTrack,
+    totalFinalistSlots: plainEvent.totalFinalistSlots,
     status: plainEvent.status,
     createdBy: normalizeCreator(plainEvent.createdBy),
     createdAt: plainEvent.createdAt,
@@ -124,6 +176,7 @@ const getRawEventById = async (id) => {
 
 const createEvent = async (payload = {}, actor = {}) => {
   ensureDateRange(payload)
+  ensureTeamRule(payload)
 
   const event = await EVENT_REPOSITORY.create({
     ...pickSafeFields(payload, EVENT_FIELDS),
@@ -138,8 +191,14 @@ const updateEvent = async (id, payload = {}) => {
   const safePayload = pickSafeFields(payload, EVENT_FIELDS)
 
   ensureDateRange({
+    registrationStart: safePayload.registrationStart ?? existingEvent.registrationStart,
+    registrationEnd: safePayload.registrationEnd ?? existingEvent.registrationEnd,
     startDate: safePayload.startDate ?? existingEvent.startDate,
     endDate: safePayload.endDate ?? existingEvent.endDate
+  })
+  ensureTeamRule({
+    minTeamMembers: safePayload.minTeamMembers ?? existingEvent.minTeamMembers,
+    maxTeamMembers: safePayload.maxTeamMembers ?? existingEvent.maxTeamMembers
   })
 
   const event = await EVENT_REPOSITORY.updateById(id, safePayload)

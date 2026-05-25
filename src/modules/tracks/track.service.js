@@ -7,7 +7,7 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 
-const TRACK_FIELDS = ['eventId', 'name', 'description']
+const TRACK_FIELDS = ['eventId', 'code', 'name', 'description', 'type', 'teamIds', 'maxTeams', 'status']
 
 const ensureObjectId = (id, fieldName = 'track id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -46,6 +46,7 @@ const buildTrackFilter = (query = {}) => {
   if (query.search) {
     const pattern = new RegExp(query.search, 'i')
     filter.$or = [
+      { code: pattern },
       { name: pattern },
       { description: pattern }
     ]
@@ -82,8 +83,13 @@ const normalizeTrack = (track) => {
   return {
     id: plainTrack._id?.toString() || plainTrack.id,
     event: normalizeEvent(plainTrack.eventId),
+    code: plainTrack.code,
     name: plainTrack.name,
     description: plainTrack.description,
+    type: plainTrack.type,
+    teamIds: plainTrack.teamIds?.map((teamId) => teamId.toString?.() || teamId) || [],
+    maxTeams: plainTrack.maxTeams,
+    status: plainTrack.status,
     createdAt: plainTrack.createdAt,
     updatedAt: plainTrack.updatedAt
   }

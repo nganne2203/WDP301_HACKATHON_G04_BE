@@ -1,6 +1,8 @@
 import Joi from 'joi'
 
 const objectId = Joi.string().hex().length(24)
+const trackType = Joi.string().trim().uppercase().valid('PRELIMINARY_GROUP', 'FINAL_POOL', 'GENERAL')
+const trackStatus = Joi.string().trim().uppercase().valid('DRAFT', 'OPEN', 'LOCKED', 'COMPLETED')
 
 const idParam = Joi.object({
   id: objectId.required()
@@ -18,8 +20,13 @@ const listTracks = {
 const createTrack = {
   body: Joi.object({
     eventId: objectId.required(),
+    code: Joi.string().trim().uppercase().max(20),
     name: Joi.string().trim().min(2).max(120).required(),
-    description: Joi.string().trim().max(1000).allow('', null)
+    description: Joi.string().trim().max(1000).allow('', null),
+    type: trackType.default('PRELIMINARY_GROUP'),
+    teamIds: Joi.array().items(objectId).unique().default([]),
+    maxTeams: Joi.number().integer().min(1),
+    status: trackStatus.default('DRAFT')
   })
 }
 
@@ -27,8 +34,13 @@ const updateTrack = {
   params: idParam,
   body: Joi.object({
     eventId: objectId,
+    code: Joi.string().trim().uppercase().max(20),
     name: Joi.string().trim().min(2).max(120),
-    description: Joi.string().trim().max(1000).allow('', null)
+    description: Joi.string().trim().max(1000).allow('', null),
+    type: trackType,
+    teamIds: Joi.array().items(objectId).unique(),
+    maxTeams: Joi.number().integer().min(1).allow(null),
+    status: trackStatus
   }).min(1)
 }
 
