@@ -5,18 +5,56 @@ const { Schema } = mongoose
 const rankingSchema = new Schema(
   {
     eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    rankingType: {
+      type: String,
+      enum: ['TEAM', 'CHAPTER', 'INDIVIDUAL'],
+      default: 'TEAM'
+    },
     roundId: { type: Schema.Types.ObjectId, ref: 'Round' },
     trackId: { type: Schema.Types.ObjectId, ref: 'Track' },
-    teamId: { type: Schema.Types.ObjectId, ref: 'Team', required: true },
+    teamId: { type: Schema.Types.ObjectId, ref: 'Team' },
+    participantId: { type: Schema.Types.ObjectId, ref: 'Participant' },
+    chapterName: { type: String, trim: true },
     score: { type: Number, required: true },
+    pointDelta: { type: Number, default: 0 },
+    tieBreakMethod: {
+      type: String,
+      enum: ['NONE', 'PENALTY_EVALUATION', 'MINI_TEST'],
+      default: 'NONE'
+    },
+    tieBreakScore: { type: Number, default: 0 },
+    penaltyScore: { type: Number, default: 0 },
+    miniTestScore: { type: Number, default: 0 },
+    rankSortScore: { type: Number },
     rank: { type: Number, required: true },
+    note: { type: String },
     publishedAt: { type: Date }
   },
   { timestamps: true }
 )
 
-rankingSchema.index({ eventId: 1, roundId: 1, trackId: 1 })
+rankingSchema.index({ eventId: 1, rankingType: 1, roundId: 1, trackId: 1 })
+rankingSchema.index({ eventId: 1, rankingType: 1, teamId: 1 })
+rankingSchema.index({ eventId: 1, rankingType: 1, participantId: 1 })
+rankingSchema.index({ eventId: 1, rankingType: 1, chapterName: 1 })
+rankingSchema.index({ eventId: 1, rankingType: 1, roundId: 1, trackId: 1, rank: 1 }, { unique: true })
 rankingSchema.index({ rank: 1 })
+
+rankingSchema.pre('validate', function validateRankingTarget(next) {
+  if (this.rankingType === 'TEAM' && !this.teamId) {
+    this.invalidate('teamId', 'teamId is required for TEAM ranking')
+  }
+
+  if (this.rankingType === 'CHAPTER' && !this.chapterName) {
+    this.invalidate('chapterName', 'chapterName is required for CHAPTER ranking')
+  }
+
+  if (this.rankingType === 'INDIVIDUAL' && !this.participantId) {
+    this.invalidate('participantId', 'participantId is required for INDIVIDUAL ranking')
+  }
+
+  next()
+})
 
 const Ranking = mongoose.model('Ranking', rankingSchema)
 

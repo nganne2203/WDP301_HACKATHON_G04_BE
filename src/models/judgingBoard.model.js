@@ -6,6 +6,7 @@ const judgingBoardSchema = new Schema(
   {
     eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
     roundId: { type: Schema.Types.ObjectId, ref: 'Round', required: true },
+    trackId: { type: Schema.Types.ObjectId, ref: 'Track' },
     name: { type: String, required: true, trim: true },
     boardNumber: { type: Number, required: true },
     teamIds: [{ type: Schema.Types.ObjectId, ref: 'Team' }],
@@ -21,6 +22,7 @@ const judgingBoardSchema = new Schema(
 )
 
 judgingBoardSchema.index({ eventId: 1, roundId: 1, boardNumber: 1 }, { unique: true })
+judgingBoardSchema.index({ eventId: 1, trackId: 1 })
 judgingBoardSchema.index({ judgeIds: 1 })
 judgingBoardSchema.index({ teamIds: 1 })
 
