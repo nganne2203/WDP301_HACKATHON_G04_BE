@@ -25,6 +25,8 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 - `email` (string, unique, required)
 - `googleId` (string, unique, sparse)
 - `authProvider` (string, enum: GOOGLE, LOCAL)
+- `googleAuth` (object: `googleId`, `email`, `name`, `picture`)
+- `googleCalendar` (object: `connected`, `googleId`, `email`, encrypted `accessToken`, encrypted `refreshToken`, `tokenExpiryDate`, `scope`)
 - `passwordHash` (string)
 - `fullName` (string, required)
 - `status` (string, enum: PENDING, APPROVED, REJECTED, SUSPENDED)
@@ -33,6 +35,12 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 - `phone` (string)
 - `bio` (string)
 - `createdAt`, `updatedAt`
+
+**Authorization behavior**
+- Users store assigned role references in `roles`.
+- Resolved permission codes are derived from populated role permissions at login/request time.
+- The current schema does not store direct user permissions.
+- Google Calendar access and refresh tokens are encrypted at rest and must not be returned by API responses.
 
 **Indexes**
 - `email` unique
@@ -43,17 +51,26 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ### 2.2 roles
 
-**Purpose:** RBAC role definitions.
+**Purpose:** RBAC role definitions used only as permission groups.
 
 **Fields**
 - `_id` (ObjectId)
-- `name` (string, unique)
+- `name` (string, unique, uppercase)
 - `description` (string)
 - `permissions` (ObjectId[], ref: permissions)
 - `createdAt`, `updatedAt`
 
 **Indexes**
 - `name` unique
+
+**Seeded role-permission groups**
+- `ADMIN`: all permissions.
+- `EVENT_COORDINATOR` and `COORDINATOR`: event, track, workshop, team view, participant approval, judging assignment, GitHub, AI review, result publishing, audit view, and user management permissions.
+- `JUDGE`: event, track, workshop, team view, scoring, and AI review view permissions.
+- `MENTOR`: event, track, workshop, team view, and AI review view permissions.
+- `USER` and `PARTICIPANT`: event, track, workshop, team create, and team view permissions.
+
+Routes must not authorize by role name. Routes authorize through permission codes.
 
 ---
 
@@ -63,12 +80,31 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 **Fields**
 - `_id` (ObjectId)
-- `code` (string, unique)
+- `code` (string, unique, uppercase)
 - `description` (string)
 - `createdAt`, `updatedAt`
 
 **Indexes**
 - `code` unique
+
+**Current permission constants**
+- `EVENT_CREATE`, `EVENT_VIEW`, `EVENT_UPDATE`, `EVENT_DELETE`
+- `TRACK_CREATE`, `TRACK_VIEW`, `TRACK_UPDATE`, `TRACK_DELETE`
+- `WORKSHOP_CREATE`, `WORKSHOP_VIEW`, `WORKSHOP_UPDATE`, `WORKSHOP_DELETE`
+- `WORKSHOP_QUESTION_CREATE`, `WORKSHOP_QUESTION_VIEW`, `WORKSHOP_QUESTION_VOTE`
+- `WORKSHOP_RATING_CREATE`, `WORKSHOP_RATING_VIEW`
+- `WORKSHOP_FEEDBACK_CREATE`, `WORKSHOP_FEEDBACK_VIEW`
+- `WORKSHOP_MEET_CREATE`, `WORKSHOP_MEET_VIEW`, `WORKSHOP_MEET_DELETE`
+- `GOOGLE_CONNECT`
+- `TEAM_CREATE`, `TEAM_VIEW`, `TEAM_UPDATE`, `TEAM_DELETE`
+- `PARTICIPANT_VIEW`, `PARTICIPANT_APPROVE`
+- `USER_CREATE`, `USER_VIEW`, `USER_UPDATE`, `USER_ROLE_ASSIGN`
+- `JUDGING_ASSIGN`, `SCORE_CREATE`, `SCORE_VIEW`
+- `GITHUB_CONFIGURE`, `GITHUB_REPOSITORY_CREATE`, `GITHUB_ACCESS_REVOKE`
+- `AI_REVIEW_TRIGGER`, `AI_REVIEW_VIEW`
+- `RESULT_PUBLISH`
+- `AUDIT_LOG_VIEW`
+- `SYSTEM_CONFIG_MANAGE`
 
 ---
 
@@ -120,20 +156,24 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events)
+- `eventId` (ObjectId, ref: events, required)
 - `timelineEventId` (ObjectId, ref: timelineEvents)
 - `title` (string, required)
 - `description` (string)
 - `presenterId` (ObjectId, ref: users)
+- `speakerInfo` (object: `name`, `title`, `bio`, `email`)
 - `meetLink` (string)
-- `startTime` (date)
-- `endTime` (date)
+- `googleMeet` (object: `enabled`, `meetLink`, `calendarEventId`, `htmlLink`, `organizerUserId`, `organizerEmail`, `createdAt`)
+- `startTime` (date, required)
+- `endTime` (date, required)
+- `questionnaire` (string[])
 - `status` (string, enum: SCHEDULED, LIVE, COMPLETED, CANCELLED)
 - `createdAt`, `updatedAt`
 
 **Indexes**
 - `eventId, startTime`
 - `presenterId`
+- `status`
 
 ---
 
@@ -146,33 +186,52 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 - `workshopId` (ObjectId, ref: workshops, required)
 - `authorId` (ObjectId, ref: users)
 - `content` (string, required)
+- `votes` (array of `{ voterId, votedAt }`)
 - `voteCount` (number, default: 0)
 - `createdAt`, `updatedAt`
 
 **Indexes**
 - `workshopId, createdAt`
 - `voteCount`
+- `workshopId, voteCount`
 
 ---
 
-### 2.8 workshopFeedback
+### 2.8 workshopRatings
 
-**Purpose:** Ratings and textual feedback for workshops.
+**Purpose:** Participant ratings for workshops.
 
 **Fields**
 - `_id` (ObjectId)
 - `workshopId` (ObjectId, ref: workshops, required)
-- `authorId` (ObjectId, ref: users)
-- `rating` (number, min: 1, max: 5)
+- `authorId` (ObjectId, ref: users, required)
+- `rating` (number, required, min: 1, max: 5)
+- `createdAt`, `updatedAt`
+
+**Indexes**
+- `workshopId, authorId` unique
+- `workshopId, rating`
+
+---
+
+### 2.9 workshopFeedback
+
+**Purpose:** Textual feedback for workshops.
+
+**Fields**
+- `_id` (ObjectId)
+- `workshopId` (ObjectId, ref: workshops, required)
+- `authorId` (ObjectId, ref: users, required)
 - `comment` (string)
 - `createdAt`, `updatedAt`
 
 **Indexes**
 - `workshopId, authorId` unique
+- `workshopId, createdAt`
 
 ---
 
-### 2.9 tracks
+### 2.10 tracks
 
 **Purpose:** Competition categories within an event.
 
@@ -188,7 +247,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.10 rounds
+### 2.11 rounds
 
 **Purpose:** Competition rounds per track.
 
@@ -211,7 +270,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.11 judgingBoards
+### 2.12 judgingBoards
 
 **Purpose:** Preliminary and final judging board assignments.
 
@@ -234,7 +293,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.12 participants
+### 2.13 participants
 
 **Purpose:** Hackathon participant records for event registration, team assignment, check-in, and GitHub access.
 
@@ -259,7 +318,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.13 teams
+### 2.14 teams
 
 **Purpose:** Team registration and team-level metadata.
 
@@ -277,7 +336,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.14 repositories
+### 2.15 repositories
 
 **Purpose:** GitHub repository metadata per team.
 
@@ -300,7 +359,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.15 commits
+### 2.16 commits
 
 **Purpose:** Repository activity tracking.
 
@@ -323,7 +382,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.16 submissions
+### 2.17 submissions
 
 **Purpose:** Team submission artifacts.
 
@@ -346,7 +405,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.17 rubrics
+### 2.18 rubrics
 
 **Purpose:** Scoring rubrics.
 
@@ -364,7 +423,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.18 criteria
+### 2.19 criteria
 
 **Purpose:** Scoring criteria for rubrics.
 
@@ -382,7 +441,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.19 scores
+### 2.20 scores
 
 **Purpose:** Judge scores per submission and criterion.
 
@@ -408,7 +467,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.20 rankings
+### 2.21 rankings
 
 **Purpose:** Precomputed rankings by round or track.
 
@@ -446,7 +505,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.21 prizes
+### 2.22 prizes
 
 **Purpose:** Prize definitions and assignment.
 
@@ -465,7 +524,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.22 aiReviews
+### 2.23 aiReviews
 
 **Purpose:** Store AI-assisted repository evaluation results.
 
@@ -490,7 +549,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.23 aiReviewCriteria
+### 2.24 aiReviewCriteria
 
 **Purpose:** Store rubric-aligned AI criterion details and suggestions.
 
@@ -518,7 +577,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.24 notifications
+### 2.25 notifications
 
 **Purpose:** In-app notification storage.
 
@@ -538,7 +597,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.25 media
+### 2.26 media
 
 **Purpose:** Uploaded media and gallery items.
 
@@ -557,7 +616,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.26 auditLogs
+### 2.27 auditLogs
 
 **Purpose:** Track critical actions.
 
@@ -576,7 +635,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 ---
 
-### 2.27 systemConfigurations
+### 2.28 systemConfigurations
 
 **Purpose:** Admin-managed external integration settings.
 
@@ -597,6 +656,8 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 ## 3. Relationships Summary
 
 - One `event` has many `participants`, `timelineEvents`, `workshops`, `tracks`, `rounds`, `judgingBoards`, `teams`, `repositories`, `submissions`, `rubrics`, `rankings`, `prizes`, `media`.
+- One `user` can have many assigned `roles`.
+- One `role` has many `permissions`.
 - One `track` has many `rounds` and `teams`.
 - One `round` has many `judgingBoards`, `submissions`, and `rankings`.
 - One `judgingBoard` has many `teams` and many `judges`.
@@ -629,4 +690,5 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 - Enforce exactly one leader per team with a unique constraint on `teamId + teamRole = LEADER` or application-level validation.
 - Ensure `roundId + teamId` uniqueness for submissions.
 - Store external secrets in `systemConfigurations` with encryption at rest.
+- Keep authorization checks permission-based. Roles should remain permission groups, not route-level access conditions.
 - For webhook reliability, store processing status in `auditLogs` or a dedicated webhook log collection if needed.

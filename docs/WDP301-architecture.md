@@ -12,7 +12,8 @@ The backend is built with:
 - MongoDB
 - Mongoose
 - JWT Authentication
-- RBAC Authorization
+- Permission-based Authorization
+- RBAC Role-Permission Grouping
 - GitHub API Integration
 - Webhook Processing
 - Third-party AI API Integration as a supporting evaluation feature
@@ -49,6 +50,8 @@ Route → Controller → Service → Repository → Model → Database
 | Model | Define MongoDB schema |
 | Middleware | Handle authentication, authorization, validation, and errors |
 
+Authorization is permission-based. Roles are stored in MongoDB only as groups of permissions. Routes use `permissionMiddleware(PERMISSIONS.X)` and do not check role names directly.
+
 ---
 
 ## 3. Recommended Folder Structure
@@ -64,7 +67,6 @@ seal-be/
 │   │   └── aiProvider.js
 │   │
 │   ├── constants/
-│   │   ├── roles.js
 │   │   ├── permissions.js
 │   │   ├── status.js
 │   │   ├── eventTypes.js
@@ -96,6 +98,9 @@ seal-be/
 │   │   ├── participant.model.js
 │   │   ├── timelineEvent.model.js
 │   │   ├── workshop.model.js
+│   │   ├── workshopQuestion.model.js
+│   │   ├── workshopRating.model.js
+│   │   ├── workshopFeedback.model.js
 │   │   ├── track.model.js
 │   │   ├── round.model.js
 │   │   ├── judgingBoard.model.js
@@ -121,6 +126,13 @@ seal-be/
 │   │   │   ├── auth.service.js
 │   │   │   ├── auth.repository.js
 │   │   │   └── auth.validation.js
+│   │   │
+│   │   ├── google/
+│   │   │   ├── google.route.js
+│   │   │   ├── google.controller.js
+│   │   │   ├── google.service.js
+│   │   │   ├── google.repository.js
+│   │   │   └── google.validation.js
 │   │   │
 │   │   ├── users/
 │   │   │   ├── user.route.js
@@ -335,11 +347,21 @@ const create = async (data) => {
 };
 
 const findById = async (id) => {
-  return User.findById(id).populate("roles");
+  return User.findById(id).populate({
+    path: "roles",
+    populate: {
+      path: "permissions",
+    },
+  });
 };
 
 const findByEmail = async (email) => {
-  return User.findOne({ email }).populate("roles");
+  return User.findOne({ email }).populate({
+    path: "roles",
+    populate: {
+      path: "permissions",
+    },
+  });
 };
 
 const updateById = async (id, data) => {
@@ -437,24 +459,63 @@ const express = require("express");
 const userController = require("./user.controller");
 const authMiddleware = require("../../middlewares/auth.middleware");
 const permissionMiddleware = require("../../middlewares/permission.middleware");
+const { PERMISSIONS } = require("../../constants/permissions");
 
 const router = express.Router();
 
 router.get(
   "/:id",
   authMiddleware,
-  permissionMiddleware("USER_VIEW"),
+  permissionMiddleware(PERMISSIONS.USER_VIEW),
   userController.getUserById
 );
 
 router.patch(
   "/:id/approve",
   authMiddleware,
-  permissionMiddleware("USER_APPROVE"),
+  permissionMiddleware(PERMISSIONS.PARTICIPANT_APPROVE),
   userController.approveUser
 );
 
 module.exports = router;
+```
+
+---
+
+## 9.1 Authorization Flow
+
+Authenticated requests use this authorization flow:
+
+1. `authorizationMiddleware` verifies the JWT.
+2. The middleware loads the user from MongoDB with populated `roles.permissions`.
+3. `USER_SERVICE.getPermissionCodes(user)` merges and deduplicates permission codes from every assigned role.
+4. The middleware stores `req.user = { id, email, roles, role, permissions }`.
+5. Routes call `permissionMiddleware(PERMISSIONS.PERMISSION_CODE)`.
+6. Controllers and services handle business rules such as ownership, event state, or submission state. They should not check role names for access control.
+
+Current route examples:
+
+```js
+router.get(
+  "/",
+  authorizationMiddleware,
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  eventController.listEvents
+);
+
+router.post(
+  "/",
+  authorizationMiddleware,
+  permissionMiddleware(PERMISSIONS.EVENT_CREATE),
+  eventController.createEvent
+);
+
+router.patch(
+  "/:id/roles",
+  authorizationMiddleware,
+  permissionMiddleware(PERMISSIONS.USER_ROLE_ASSIGN),
+  userController.assignRoles
+);
 ```
 
 ---
@@ -518,15 +579,30 @@ module.exports = router;
 Handles:
 
 - login
+- Google OAuth login
+- Google OAuth callback handling
 - register
 - refresh token
 - current user profile
 - password hashing
 - JWT generation
+- resolved permission codes in the access token and authenticated user context
 
 ---
 
-### 11.2 Users Module
+### 11.2 Google Integration Module
+
+Handles:
+
+- Google Calendar account connection
+- encrypted Google token storage
+- access token refresh
+- Google Calendar event creation
+- Google Meet link creation for workshops
+
+---
+
+### 11.3 Users Module
 
 Handles:
 
@@ -534,20 +610,24 @@ Handles:
 - user approval
 - user status
 - user role assignment
+- normalized user responses with merged permission codes
 
 ---
 
-### 11.3 Roles Module
+### 11.4 Roles Module
 
 Handles:
 
 - roles
 - permissions
-- RBAC management
+- RBAC role-permission grouping
+- permission catalog management
+
+Roles are administrative containers. Runtime authorization is performed with permission codes through middleware.
 
 ---
 
-### 11.4 Events Module
+### 11.5 Events Module
 
 Handles:
 
@@ -558,7 +638,7 @@ Handles:
 
 ---
 
-### 11.5 Timelines Module
+### 11.6 Timelines Module
 
 Handles:
 
@@ -570,7 +650,7 @@ Handles:
 
 ---
 
-### 11.6 Workshops Module
+### 11.7 Workshops Module
 
 Handles:
 
@@ -583,7 +663,7 @@ Handles:
 
 ---
 
-### 11.7 Teams Module
+### 11.8 Teams Module
 
 Handles:
 
@@ -595,7 +675,7 @@ Handles:
 
 ---
 
-### 11.8 Repositories Module
+### 11.9 Repositories Module
 
 Handles internal repository records.
 
@@ -609,7 +689,7 @@ Responsibilities:
 
 ---
 
-### 11.9 GitHub Module
+### 11.10 GitHub Module
 
 Handles communication with GitHub API.
 
@@ -624,7 +704,7 @@ Responsibilities:
 
 ---
 
-### 11.10 Webhooks Module
+### 11.11 Webhooks Module
 
 Handles incoming webhook events.
 
@@ -638,7 +718,7 @@ Responsibilities:
 
 ---
 
-### 11.11 Commits Module
+### 11.12 Commits Module
 
 Handles commit data.
 
@@ -651,7 +731,7 @@ Responsibilities:
 
 ---
 
-### 11.12 Judging and Ranking Module
+### 11.13 Judging and Ranking Module
 
 Handles judging board assignment, rubric scoring, score aggregation, finalist selection, and result publishing.
 
@@ -666,7 +746,7 @@ Responsibilities:
 
 ---
 
-### 11.13 AI Review Module
+### 11.14 AI Review Module
 
 Handles third-party AI-assisted repository evaluation as a supporting feature.
 
@@ -684,7 +764,7 @@ It only integrates third-party AI services through APIs.
 
 ---
 
-### 11.14 Configurations Module
+### 11.15 Configurations Module
 
 Handles system configuration.
 
@@ -737,6 +817,9 @@ SystemConfig
 
 For SEAL Hackathon Fall 2025, the database models represent the official competition rules as follows:
 
+- `Permission` stores the authorization actions used by routes, such as `EVENT_CREATE`, `TRACK_VIEW`, `USER_ROLE_ASSIGN`, `SCORE_CREATE`, and `RESULT_PUBLISH`.
+- `Role` stores permission groups only. Seeded roles include `ADMIN`, `EVENT_COORDINATOR`, `COORDINATOR`, `JUDGE`, `MENTOR`, `USER`, and `PARTICIPANT`.
+- `User.roles` stores assigned role references. Services resolve and deduplicate permissions from all assigned roles before JWT generation and request authorization.
 - `Event` stores the hackathon season, year, theme, registration window, event schedule, team size rule, and finalist slot rule.
 - `Track` represents the preliminary competition groups. Fall 2025 has:
   - `Bảng A`: AI cho Thu thập Yêu cầu & Thiết kế.
@@ -766,6 +849,10 @@ Examples:
 ```txt
 POST   /api/auth/register
 POST   /api/auth/login
+GET    /api/auth/google
+GET    /api/auth/google/callback
+GET    /api/google/connect
+GET    /api/google/callback
 GET    /api/users
 PATCH  /api/users/:id/approve
 
@@ -792,6 +879,7 @@ GET    /api/commits/repository/:repositoryId
 POST   /api/ai-reviews/repository/:repositoryId
 POST   /api/ai-reviews/:id/retry
 
+POST   /api/workshops/:id/google-meet
 POST   /api/scoring/submit
 GET    /api/rankings/event/:eventId
 ```
@@ -886,6 +974,15 @@ MONGO_URI=mongodb://localhost:27017/seal
 
 JWT_SECRET=your_jwt_secret
 JWT_EXPIRES_IN=7d
+REFRESH_TOKEN_SECRET=your_refresh_secret
+REFRESH_TOKEN_EXPIRES_IN=30d
+TOKEN_ENCRYPTION_SECRET=your_32_byte_or_longer_secret
+
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_AUTH_CALLBACK_URL=http://localhost:3000/api/auth/google/callback
+GOOGLE_CONNECT_CALLBACK_URL=http://localhost:3000/api/google/callback
+FRONTEND_URL=http://localhost:5173
 
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_key

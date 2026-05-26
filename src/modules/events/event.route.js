@@ -2,8 +2,9 @@ import { Router } from 'express'
 
 import { EVENT_CONTROLLER } from './event.controller.js'
 import { EVENT_VALIDATION } from './event.validation.js'
+import { PERMISSIONS } from '#constants/permissions.js'
 import { authorizationMiddleware } from '#middlewares/authHandlingMiddleware.js'
-import { requireRoles } from '#middlewares/policiesHandlingMiddleware.js'
+import { permissionMiddleware } from '#middlewares/permission.middleware.js'
 import { validationHandlingMiddleware } from '#middlewares/validationHandlingMiddleware.js'
 
 const router = Router()
@@ -120,6 +121,7 @@ router.use(authorizationMiddleware)
  */
 router.get(
   '/',
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
   validationHandlingMiddleware(EVENT_VALIDATION.listEvents),
   EVENT_CONTROLLER.listEvents
 )
@@ -142,11 +144,11 @@ router.get(
  *       201:
  *         description: Event created successfully
  *       403:
- *         description: Requires ADMIN or COORDINATOR role
+ *         description: Requires EVENT_CREATE permission
  */
 router.post(
   '/',
-  requireRoles('ADMIN', 'COORDINATOR'),
+  permissionMiddleware(PERMISSIONS.EVENT_CREATE),
   validationHandlingMiddleware(EVENT_VALIDATION.createEvent),
   EVENT_CONTROLLER.createEvent
 )
@@ -174,6 +176,7 @@ router.post(
  */
 router.get(
   '/:id',
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
   validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
   EVENT_CONTROLLER.getEventById
 )
@@ -203,11 +206,11 @@ router.get(
  *       200:
  *         description: Event updated successfully
  *       403:
- *         description: Requires ADMIN or COORDINATOR role
+ *         description: Requires EVENT_UPDATE permission
  */
 router.patch(
   '/:id',
-  requireRoles('ADMIN', 'COORDINATOR'),
+  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
   validationHandlingMiddleware(EVENT_VALIDATION.updateEvent),
   EVENT_CONTROLLER.updateEvent
 )
@@ -244,7 +247,7 @@ router.patch(
  */
 router.patch(
   '/:id/status',
-  requireRoles('ADMIN', 'COORDINATOR'),
+  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
   validationHandlingMiddleware(EVENT_VALIDATION.updateEventStatus),
   EVENT_CONTROLLER.updateEventStatus
 )
@@ -268,11 +271,11 @@ router.patch(
  *       200:
  *         description: Event deleted successfully
  *       403:
- *         description: Requires ADMIN or COORDINATOR role
+ *         description: Requires EVENT_DELETE permission
  */
 router.delete(
   '/:id',
-  requireRoles('ADMIN', 'COORDINATOR'),
+  permissionMiddleware(PERMISSIONS.EVENT_DELETE),
   validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
   EVENT_CONTROLLER.deleteEvent
 )

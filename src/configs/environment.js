@@ -10,8 +10,10 @@ export const env = {
     uri: process.env.MONGODB_URI
   },
   client: {
-    urls: process.env.CLIENT_URLS?.split(',') || []
+    urls: process.env.CLIENT_URLS?.split(',') || [],
+    frontendUrl: process.env.FRONTEND_URL
   },
+  CLIENT_URLS: process.env.CLIENT_URLS?.split(',') || [],
   swagger: {
     user: process.env.SWAGGER_USER,
     password: process.env.SWAGGER_PASSWORD
@@ -28,5 +30,14 @@ export const env = {
   },
   otp: {
     expiresIn: process.env.OTP_EXPIRES_IN
+  },
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    authCallbackUrl: process.env.GOOGLE_AUTH_CALLBACK_URL,
+    connectCallbackUrl: process.env.GOOGLE_CONNECT_CALLBACK_URL
+  },
+  security: {
+    tokenEncryptionSecret: process.env.TOKEN_ENCRYPTION_SECRET
   }
 }

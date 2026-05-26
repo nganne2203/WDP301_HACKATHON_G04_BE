@@ -25,13 +25,31 @@ const findUserById = async (id) => {
   return await User.findById(id).populate(populateRoles)
 }
 
+const findUserByGoogleId = async (googleId) => {
+  return await User.findOne({
+    $or: [
+      { googleId },
+      { 'googleAuth.googleId': googleId }
+    ]
+  }).populate(populateRoles)
+}
+
 const findRoleByName = async (name) => {
   return await Role.findOne({ name: String(name).toUpperCase() })
+}
+
+const updateUserById = async (id, data) => {
+  return await User.findByIdAndUpdate(id, data, {
+    new: true,
+    runValidators: true
+  }).populate(populateRoles)
 }
 
 export const AUTH_REPOSITORY = {
   createUser,
   findUserByEmail,
   findUserById,
-  findRoleByName
+  findUserByGoogleId,
+  findRoleByName,
+  updateUserById
 }

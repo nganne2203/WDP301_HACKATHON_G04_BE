@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import { env } from '#configs/environment.js'
+import { ALL_PERMISSIONS, ROLE_PERMISSION_MAP } from '#constants/permissions.js'
 import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
 
 import User from '#models/user.model.js'
@@ -10,6 +11,7 @@ import TimelineEvent from '#models/timelineEvent.model.js'
 import Workshop from '#models/workshop.model.js'
 import WorkshopQuestion from '#models/workshopQuestion.model.js'
 import WorkshopFeedback from '#models/workshopFeedback.model.js'
+import WorkshopRating from '#models/workshopRating.model.js'
 import Track from '#models/track.model.js'
 import Round from '#models/round.model.js'
 import JudgingBoard from '#models/judgingBoard.model.js'
@@ -41,6 +43,7 @@ const MODELS = [
   Workshop,
   WorkshopQuestion,
   WorkshopFeedback,
+  WorkshopRating,
   Track,
   Round,
   JudgingBoard,
@@ -87,6 +90,13 @@ const upsertOne = async (Model, filter, data) => {
 
 const buildDate = (value) => new Date(value)
 
+const buildPermissionDescription = (code) => {
+  return code
+    .toLowerCase()
+    .replaceAll('_', ' ')
+    .replace(/^\w/, (char) => char.toUpperCase())
+}
+
 const seedBaseUser = async ({ email, fullName, roleId, passwordHash, extra = {} }) => {
   return await upsertOne(User, { email }, {
     email,
@@ -100,11 +110,25 @@ const seedBaseUser = async ({ email, fullName, roleId, passwordHash, extra = {} 
 }
 
 const seedSampleData = async () => {
-  const adminRole = await upsertOne(Role, { name: 'ADMIN' }, { name: 'ADMIN', description: 'System administrator' })
-  const coordinatorRole = await upsertOne(Role, { name: 'COORDINATOR' }, { name: 'COORDINATOR', description: 'Event coordinator' })
-  const judgeRole = await upsertOne(Role, { name: 'JUDGE' }, { name: 'JUDGE', description: 'Judge role' })
-  const mentorRole = await upsertOne(Role, { name: 'MENTOR' }, { name: 'MENTOR', description: 'Mentor role' })
-  const userRole = await upsertOne(Role, { name: 'USER' }, { name: 'USER', description: 'Basic authenticated user' })
+  const permissionRecords = await Promise.all(ALL_PERMISSIONS.map((code) => {
+    return upsertOne(Permission, { code }, {
+      code,
+      description: buildPermissionDescription(code)
+    })
+  }))
+  const permissionByCode = new Map(permissionRecords.map((permission) => [permission.code, permission]))
+  const getRolePermissionIds = (roleName) => {
+    return (ROLE_PERMISSION_MAP[roleName] || []).map((code) => permissionByCode.get(code)._id)
+  }
+
+  const adminRole = await upsertOne(Role, { name: 'ADMIN' }, { name: 'ADMIN', description: 'System administrator', permissions: getRolePermissionIds('ADMIN') })
+  const coordinatorRole = await upsertOne(Role, { name: 'COORDINATOR' }, { name: 'COORDINATOR', description: 'Event coordinator', permissions: getRolePermissionIds('COORDINATOR') })
+  await upsertOne(Role, { name: 'EVENT_COORDINATOR' }, { name: 'EVENT_COORDINATOR', description: 'Event coordinator', permissions: getRolePermissionIds('EVENT_COORDINATOR') })
+  const judgeRole = await upsertOne(Role, { name: 'JUDGE' }, { name: 'JUDGE', description: 'Judge role', permissions: getRolePermissionIds('JUDGE') })
+  const mentorRole = await upsertOne(Role, { name: 'MENTOR' }, { name: 'MENTOR', description: 'Mentor role', permissions: getRolePermissionIds('MENTOR') })
+  await upsertOne(Role, { name: 'SPEAKER' }, { name: 'SPEAKER', description: 'Workshop speaker role', permissions: getRolePermissionIds('SPEAKER') })
+  const userRole = await upsertOne(Role, { name: 'USER' }, { name: 'USER', description: 'Basic authenticated user', permissions: getRolePermissionIds('USER') })
+  await upsertOne(Role, { name: 'PARTICIPANT' }, { name: 'PARTICIPANT', description: 'Hackathon participant', permissions: getRolePermissionIds('PARTICIPANT') })
 
   const seededPasswordHash = await BCRYPT_UTILS.hashPassword('Password123!')
   const adminUser = await seedBaseUser({ email: 'admin@seal.local', fullName: 'Admin User', roleId: adminRole._id, passwordHash: seededPasswordHash })
@@ -160,8 +184,18 @@ const seedSampleData = async () => {
     title: 'Unleashing AI Agents in Software Engineering',
     description: 'Workshop about applying AI Agents in Software Engineering.',
     presenterId: mentorUser._id,
+    speakerInfo: {
+      name: mentorUser.fullName,
+      title: 'AI Engineering Mentor',
+      email: mentorUser.email
+    },
+    meetLink: 'https://meet.google.com/seal-fall-2025-workshop',
     startTime: buildDate('2025-10-29T19:30:00+07:00'),
     endTime: buildDate('2025-10-29T21:30:00+07:00'),
+    questionnaire: [
+      'What AI agent use case is your team considering?',
+      'Which software engineering task should AI support in your project?'
+    ],
     status: 'COMPLETED'
   })
 
@@ -729,8 +763,13 @@ const seedSampleData = async () => {
   await upsertOne(WorkshopFeedback, { workshopId: workshop._id, authorId: participantRecords[0].userId }, {
     workshopId: workshop._id,
     authorId: participantRecords[0].userId,
-    rating: 5,
     comment: 'Useful workshop for AI agent ideas.'
+  })
+
+  await upsertOne(WorkshopRating, { workshopId: workshop._id, authorId: participantRecords[0].userId }, {
+    workshopId: workshop._id,
+    authorId: participantRecords[0].userId,
+    rating: 5
   })
 
   await upsertOne(Notification, { userId: participantRecords[0].userId, title: 'Final results published' }, {

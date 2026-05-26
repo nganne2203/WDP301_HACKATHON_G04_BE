@@ -29,6 +29,32 @@ const login = async (req, res, next) => {
   }
 }
 
+const redirectToGoogle = async (req, res, next) => {
+  try {
+    const url = AUTH_SERVICE.getGoogleLoginUrl()
+    res.redirect(url)
+  } catch (error) {
+    next(error)
+  }
+}
+
+const googleCallback = async (req, res, next) => {
+  try {
+    const { authData, redirectUrl } = await AUTH_SERVICE.handleGoogleCallback(req.validated?.query || req.query)
+
+    if (redirectUrl) {
+      return res.redirect(redirectUrl)
+    }
+
+    return res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Login with Google successfully',
+      data: authData
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const refreshToken = async (req, res, next) => {
   try {
     const authData = await AUTH_SERVICE.refreshToken(req.body.refreshToken)
@@ -69,6 +95,8 @@ const logout = async (req, res, next) => {
 export const AUTH_CONTROLLER = {
   register,
   login,
+  redirectToGoogle,
+  googleCallback,
   refreshToken,
   getMe,
   logout

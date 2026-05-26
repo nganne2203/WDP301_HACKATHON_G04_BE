@@ -79,21 +79,46 @@ Current hackathon management processes are mostly manual and contain several lim
 
 ---
 
-# 3. Roles, Participants, and Hackathon Workflow
+# 3. Roles, Permissions, Participants, and Hackathon Workflow
 
 This section separates **authorization roles (RBAC)** from the **Participant** domain model. The simplified domain uses `Participant` for event registration, team assignment, check-in, and GitHub access status.
 
-## 3.1 RBAC Roles (Authorization Only)
+## 3.1 Permission-based Authorization
 
-RBAC roles control access to system capabilities. They are assigned by administrators and do not represent event participation status.
+The backend uses permission-based access control. Routes and business actions check permission codes such as `EVENT_CREATE`, `WORKSHOP_CREATE`, `TEAM_VIEW`, or `USER_ROLE_ASSIGN`.
+
+Roles are only containers for permissions. A route must not check role names such as `ADMIN`, `COORDINATOR`, or `JUDGE` directly. After login and on authenticated requests, the system resolves permissions from assigned roles, merges them, removes duplicates, and exposes them through the authenticated user context.
+
+Example:
+
+```js
+router.post(
+  '/',
+  authorizationMiddleware,
+  permissionMiddleware(PERMISSIONS.EVENT_CREATE),
+  eventController.createEvent
+)
+```
+
+## 3.2 RBAC Roles (Permission Groups Only)
+
+RBAC roles group permissions for easier administration. They are assigned by administrators and do not represent event participation status.
 
 - **ADMIN**: system configuration, external integrations, role and permission management, audit oversight.
-- **COORDINATOR**: event lifecycle management, timelines, workshops, tracks and rounds, assignments, results publishing.
+- **EVENT_COORDINATOR / COORDINATOR**: event lifecycle management, timelines, workshops, tracks and rounds, assignments, results publishing.
 - **JUDGE**: access assigned submissions, scoring, and review summaries.
 - **MENTOR**: access assigned teams and mentoring functions.
-- **USER**: baseline authenticated access.
+- **USER / PARTICIPANT**: baseline authenticated participant access.
 
-## 3.2 User Roles
+Seeded role-permission mapping:
+
+- **ADMIN**: all permissions.
+- **EVENT_COORDINATOR / COORDINATOR**: `EVENT_CREATE`, `EVENT_VIEW`, `EVENT_UPDATE`, `TRACK_CREATE`, `TRACK_VIEW`, `TRACK_UPDATE`, `TRACK_DELETE`, workshop management permissions, workshop insight view permissions, `TEAM_VIEW`, `PARTICIPANT_VIEW`, `PARTICIPANT_APPROVE`, `USER_CREATE`, `USER_VIEW`, `USER_UPDATE`, `JUDGING_ASSIGN`, GitHub permissions, AI review permissions, `RESULT_PUBLISH`, and `AUDIT_LOG_VIEW`.
+- **JUDGE**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop insight view permissions, `TEAM_VIEW`, `SCORE_CREATE`, `SCORE_VIEW`, and `AI_REVIEW_VIEW`.
+- **MENTOR**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop insight view permissions, `TEAM_VIEW`, and `AI_REVIEW_VIEW`.
+- **USER / PARTICIPANT**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop question create/view/vote permissions, `WORKSHOP_RATING_CREATE`, `WORKSHOP_FEEDBACK_CREATE`, `TEAM_CREATE`, and `TEAM_VIEW`.
+
+## 3.3 User Roles
 
 ### Participant
 
@@ -152,7 +177,7 @@ Responsibilities:
 - review repositories,
 - submit evaluation comments.
 
-## 3.3 Participant Domain Model
+## 3.4 Participant Domain Model
 
 **Participant**
 - `userId`
@@ -164,7 +189,7 @@ Responsibilities:
 
 This model replaces the previous separated event-participation and team-membership records. A team leader is represented as a participant whose `teamRole = LEADER`.
 
-## 3.4 Actors and Use Cases (UML-Oriented)
+## 3.5 Actors and Use Cases (UML-Oriented)
 
 The use case diagram models **User** as the base actor, with specialized actors that inherit from User. The `Participant` model determines event registration, team membership, team leadership, check-in, and GitHub access state.
 
@@ -221,7 +246,7 @@ The use case diagram models **User** as the base actor, with specialized actors 
 
 ---
 
-## 3.5 Updated Hackathon Workflow
+## 3.6 Updated Hackathon Workflow
 
 ### Phase 1 — Registration
 
@@ -283,8 +308,10 @@ The use case diagram models **User** as the base actor, with specialized actors 
 ## Features
 
 - Google OAuth login,
+- Google Calendar account connection,
 - JWT authentication,
-- RBAC authorization,
+- permission-based authorization,
+- RBAC role-permission grouping,
 - account approval.
 
 ## Requirements
@@ -293,9 +320,11 @@ The use case diagram models **User** as the base actor, with specialized actors 
 
 Users can authenticate using Google Login.
 
+Google login uses OAuth 2.0 scopes `openid`, `email`, `profile`, and `https://www.googleapis.com/auth/calendar.events`.
+
 ### FR-AUTH-02
 
-The system uses JWT authentication.
+The system uses JWT authentication. Access tokens include the user id, email, assigned role names, and resolved permission codes.
 
 ### FR-AUTH-03
 
@@ -309,11 +338,19 @@ Coordinators/Admins can approve or reject accounts when approval is required.
 
 ### FR-AUTH-05
 
-The system supports RBAC permission management.
+The system supports permission-based access control. Routes use permission middleware and permission constants instead of checking role names.
 
 ### FR-AUTH-06
 
-Admins can dynamically assign permissions and roles.
+Admins can dynamically assign roles and permissions. Roles remain in the database as permission groups.
+
+### FR-AUTH-07
+
+When a user has multiple roles, the system merges and deduplicates permissions from all assigned roles before authorization checks.
+
+### FR-AUTH-08
+
+Authenticated users with `GOOGLE_CONNECT` permission can connect a Google Calendar account. Google access and refresh tokens must be encrypted before being stored.
 
 ---
 
@@ -413,6 +450,7 @@ The system automatically triggers notifications based on scheduled timeline even
 
 - workshop scheduling,
 - Google Meet integration,
+- Google Calendar event creation,
 - questionnaire management,
 - workshop interaction,
 - rating and feedback.
@@ -428,6 +466,7 @@ Coordinators can create workshops.
 A workshop may contain:
 
 - Google Meet link,
+- Google Calendar event metadata,
 - presenter information,
 - questionnaires,
 - workshop schedule.
@@ -452,6 +491,14 @@ Mentors or coordinators can view:
 ### FR-WS-05
 
 The system stores workshop interaction history.
+
+### FR-WS-06
+
+Users with `WORKSHOP_MEET_CREATE` permission can create a Google Meet link for a workshop through the connected Google Calendar account of the selected organizer. The organizer's Google account owns the Calendar event.
+
+### FR-WS-07
+
+When creating a Meet link, the backend stores `googleMeet.enabled`, `meetLink`, `calendarEventId`, `htmlLink`, `organizerUserId`, `organizerEmail`, and `createdAt` on the workshop.
 
 ---
 
@@ -971,7 +1018,7 @@ Configuration data is stored in the database.
 
 - JWT authentication,
 - password hashing,
-- RBAC authorization,
+- permission-based authorization,
 - webhook signature validation,
 - encrypted API credentials.
 
@@ -1073,17 +1120,21 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 
 **User**
 - Stores authenticated accounts and profile data.
-- Key fields: `email`, `authProvider`, `passwordHash`, `googleId`, `fullName`, `avatarUrl`, `phone`, `studentId`, `studentType`, `schoolName`, `status`, `roles`.
+- Key fields: `email`, `authProvider`, `passwordHash`, `googleId`, `googleAuth`, `googleCalendar`, `fullName`, `avatarUrl`, `phone`, `studentId`, `studentType`, `schoolName`, `status`, `roles`.
 - Relationships: many users can reference many `Role` records through `roles`.
+- API responses include resolved `permissions`, derived from assigned roles. Permissions are not stored directly on the user document in the current schema.
+- Google Calendar tokens are stored encrypted and are never returned to the frontend.
 
 **Role**
-- Stores RBAC role names such as `ADMIN`, `COORDINATOR`, `JUDGE`, `MENTOR`, and `USER`.
-- Key fields: `name`, `description`, `permissionIds`.
-- Relationships: roles reference `Permission` records through `permissionIds`.
+- Stores RBAC role names such as `ADMIN`, `EVENT_COORDINATOR`, `COORDINATOR`, `JUDGE`, `MENTOR`, `USER`, and `PARTICIPANT`.
+- Key fields: `name`, `description`, `permissions`.
+- Relationships: roles reference `Permission` records through `permissions`.
+- Purpose: roles are permission groups only; routes do not authorize by role name.
 
 **Permission**
 - Stores fine-grained access permissions.
-- Key fields: `code`, `description`, `module`.
+- Key fields: `code`, `description`.
+- Example codes: `EVENT_CREATE`, `EVENT_VIEW`, `TRACK_CREATE`, `WORKSHOP_CREATE`, `WORKSHOP_MEET_CREATE`, `GOOGLE_CONNECT`, `TEAM_VIEW`, `PARTICIPANT_APPROVE`, `USER_ROLE_ASSIGN`, `SCORE_CREATE`, `AI_REVIEW_VIEW`, `RESULT_PUBLISH`, `SYSTEM_CONFIG_MANAGE`.
 
 ### Event and Schedule
 
@@ -1098,15 +1149,19 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 
 **Workshop**
 - Stores workshop or seminar sessions.
-- Key fields: `eventId`, `timelineEventId`, `title`, `description`, `presenterId`, `startTime`, `endTime`, `status`.
+- Key fields: `eventId`, `timelineEventId`, `title`, `description`, `presenterId`, `speakerInfo`, `meetLink`, `googleMeet`, `startTime`, `endTime`, `questionnaire`, `status`.
 
 **WorkshopQuestion**
 - Stores participant questions for workshops.
-- Key fields: `workshopId`, `authorId`, `content`, `voteCount`.
+- Key fields: `workshopId`, `authorId`, `content`, `votes`, `voteCount`.
+
+**WorkshopRating**
+- Stores one participant rating per workshop.
+- Key fields: `workshopId`, `authorId`, `rating`.
 
 **WorkshopFeedback**
-- Stores participant feedback and ratings for workshops.
-- Key fields: `workshopId`, `authorId`, `rating`, `comment`.
+- Stores one participant textual feedback entry per workshop.
+- Key fields: `workshopId`, `authorId`, `comment`.
 
 ### Team, Participant, Track, and Round
 
@@ -1255,7 +1310,8 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 - MongoDB
 - Mongoose
 - JWT Authentication
-- RBAC Authorization
+- Permission-based Authorization
+- RBAC Role-Permission Grouping
 - GitHub API Integration
 - Webhook Processing
 
