@@ -113,10 +113,10 @@ RBAC roles group permissions for easier administration. They are assigned by adm
 Seeded role-permission mapping:
 
 - **ADMIN**: all permissions.
-- **EVENT_COORDINATOR / COORDINATOR**: `EVENT_CREATE`, `EVENT_VIEW`, `EVENT_UPDATE`, `TRACK_CREATE`, `TRACK_VIEW`, `TRACK_UPDATE`, `TRACK_DELETE`, `WORKSHOP_CREATE`, `WORKSHOP_VIEW`, `WORKSHOP_UPDATE`, `TEAM_VIEW`, `PARTICIPANT_VIEW`, `PARTICIPANT_APPROVE`, `USER_CREATE`, `USER_VIEW`, `USER_UPDATE`, `JUDGING_ASSIGN`, GitHub permissions, AI review permissions, `RESULT_PUBLISH`, and `AUDIT_LOG_VIEW`.
-- **JUDGE**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, `TEAM_VIEW`, `SCORE_CREATE`, `SCORE_VIEW`, and `AI_REVIEW_VIEW`.
-- **MENTOR**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, `TEAM_VIEW`, and `AI_REVIEW_VIEW`.
-- **USER / PARTICIPANT**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, `TEAM_CREATE`, and `TEAM_VIEW`.
+- **EVENT_COORDINATOR / COORDINATOR**: `EVENT_CREATE`, `EVENT_VIEW`, `EVENT_UPDATE`, `TRACK_CREATE`, `TRACK_VIEW`, `TRACK_UPDATE`, `TRACK_DELETE`, workshop management permissions, workshop insight view permissions, `TEAM_VIEW`, `PARTICIPANT_VIEW`, `PARTICIPANT_APPROVE`, `USER_CREATE`, `USER_VIEW`, `USER_UPDATE`, `JUDGING_ASSIGN`, GitHub permissions, AI review permissions, `RESULT_PUBLISH`, and `AUDIT_LOG_VIEW`.
+- **JUDGE**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop insight view permissions, `TEAM_VIEW`, `SCORE_CREATE`, `SCORE_VIEW`, and `AI_REVIEW_VIEW`.
+- **MENTOR**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop insight view permissions, `TEAM_VIEW`, and `AI_REVIEW_VIEW`.
+- **USER / PARTICIPANT**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop question create/view/vote permissions, `WORKSHOP_RATING_CREATE`, `WORKSHOP_FEEDBACK_CREATE`, `TEAM_CREATE`, and `TEAM_VIEW`.
 
 ## 3.3 User Roles
 
@@ -308,6 +308,7 @@ The use case diagram models **User** as the base actor, with specialized actors 
 ## Features
 
 - Google OAuth login,
+- Google Calendar account connection,
 - JWT authentication,
 - permission-based authorization,
 - RBAC role-permission grouping,
@@ -318,6 +319,8 @@ The use case diagram models **User** as the base actor, with specialized actors 
 ### FR-AUTH-01
 
 Users can authenticate using Google Login.
+
+Google login uses OAuth 2.0 scopes `openid`, `email`, `profile`, and `https://www.googleapis.com/auth/calendar.events`.
 
 ### FR-AUTH-02
 
@@ -344,6 +347,10 @@ Admins can dynamically assign roles and permissions. Roles remain in the databas
 ### FR-AUTH-07
 
 When a user has multiple roles, the system merges and deduplicates permissions from all assigned roles before authorization checks.
+
+### FR-AUTH-08
+
+Authenticated users with `GOOGLE_CONNECT` permission can connect a Google Calendar account. Google access and refresh tokens must be encrypted before being stored.
 
 ---
 
@@ -443,6 +450,7 @@ The system automatically triggers notifications based on scheduled timeline even
 
 - workshop scheduling,
 - Google Meet integration,
+- Google Calendar event creation,
 - questionnaire management,
 - workshop interaction,
 - rating and feedback.
@@ -458,6 +466,7 @@ Coordinators can create workshops.
 A workshop may contain:
 
 - Google Meet link,
+- Google Calendar event metadata,
 - presenter information,
 - questionnaires,
 - workshop schedule.
@@ -482,6 +491,14 @@ Mentors or coordinators can view:
 ### FR-WS-05
 
 The system stores workshop interaction history.
+
+### FR-WS-06
+
+Users with `WORKSHOP_MEET_CREATE` permission can create a Google Meet link for a workshop through the connected Google Calendar account of the selected organizer. The organizer's Google account owns the Calendar event.
+
+### FR-WS-07
+
+When creating a Meet link, the backend stores `googleMeet.enabled`, `meetLink`, `calendarEventId`, `htmlLink`, `organizerUserId`, `organizerEmail`, and `createdAt` on the workshop.
 
 ---
 
@@ -1103,9 +1120,10 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 
 **User**
 - Stores authenticated accounts and profile data.
-- Key fields: `email`, `authProvider`, `passwordHash`, `googleId`, `fullName`, `avatarUrl`, `phone`, `studentId`, `studentType`, `schoolName`, `status`, `roles`.
+- Key fields: `email`, `authProvider`, `passwordHash`, `googleId`, `googleAuth`, `googleCalendar`, `fullName`, `avatarUrl`, `phone`, `studentId`, `studentType`, `schoolName`, `status`, `roles`.
 - Relationships: many users can reference many `Role` records through `roles`.
 - API responses include resolved `permissions`, derived from assigned roles. Permissions are not stored directly on the user document in the current schema.
+- Google Calendar tokens are stored encrypted and are never returned to the frontend.
 
 **Role**
 - Stores RBAC role names such as `ADMIN`, `EVENT_COORDINATOR`, `COORDINATOR`, `JUDGE`, `MENTOR`, `USER`, and `PARTICIPANT`.
@@ -1116,7 +1134,7 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 **Permission**
 - Stores fine-grained access permissions.
 - Key fields: `code`, `description`.
-- Example codes: `EVENT_CREATE`, `EVENT_VIEW`, `TRACK_CREATE`, `WORKSHOP_CREATE`, `TEAM_VIEW`, `PARTICIPANT_APPROVE`, `USER_ROLE_ASSIGN`, `SCORE_CREATE`, `AI_REVIEW_VIEW`, `RESULT_PUBLISH`, `SYSTEM_CONFIG_MANAGE`.
+- Example codes: `EVENT_CREATE`, `EVENT_VIEW`, `TRACK_CREATE`, `WORKSHOP_CREATE`, `WORKSHOP_MEET_CREATE`, `GOOGLE_CONNECT`, `TEAM_VIEW`, `PARTICIPANT_APPROVE`, `USER_ROLE_ASSIGN`, `SCORE_CREATE`, `AI_REVIEW_VIEW`, `RESULT_PUBLISH`, `SYSTEM_CONFIG_MANAGE`.
 
 ### Event and Schedule
 
@@ -1131,15 +1149,19 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 
 **Workshop**
 - Stores workshop or seminar sessions.
-- Key fields: `eventId`, `timelineEventId`, `title`, `description`, `presenterId`, `startTime`, `endTime`, `status`.
+- Key fields: `eventId`, `timelineEventId`, `title`, `description`, `presenterId`, `speakerInfo`, `meetLink`, `googleMeet`, `startTime`, `endTime`, `questionnaire`, `status`.
 
 **WorkshopQuestion**
 - Stores participant questions for workshops.
-- Key fields: `workshopId`, `authorId`, `content`, `voteCount`.
+- Key fields: `workshopId`, `authorId`, `content`, `votes`, `voteCount`.
+
+**WorkshopRating**
+- Stores one participant rating per workshop.
+- Key fields: `workshopId`, `authorId`, `rating`.
 
 **WorkshopFeedback**
-- Stores participant feedback and ratings for workshops.
-- Key fields: `workshopId`, `authorId`, `rating`, `comment`.
+- Stores one participant textual feedback entry per workshop.
+- Key fields: `workshopId`, `authorId`, `comment`.
 
 ### Team, Participant, Track, and Round
 

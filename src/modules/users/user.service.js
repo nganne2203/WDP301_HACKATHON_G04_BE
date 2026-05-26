@@ -69,6 +69,23 @@ const normalizeUser = (user) => {
     status: plainUser.status,
     roles,
     permissions,
+    googleAuth: plainUser.googleAuth
+      ? {
+        googleId: plainUser.googleAuth.googleId,
+        email: plainUser.googleAuth.email,
+        name: plainUser.googleAuth.name,
+        picture: plainUser.googleAuth.picture
+      }
+      : undefined,
+    googleCalendar: plainUser.googleCalendar
+      ? {
+        connected: Boolean(plainUser.googleCalendar.connected),
+        googleId: plainUser.googleCalendar.googleId,
+        email: plainUser.googleCalendar.email,
+        tokenExpiryDate: plainUser.googleCalendar.tokenExpiryDate,
+        scope: plainUser.googleCalendar.scope || []
+      }
+      : undefined,
     avatarUrl: plainUser.avatarUrl,
     phone: plainUser.phone,
     bio: plainUser.bio,

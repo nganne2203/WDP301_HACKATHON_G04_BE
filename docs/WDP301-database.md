@@ -25,6 +25,8 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 - `email` (string, unique, required)
 - `googleId` (string, unique, sparse)
 - `authProvider` (string, enum: GOOGLE, LOCAL)
+- `googleAuth` (object: `googleId`, `email`, `name`, `picture`)
+- `googleCalendar` (object: `connected`, `googleId`, `email`, encrypted `accessToken`, encrypted `refreshToken`, `tokenExpiryDate`, `scope`)
 - `passwordHash` (string)
 - `fullName` (string, required)
 - `status` (string, enum: PENDING, APPROVED, REJECTED, SUSPENDED)
@@ -38,6 +40,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 - Users store assigned role references in `roles`.
 - Resolved permission codes are derived from populated role permissions at login/request time.
 - The current schema does not store direct user permissions.
+- Google Calendar access and refresh tokens are encrypted at rest and must not be returned by API responses.
 
 **Indexes**
 - `email` unique
@@ -88,6 +91,11 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `EVENT_CREATE`, `EVENT_VIEW`, `EVENT_UPDATE`, `EVENT_DELETE`
 - `TRACK_CREATE`, `TRACK_VIEW`, `TRACK_UPDATE`, `TRACK_DELETE`
 - `WORKSHOP_CREATE`, `WORKSHOP_VIEW`, `WORKSHOP_UPDATE`, `WORKSHOP_DELETE`
+- `WORKSHOP_QUESTION_CREATE`, `WORKSHOP_QUESTION_VIEW`, `WORKSHOP_QUESTION_VOTE`
+- `WORKSHOP_RATING_CREATE`, `WORKSHOP_RATING_VIEW`
+- `WORKSHOP_FEEDBACK_CREATE`, `WORKSHOP_FEEDBACK_VIEW`
+- `WORKSHOP_MEET_CREATE`, `WORKSHOP_MEET_VIEW`, `WORKSHOP_MEET_DELETE`
+- `GOOGLE_CONNECT`
 - `TEAM_CREATE`, `TEAM_VIEW`, `TEAM_UPDATE`, `TEAM_DELETE`
 - `PARTICIPANT_VIEW`, `PARTICIPANT_APPROVE`
 - `USER_CREATE`, `USER_VIEW`, `USER_UPDATE`, `USER_ROLE_ASSIGN`
@@ -148,20 +156,24 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events)
+- `eventId` (ObjectId, ref: events, required)
 - `timelineEventId` (ObjectId, ref: timelineEvents)
 - `title` (string, required)
 - `description` (string)
 - `presenterId` (ObjectId, ref: users)
+- `speakerInfo` (object: `name`, `title`, `bio`, `email`)
 - `meetLink` (string)
-- `startTime` (date)
-- `endTime` (date)
+- `googleMeet` (object: `enabled`, `meetLink`, `calendarEventId`, `htmlLink`, `organizerUserId`, `organizerEmail`, `createdAt`)
+- `startTime` (date, required)
+- `endTime` (date, required)
+- `questionnaire` (string[])
 - `status` (string, enum: SCHEDULED, LIVE, COMPLETED, CANCELLED)
 - `createdAt`, `updatedAt`
 
 **Indexes**
 - `eventId, startTime`
 - `presenterId`
+- `status`
 
 ---
 
@@ -174,33 +186,52 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `workshopId` (ObjectId, ref: workshops, required)
 - `authorId` (ObjectId, ref: users)
 - `content` (string, required)
+- `votes` (array of `{ voterId, votedAt }`)
 - `voteCount` (number, default: 0)
 - `createdAt`, `updatedAt`
 
 **Indexes**
 - `workshopId, createdAt`
 - `voteCount`
+- `workshopId, voteCount`
 
 ---
 
-### 2.8 workshopFeedback
+### 2.8 workshopRatings
 
-**Purpose:** Ratings and textual feedback for workshops.
+**Purpose:** Participant ratings for workshops.
 
 **Fields**
 - `_id` (ObjectId)
 - `workshopId` (ObjectId, ref: workshops, required)
-- `authorId` (ObjectId, ref: users)
-- `rating` (number, min: 1, max: 5)
+- `authorId` (ObjectId, ref: users, required)
+- `rating` (number, required, min: 1, max: 5)
+- `createdAt`, `updatedAt`
+
+**Indexes**
+- `workshopId, authorId` unique
+- `workshopId, rating`
+
+---
+
+### 2.9 workshopFeedback
+
+**Purpose:** Textual feedback for workshops.
+
+**Fields**
+- `_id` (ObjectId)
+- `workshopId` (ObjectId, ref: workshops, required)
+- `authorId` (ObjectId, ref: users, required)
 - `comment` (string)
 - `createdAt`, `updatedAt`
 
 **Indexes**
 - `workshopId, authorId` unique
+- `workshopId, createdAt`
 
 ---
 
-### 2.9 tracks
+### 2.10 tracks
 
 **Purpose:** Competition categories within an event.
 
@@ -216,7 +247,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.10 rounds
+### 2.11 rounds
 
 **Purpose:** Competition rounds per track.
 
@@ -239,7 +270,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.11 judgingBoards
+### 2.12 judgingBoards
 
 **Purpose:** Preliminary and final judging board assignments.
 
@@ -262,7 +293,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.12 participants
+### 2.13 participants
 
 **Purpose:** Hackathon participant records for event registration, team assignment, check-in, and GitHub access.
 
@@ -287,7 +318,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.13 teams
+### 2.14 teams
 
 **Purpose:** Team registration and team-level metadata.
 
@@ -305,7 +336,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.14 repositories
+### 2.15 repositories
 
 **Purpose:** GitHub repository metadata per team.
 
@@ -328,7 +359,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.15 commits
+### 2.16 commits
 
 **Purpose:** Repository activity tracking.
 
@@ -351,7 +382,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.16 submissions
+### 2.17 submissions
 
 **Purpose:** Team submission artifacts.
 
@@ -374,7 +405,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.17 rubrics
+### 2.18 rubrics
 
 **Purpose:** Scoring rubrics.
 
@@ -392,7 +423,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.18 criteria
+### 2.19 criteria
 
 **Purpose:** Scoring criteria for rubrics.
 
@@ -410,7 +441,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.19 scores
+### 2.20 scores
 
 **Purpose:** Judge scores per submission and criterion.
 
@@ -436,7 +467,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.20 rankings
+### 2.21 rankings
 
 **Purpose:** Precomputed rankings by round or track.
 
@@ -474,7 +505,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.21 prizes
+### 2.22 prizes
 
 **Purpose:** Prize definitions and assignment.
 
@@ -493,7 +524,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.22 aiReviews
+### 2.23 aiReviews
 
 **Purpose:** Store AI-assisted repository evaluation results.
 
@@ -518,7 +549,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.23 aiReviewCriteria
+### 2.24 aiReviewCriteria
 
 **Purpose:** Store rubric-aligned AI criterion details and suggestions.
 
@@ -546,7 +577,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.24 notifications
+### 2.25 notifications
 
 **Purpose:** In-app notification storage.
 
@@ -566,7 +597,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.25 media
+### 2.26 media
 
 **Purpose:** Uploaded media and gallery items.
 
@@ -585,7 +616,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.26 auditLogs
+### 2.27 auditLogs
 
 **Purpose:** Track critical actions.
 
@@ -604,7 +635,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.27 systemConfigurations
+### 2.28 systemConfigurations
 
 **Purpose:** Admin-managed external integration settings.
 

@@ -296,6 +296,14 @@ router.post(
   AUTH_CONTROLLER.login
 )
 
+router.get('/google', authRateLimiter, AUTH_CONTROLLER.redirectToGoogle)
+router.get(
+  '/google/callback',
+  authRateLimiter,
+  validationHandlingMiddleware(AUTH_VALIDATION.googleCallback),
+  AUTH_CONTROLLER.googleCallback
+)
+
 /**
  * @swagger
  * /api/auth/refresh-token:

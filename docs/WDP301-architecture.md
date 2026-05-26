@@ -98,6 +98,9 @@ seal-be/
 │   │   ├── participant.model.js
 │   │   ├── timelineEvent.model.js
 │   │   ├── workshop.model.js
+│   │   ├── workshopQuestion.model.js
+│   │   ├── workshopRating.model.js
+│   │   ├── workshopFeedback.model.js
 │   │   ├── track.model.js
 │   │   ├── round.model.js
 │   │   ├── judgingBoard.model.js
@@ -123,6 +126,13 @@ seal-be/
 │   │   │   ├── auth.service.js
 │   │   │   ├── auth.repository.js
 │   │   │   └── auth.validation.js
+│   │   │
+│   │   ├── google/
+│   │   │   ├── google.route.js
+│   │   │   ├── google.controller.js
+│   │   │   ├── google.service.js
+│   │   │   ├── google.repository.js
+│   │   │   └── google.validation.js
 │   │   │
 │   │   ├── users/
 │   │   │   ├── user.route.js
@@ -569,6 +579,8 @@ module.exports = router;
 Handles:
 
 - login
+- Google OAuth login
+- Google OAuth callback handling
 - register
 - refresh token
 - current user profile
@@ -578,7 +590,19 @@ Handles:
 
 ---
 
-### 11.2 Users Module
+### 11.2 Google Integration Module
+
+Handles:
+
+- Google Calendar account connection
+- encrypted Google token storage
+- access token refresh
+- Google Calendar event creation
+- Google Meet link creation for workshops
+
+---
+
+### 11.3 Users Module
 
 Handles:
 
@@ -590,7 +614,7 @@ Handles:
 
 ---
 
-### 11.3 Roles Module
+### 11.4 Roles Module
 
 Handles:
 
@@ -603,7 +627,7 @@ Roles are administrative containers. Runtime authorization is performed with per
 
 ---
 
-### 11.4 Events Module
+### 11.5 Events Module
 
 Handles:
 
@@ -614,7 +638,7 @@ Handles:
 
 ---
 
-### 11.5 Timelines Module
+### 11.6 Timelines Module
 
 Handles:
 
@@ -626,7 +650,7 @@ Handles:
 
 ---
 
-### 11.6 Workshops Module
+### 11.7 Workshops Module
 
 Handles:
 
@@ -639,7 +663,7 @@ Handles:
 
 ---
 
-### 11.7 Teams Module
+### 11.8 Teams Module
 
 Handles:
 
@@ -651,7 +675,7 @@ Handles:
 
 ---
 
-### 11.8 Repositories Module
+### 11.9 Repositories Module
 
 Handles internal repository records.
 
@@ -665,7 +689,7 @@ Responsibilities:
 
 ---
 
-### 11.9 GitHub Module
+### 11.10 GitHub Module
 
 Handles communication with GitHub API.
 
@@ -680,7 +704,7 @@ Responsibilities:
 
 ---
 
-### 11.10 Webhooks Module
+### 11.11 Webhooks Module
 
 Handles incoming webhook events.
 
@@ -694,7 +718,7 @@ Responsibilities:
 
 ---
 
-### 11.11 Commits Module
+### 11.12 Commits Module
 
 Handles commit data.
 
@@ -707,7 +731,7 @@ Responsibilities:
 
 ---
 
-### 11.12 Judging and Ranking Module
+### 11.13 Judging and Ranking Module
 
 Handles judging board assignment, rubric scoring, score aggregation, finalist selection, and result publishing.
 
@@ -722,7 +746,7 @@ Responsibilities:
 
 ---
 
-### 11.13 AI Review Module
+### 11.14 AI Review Module
 
 Handles third-party AI-assisted repository evaluation as a supporting feature.
 
@@ -740,7 +764,7 @@ It only integrates third-party AI services through APIs.
 
 ---
 
-### 11.14 Configurations Module
+### 11.15 Configurations Module
 
 Handles system configuration.
 
@@ -825,6 +849,10 @@ Examples:
 ```txt
 POST   /api/auth/register
 POST   /api/auth/login
+GET    /api/auth/google
+GET    /api/auth/google/callback
+GET    /api/google/connect
+GET    /api/google/callback
 GET    /api/users
 PATCH  /api/users/:id/approve
 
@@ -851,6 +879,7 @@ GET    /api/commits/repository/:repositoryId
 POST   /api/ai-reviews/repository/:repositoryId
 POST   /api/ai-reviews/:id/retry
 
+POST   /api/workshops/:id/google-meet
 POST   /api/scoring/submit
 GET    /api/rankings/event/:eventId
 ```
@@ -945,6 +974,15 @@ MONGO_URI=mongodb://localhost:27017/seal
 
 JWT_SECRET=your_jwt_secret
 JWT_EXPIRES_IN=7d
+REFRESH_TOKEN_SECRET=your_refresh_secret
+REFRESH_TOKEN_EXPIRES_IN=30d
+TOKEN_ENCRYPTION_SECRET=your_32_byte_or_longer_secret
+
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_AUTH_CALLBACK_URL=http://localhost:3000/api/auth/google/callback
+GOOGLE_CONNECT_CALLBACK_URL=http://localhost:3000/api/google/callback
+FRONTEND_URL=http://localhost:5173
 
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_key

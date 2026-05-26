@@ -34,7 +34,7 @@ const createUser = {
     password: Joi.string().min(8).max(128).required(),
     fullName: Joi.string().trim().min(2).max(120).required(),
     roles: Joi.array()
-      .items(Joi.string().trim().uppercase().valid('ADMIN', 'EVENT_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'USER', 'PARTICIPANT'))
+      .items(Joi.string().trim().uppercase().valid('ADMIN', 'EVENT_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'USER', 'PARTICIPANT'))
       .min(1)
       .unique()
       .required(),
@@ -71,7 +71,7 @@ const assignRoles = {
   params: idParam,
   body: Joi.object({
     roles: Joi.array()
-      .items(Joi.string().trim().uppercase().valid('ADMIN', 'EVENT_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'USER', 'PARTICIPANT'))
+      .items(Joi.string().trim().uppercase().valid('ADMIN', 'EVENT_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'USER', 'PARTICIPANT'))
       .min(1)
       .unique()
       .required()

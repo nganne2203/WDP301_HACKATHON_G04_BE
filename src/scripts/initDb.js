@@ -11,6 +11,7 @@ import TimelineEvent from '#models/timelineEvent.model.js'
 import Workshop from '#models/workshop.model.js'
 import WorkshopQuestion from '#models/workshopQuestion.model.js'
 import WorkshopFeedback from '#models/workshopFeedback.model.js'
+import WorkshopRating from '#models/workshopRating.model.js'
 import Track from '#models/track.model.js'
 import Round from '#models/round.model.js'
 import JudgingBoard from '#models/judgingBoard.model.js'
@@ -42,6 +43,7 @@ const MODELS = [
   Workshop,
   WorkshopQuestion,
   WorkshopFeedback,
+  WorkshopRating,
   Track,
   Round,
   JudgingBoard,
@@ -124,6 +126,7 @@ const seedSampleData = async () => {
   await upsertOne(Role, { name: 'EVENT_COORDINATOR' }, { name: 'EVENT_COORDINATOR', description: 'Event coordinator', permissions: getRolePermissionIds('EVENT_COORDINATOR') })
   const judgeRole = await upsertOne(Role, { name: 'JUDGE' }, { name: 'JUDGE', description: 'Judge role', permissions: getRolePermissionIds('JUDGE') })
   const mentorRole = await upsertOne(Role, { name: 'MENTOR' }, { name: 'MENTOR', description: 'Mentor role', permissions: getRolePermissionIds('MENTOR') })
+  await upsertOne(Role, { name: 'SPEAKER' }, { name: 'SPEAKER', description: 'Workshop speaker role', permissions: getRolePermissionIds('SPEAKER') })
   const userRole = await upsertOne(Role, { name: 'USER' }, { name: 'USER', description: 'Basic authenticated user', permissions: getRolePermissionIds('USER') })
   await upsertOne(Role, { name: 'PARTICIPANT' }, { name: 'PARTICIPANT', description: 'Hackathon participant', permissions: getRolePermissionIds('PARTICIPANT') })
 
@@ -181,8 +184,18 @@ const seedSampleData = async () => {
     title: 'Unleashing AI Agents in Software Engineering',
     description: 'Workshop about applying AI Agents in Software Engineering.',
     presenterId: mentorUser._id,
+    speakerInfo: {
+      name: mentorUser.fullName,
+      title: 'AI Engineering Mentor',
+      email: mentorUser.email
+    },
+    meetLink: 'https://meet.google.com/seal-fall-2025-workshop',
     startTime: buildDate('2025-10-29T19:30:00+07:00'),
     endTime: buildDate('2025-10-29T21:30:00+07:00'),
+    questionnaire: [
+      'What AI agent use case is your team considering?',
+      'Which software engineering task should AI support in your project?'
+    ],
     status: 'COMPLETED'
   })
 
@@ -750,8 +763,13 @@ const seedSampleData = async () => {
   await upsertOne(WorkshopFeedback, { workshopId: workshop._id, authorId: participantRecords[0].userId }, {
     workshopId: workshop._id,
     authorId: participantRecords[0].userId,
-    rating: 5,
     comment: 'Useful workshop for AI agent ideas.'
+  })
+
+  await upsertOne(WorkshopRating, { workshopId: workshop._id, authorId: participantRecords[0].userId }, {
+    workshopId: workshop._id,
+    authorId: participantRecords[0].userId,
+    rating: 5
   })
 
   await upsertOne(Notification, { userId: participantRecords[0].userId, title: 'Final results published' }, {
