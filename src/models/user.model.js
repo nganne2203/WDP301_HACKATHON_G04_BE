@@ -6,10 +6,25 @@ const userSchema = new Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     googleId: { type: String },
+    googleAuth: {
+      googleId: { type: String },
+      email: { type: String, lowercase: true, trim: true },
+      name: { type: String, trim: true },
+      picture: { type: String }
+    },
+    googleCalendar: {
+      connected: { type: Boolean, default: false },
+      googleId: { type: String },
+      email: { type: String, lowercase: true, trim: true },
+      accessToken: { type: String },
+      refreshToken: { type: String },
+      tokenExpiryDate: { type: Date },
+      scope: [{ type: String }]
+    },
     authProvider: {
       type: String,
       enum: ['GOOGLE', 'LOCAL'],
-      default: 'GOOGLE'
+      default: 'LOCAL'
     },
     passwordHash: { type: String },
     fullName: { type: String, required: true, trim: true },
@@ -39,6 +54,8 @@ const userSchema = new Schema(
 )
 
 userSchema.index({ googleId: 1 }, { unique: true, sparse: true })
+userSchema.index({ 'googleAuth.googleId': 1 }, { unique: true, sparse: true })
+userSchema.index({ 'googleCalendar.connected': 1 })
 userSchema.index({ roles: 1 })
 
 const User = mongoose.model('User', userSchema)

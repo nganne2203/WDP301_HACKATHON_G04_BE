@@ -87,6 +87,11 @@ const router = Router()
  *           type: array
  *           items:
  *             $ref: '#/components/schemas/Role'
+ *         permissions:
+ *           type: array
+ *           items:
+ *             type: string
+ *           example: [EVENT_VIEW, WORKSHOP_VIEW, TEAM_VIEW]
  *         avatarUrl:
  *           type: string
  *           nullable: true
@@ -289,6 +294,14 @@ router.post(
   authRateLimiter,
   validationHandlingMiddleware(AUTH_VALIDATION.login),
   AUTH_CONTROLLER.login
+)
+
+router.get('/google', authRateLimiter, AUTH_CONTROLLER.redirectToGoogle)
+router.get(
+  '/google/callback',
+  authRateLimiter,
+  validationHandlingMiddleware(AUTH_VALIDATION.googleCallback),
+  AUTH_CONTROLLER.googleCallback
 )
 
 /**

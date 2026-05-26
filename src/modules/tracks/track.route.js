@@ -2,8 +2,9 @@ import { Router } from 'express'
 
 import { TRACK_CONTROLLER } from './track.controller.js'
 import { TRACK_VALIDATION } from './track.validation.js'
+import { PERMISSIONS } from '#constants/permissions.js'
 import { authorizationMiddleware } from '#middlewares/authHandlingMiddleware.js'
-import { requireRoles } from '#middlewares/policiesHandlingMiddleware.js'
+import { permissionMiddleware } from '#middlewares/permission.middleware.js'
 import { validationHandlingMiddleware } from '#middlewares/validationHandlingMiddleware.js'
 
 const router = Router()
@@ -122,6 +123,7 @@ router.use(authorizationMiddleware)
  */
 router.get(
   '/',
+  permissionMiddleware(PERMISSIONS.TRACK_VIEW),
   validationHandlingMiddleware(TRACK_VALIDATION.listTracks),
   TRACK_CONTROLLER.listTracks
 )
@@ -144,13 +146,13 @@ router.get(
  *       201:
  *         description: Track created successfully
  *       403:
- *         description: Requires ADMIN or COORDINATOR role
+ *         description: Requires TRACK_CREATE permission
  *       409:
  *         description: Track name already exists in this event
  */
 router.post(
   '/',
-  requireRoles('ADMIN', 'COORDINATOR'),
+  permissionMiddleware(PERMISSIONS.TRACK_CREATE),
   validationHandlingMiddleware(TRACK_VALIDATION.createTrack),
   TRACK_CONTROLLER.createTrack
 )
@@ -178,6 +180,7 @@ router.post(
  */
 router.get(
   '/:id',
+  permissionMiddleware(PERMISSIONS.TRACK_VIEW),
   validationHandlingMiddleware(TRACK_VALIDATION.getTrackById),
   TRACK_CONTROLLER.getTrackById
 )
@@ -207,11 +210,11 @@ router.get(
  *       200:
  *         description: Track updated successfully
  *       403:
- *         description: Requires ADMIN or COORDINATOR role
+ *         description: Requires TRACK_UPDATE permission
  */
 router.patch(
   '/:id',
-  requireRoles('ADMIN', 'COORDINATOR'),
+  permissionMiddleware(PERMISSIONS.TRACK_UPDATE),
   validationHandlingMiddleware(TRACK_VALIDATION.updateTrack),
   TRACK_CONTROLLER.updateTrack
 )
@@ -235,11 +238,11 @@ router.patch(
  *       200:
  *         description: Track deleted successfully
  *       403:
- *         description: Requires ADMIN or COORDINATOR role
+ *         description: Requires TRACK_DELETE permission
  */
 router.delete(
   '/:id',
-  requireRoles('ADMIN', 'COORDINATOR'),
+  permissionMiddleware(PERMISSIONS.TRACK_DELETE),
   validationHandlingMiddleware(TRACK_VALIDATION.getTrackById),
   TRACK_CONTROLLER.deleteTrack
 )
