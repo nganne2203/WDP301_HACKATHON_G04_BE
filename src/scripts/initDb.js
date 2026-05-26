@@ -405,6 +405,7 @@ const seedSampleData = async () => {
   ])
 
   const repositoryByTeamId = new Map()
+  const aiReviewByTeamId = new Map()
 
   for (const record of teamRecords) {
     const round = record.track._id.equals(trackA._id) ? preliminaryRoundA : preliminaryRoundB
@@ -469,6 +470,41 @@ const seedSampleData = async () => {
       status: 'ACCEPTED'
     })
 
+    const aiReview = await upsertOne(AiReview, { repositoryId: repository._id, commitId: commit._id }, {
+      repositoryId: repository._id,
+      commitId: commit._id,
+      commitDiffId: commitDiff._id,
+      provider: 'SampleAI',
+      model: 'fall-2025-evaluator',
+      status: 'COMPLETED',
+      summary: 'Seeded AI review result for hackathon repository.',
+      score: record.preliminaryScore,
+      requestedBy: coordinatorUser._id,
+      requestedAt: buildDate('2025-11-02T14:30:00+07:00'),
+      completedAt: buildDate('2025-11-02T14:35:00+07:00')
+    })
+    aiReviewByTeamId.set(record.team._id.toString(), aiReview)
+
+    const preliminaryAiCriteria = await Promise.all(preliminaryCriteria.map((criterion, order) => {
+      const aiSuggestedScore = Math.min(criterion.maxScore, Math.round(record.preliminaryScore * (criterion.maxScore / preliminaryRubric.totalScore)))
+
+      return upsertOne(AiReviewCriterion, { aiReviewId: aiReview._id, code: `PRELIMINARY_${order + 1}` }, {
+        aiReviewId: aiReview._id,
+        criterionId: criterion._id,
+        code: `PRELIMINARY_${order + 1}`,
+        name: criterion.name,
+        description: criterion.description,
+        maxScore: criterion.maxScore,
+        score: aiSuggestedScore,
+        weight: criterion.weight,
+        feedback: 'Seeded AI criterion feedback aligned with the preliminary rubric.',
+        suggestions: ['Judges should review AI suggestions before submitting final scores.'],
+        evidence: [`Commit diff cache ${commitDiff.diffHash}`],
+        order: order + 1
+      })
+    }))
+    const preliminaryAiCriterionByCriterionId = new Map(preliminaryAiCriteria.map((aiCriterion) => [aiCriterion.criterionId.toString(), aiCriterion]))
+
     const preliminaryScoreSheet = await upsertOne(ScoreSheet, { roundId: round._id, teamId: record.team._id, judgeId }, {
       eventId: event._id,
       roundId: round._id,
@@ -486,12 +522,20 @@ const seedSampleData = async () => {
     })
 
     const preliminaryScoreLines = await Promise.all(preliminaryCriteria.map((criterion) => {
+      const scoreValue = Math.min(criterion.maxScore, Math.round(record.preliminaryScore * (criterion.maxScore / preliminaryRubric.totalScore)))
+      const aiReviewCriterion = preliminaryAiCriterionByCriterionId.get(criterion._id.toString())
+      const isOverridden = Boolean(aiReviewCriterion && aiReviewCriterion.score !== scoreValue)
+
       return upsertOne(Score, { submissionId: preliminarySubmission._id, judgeId, criterionId: criterion._id }, {
         submissionId: preliminarySubmission._id,
         scoreSheetId: preliminaryScoreSheet._id,
         judgeId,
         criterionId: criterion._id,
-        scoreValue: Math.min(criterion.maxScore, Math.round(record.preliminaryScore * (criterion.maxScore / preliminaryRubric.totalScore))),
+        aiReviewCriterionId: aiReviewCriterion?._id,
+        aiSuggestedScore: aiReviewCriterion?.score,
+        scoreValue,
+        isOverridden,
+        overrideReason: isOverridden ? 'Judge adjusted the AI-suggested score after review.' : null,
         comment: 'Seeded preliminary criterion score'
       })
     }))
@@ -508,44 +552,11 @@ const seedSampleData = async () => {
       teamId: record.team._id,
       score: record.preliminaryScore,
       rank: record.preliminaryRank,
+      isSelectedForFinal: record.isFinalist,
+      selectionReason: record.isFinalist ? 'Top 5 teams in the preliminary track advanced to the final round.' : 'Not selected because the team ranked outside the available final slots.',
       note: record.isFinalist ? 'Advanced to final round' : 'Eliminated after preliminary round',
       publishedAt: buildDate('2025-11-02T17:00:00+07:00')
     })
-
-    const aiReview = await upsertOne(AiReview, { repositoryId: repository._id, commitId: commit._id }, {
-      repositoryId: repository._id,
-      commitId: commit._id,
-      commitDiffId: commitDiff._id,
-      provider: 'SampleAI',
-      model: 'fall-2025-evaluator',
-      status: 'COMPLETED',
-      summary: 'Seeded AI review result for hackathon repository.',
-      score: record.preliminaryScore,
-      requestedBy: coordinatorUser._id,
-      requestedAt: buildDate('2025-11-02T14:30:00+07:00'),
-      completedAt: buildDate('2025-11-02T14:35:00+07:00')
-    })
-
-    await Promise.all([
-      ['CODE_QUALITY', 'Code quality', 'Structure, readability, and maintainability', 30],
-      ['ARCHITECTURE', 'Architecture', 'Design clarity and module boundaries', 25],
-      ['TESTING', 'Testing', 'Test coverage and validation evidence', 20],
-      ['AI_USAGE', 'AI usage', 'Appropriateness of AI-assisted features', 25]
-    ].map(([code, name, description, maxScore], order) => {
-      return upsertOne(AiReviewCriterion, { aiReviewId: aiReview._id, code }, {
-        aiReviewId: aiReview._id,
-        code,
-        name,
-        description,
-        maxScore,
-        score: Math.min(maxScore, Math.round(record.preliminaryScore * (maxScore / 100))),
-        weight: 1,
-        feedback: 'Seeded AI criterion feedback.',
-        suggestions: ['Review generated recommendations before applying them.'],
-        evidence: [`Commit diff cache ${commitDiff.diffHash}`],
-        order: order + 1
-      })
-    }))
   }
 
   const finalScores = [95, 91, 88, 84, 82, 82, 78, 76, 74, 72]
@@ -566,6 +577,27 @@ const seedSampleData = async () => {
       status: 'ACCEPTED'
     })
 
+    const aiReview = aiReviewByTeamId.get(record.team._id.toString())
+    const finalAiCriteria = await Promise.all(finalCriteria.map((criterion, order) => {
+      const aiSuggestedScore = Math.min(criterion.maxScore, Math.round(finalScores[index] * (criterion.maxScore / finalRubric.totalScore)))
+
+      return upsertOne(AiReviewCriterion, { aiReviewId: aiReview._id, code: `FINAL_${order + 1}` }, {
+        aiReviewId: aiReview._id,
+        criterionId: criterion._id,
+        code: `FINAL_${order + 1}`,
+        name: criterion.name,
+        description: criterion.description,
+        maxScore: criterion.maxScore,
+        score: aiSuggestedScore,
+        weight: criterion.weight,
+        feedback: 'Seeded AI criterion feedback aligned with the final rubric.',
+        suggestions: ['Judges should review AI suggestions before submitting final scores.'],
+        evidence: [`Repository ${repository.repoName}`],
+        order: preliminaryCriteria.length + order + 1
+      })
+    }))
+    const finalAiCriterionByCriterionId = new Map(finalAiCriteria.map((aiCriterion) => [aiCriterion.criterionId.toString(), aiCriterion]))
+
     for (const judge of [judgeUserA, judgeUserB]) {
       const finalScoreSheet = await upsertOne(ScoreSheet, { roundId: finalRound._id, teamId: record.team._id, judgeId: judge._id }, {
         eventId: event._id,
@@ -584,12 +616,20 @@ const seedSampleData = async () => {
       })
 
       const finalScoreLines = await Promise.all(finalCriteria.map((criterion) => {
+        const scoreValue = Math.min(criterion.maxScore, Math.round(finalScores[index] * (criterion.maxScore / finalRubric.totalScore)))
+        const aiReviewCriterion = finalAiCriterionByCriterionId.get(criterion._id.toString())
+        const isOverridden = Boolean(aiReviewCriterion && aiReviewCriterion.score !== scoreValue)
+
         return upsertOne(Score, { submissionId: finalSubmission._id, judgeId: judge._id, criterionId: criterion._id }, {
           submissionId: finalSubmission._id,
           scoreSheetId: finalScoreSheet._id,
           judgeId: judge._id,
           criterionId: criterion._id,
-          scoreValue: Math.min(criterion.maxScore, Math.round(finalScores[index] * (criterion.maxScore / finalRubric.totalScore))),
+          aiReviewCriterionId: aiReviewCriterion?._id,
+          aiSuggestedScore: aiReviewCriterion?.score,
+          scoreValue,
+          isOverridden,
+          overrideReason: isOverridden ? 'Judge adjusted the AI-suggested score after review.' : null,
           comment: 'Seeded final criterion score'
         })
       }))
@@ -610,6 +650,8 @@ const seedSampleData = async () => {
       miniTestScore: finalTieBreakScores[index],
       rankSortScore: finalScores[index] + (finalTieBreakScores[index] / 100),
       rank: index + 1,
+      isSelectedForFinal: true,
+      selectionReason: 'Team competed in the final round after preliminary selection.',
       note: index === 4 || index === 5 ? 'Final tie resolved by 10-minute mini test.' : (index < 6 ? 'Prize-winning finalist' : 'Finalist'),
       publishedAt: buildDate('2025-11-02T20:30:00+07:00')
     })
