@@ -16,7 +16,8 @@ const aiReviewCriterionSchema = new Schema(
     weaknesses: [{ type: String }],
     suggestions: [{ type: String }],
     evidence: [{ type: String }],
-    order: { type: Number, default: 0 }
+    order: { type: Number, default: 0 },
+    criterionId: { type: Schema.Types.ObjectId, ref: 'Criterion', required: true }
   },
   { timestamps: true }
 )
