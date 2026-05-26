@@ -9,7 +9,8 @@ const buildTokenPayload = (user) => {
   return {
     id: user._id.toString(),
     email: user.email,
-    roles: USER_SERVICE.getRoleNames(user)
+    roles: USER_SERVICE.getRoleNames(user),
+    permissions: USER_SERVICE.getPermissionCodes(user)
   }
 }
 

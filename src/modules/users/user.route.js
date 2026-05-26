@@ -2,9 +2,10 @@ import { Router } from 'express'
 
 import { USER_CONTROLLER } from './user.controller.js'
 import { USER_VALIDATION } from './user.validation.js'
+import { PERMISSIONS } from '#constants/permissions.js'
 import { authorizationMiddleware } from '#middlewares/authHandlingMiddleware.js'
 import { validationHandlingMiddleware } from '#middlewares/validationHandlingMiddleware.js'
-import { requireRoles } from '#middlewares/policiesHandlingMiddleware.js'
+import { permissionMiddleware } from '#middlewares/permission.middleware.js'
 
 const router = Router()
 
@@ -91,7 +92,7 @@ const router = Router()
  *           uniqueItems: true
  *           items:
  *             type: string
- *             enum: [ADMIN, COORDINATOR, JUDGE, MENTOR, USER]
+ *             enum: [ADMIN, EVENT_COORDINATOR, COORDINATOR, JUDGE, MENTOR, USER, PARTICIPANT]
  *           example: [JUDGE]
  *         status:
  *           type: string
@@ -128,7 +129,7 @@ const router = Router()
  *           uniqueItems: true
  *           items:
  *             type: string
- *             enum: [ADMIN, COORDINATOR, JUDGE, MENTOR, USER]
+ *             enum: [ADMIN, EVENT_COORDINATOR, COORDINATOR, JUDGE, MENTOR, USER, PARTICIPANT]
  *           example: [USER, JUDGE]
  */
 
@@ -181,7 +182,7 @@ router.use(authorizationMiddleware)
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  *       403:
- *         description: Requires ADMIN or COORDINATOR role
+ *         description: Requires USER_VIEW permission
  *         content:
  *           application/json:
  *             schema:
@@ -189,7 +190,7 @@ router.use(authorizationMiddleware)
  */
 router.get(
   '/',
-  requireRoles('ADMIN', 'COORDINATOR'),
+  permissionMiddleware(PERMISSIONS.USER_VIEW),
   validationHandlingMiddleware(USER_VALIDATION.listUsers),
   USER_CONTROLLER.listUsers
 )
@@ -222,7 +223,7 @@ router.get(
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  *       403:
- *         description: Requires ADMIN or COORDINATOR role
+ *         description: Requires USER_CREATE permission
  *         content:
  *           application/json:
  *             schema:
@@ -236,7 +237,7 @@ router.get(
  */
 router.post(
   '/',
-  requireRoles('ADMIN', 'COORDINATOR'),
+  permissionMiddleware(PERMISSIONS.USER_CREATE),
   validationHandlingMiddleware(USER_VALIDATION.createUser),
   USER_CONTROLLER.createUser
 )
@@ -311,7 +312,7 @@ router.patch(
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  *       403:
- *         description: Requires ADMIN or COORDINATOR role
+ *         description: Requires USER_VIEW permission
  *         content:
  *           application/json:
  *             schema:
@@ -325,7 +326,7 @@ router.patch(
  */
 router.get(
   '/:id',
-  requireRoles('ADMIN', 'COORDINATOR'),
+  permissionMiddleware(PERMISSIONS.USER_VIEW),
   validationHandlingMiddleware(USER_VALIDATION.getUserById),
   USER_CONTROLLER.getUserById
 )
@@ -365,7 +366,7 @@ router.get(
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  *       403:
- *         description: Requires ADMIN or COORDINATOR role
+ *         description: Requires USER_UPDATE permission
  *         content:
  *           application/json:
  *             schema:
@@ -373,7 +374,7 @@ router.get(
  */
 router.patch(
   '/:id/status',
-  requireRoles('ADMIN', 'COORDINATOR'),
+  permissionMiddleware(PERMISSIONS.USER_UPDATE),
   validationHandlingMiddleware(USER_VALIDATION.updateStatus),
   USER_CONTROLLER.updateStatus
 )
@@ -401,7 +402,7 @@ router.patch(
  *             schema:
  *               $ref: '#/components/schemas/UserSuccessResponse'
  *       403:
- *         description: Requires ADMIN or COORDINATOR role
+ *         description: Requires PARTICIPANT_APPROVE permission
  *         content:
  *           application/json:
  *             schema:
@@ -409,7 +410,7 @@ router.patch(
  */
 router.patch(
   '/:id/approve',
-  requireRoles('ADMIN', 'COORDINATOR'),
+  permissionMiddleware(PERMISSIONS.PARTICIPANT_APPROVE),
   validationHandlingMiddleware(USER_VALIDATION.getUserById),
   USER_CONTROLLER.approveUser
 )
@@ -437,7 +438,7 @@ router.patch(
  *             schema:
  *               $ref: '#/components/schemas/UserSuccessResponse'
  *       403:
- *         description: Requires ADMIN or COORDINATOR role
+ *         description: Requires USER_UPDATE permission
  *         content:
  *           application/json:
  *             schema:
@@ -445,7 +446,7 @@ router.patch(
  */
 router.patch(
   '/:id/reject',
-  requireRoles('ADMIN', 'COORDINATOR'),
+  permissionMiddleware(PERMISSIONS.USER_UPDATE),
   validationHandlingMiddleware(USER_VALIDATION.getUserById),
   USER_CONTROLLER.rejectUser
 )
@@ -473,7 +474,7 @@ router.patch(
  *             schema:
  *               $ref: '#/components/schemas/UserSuccessResponse'
  *       403:
- *         description: Requires ADMIN or COORDINATOR role
+ *         description: Requires USER_UPDATE permission
  *         content:
  *           application/json:
  *             schema:
@@ -481,7 +482,7 @@ router.patch(
  */
 router.patch(
   '/:id/suspend',
-  requireRoles('ADMIN', 'COORDINATOR'),
+  permissionMiddleware(PERMISSIONS.USER_UPDATE),
   validationHandlingMiddleware(USER_VALIDATION.getUserById),
   USER_CONTROLLER.suspendUser
 )
@@ -521,7 +522,7 @@ router.patch(
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  *       403:
- *         description: Requires ADMIN role
+ *         description: Requires USER_ROLE_ASSIGN permission
  *         content:
  *           application/json:
  *             schema:
@@ -529,7 +530,7 @@ router.patch(
  */
 router.patch(
   '/:id/roles',
-  requireRoles('ADMIN'),
+  permissionMiddleware(PERMISSIONS.USER_ROLE_ASSIGN),
   validationHandlingMiddleware(USER_VALIDATION.assignRoles),
   USER_CONTROLLER.assignRoles
 )

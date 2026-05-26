@@ -87,6 +87,11 @@ const router = Router()
  *           type: array
  *           items:
  *             $ref: '#/components/schemas/Role'
+ *         permissions:
+ *           type: array
+ *           items:
+ *             type: string
+ *           example: [EVENT_VIEW, WORKSHOP_VIEW, TEAM_VIEW]
  *         avatarUrl:
  *           type: string
  *           nullable: true

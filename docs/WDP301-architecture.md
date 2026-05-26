@@ -12,7 +12,8 @@ The backend is built with:
 - MongoDB
 - Mongoose
 - JWT Authentication
-- RBAC Authorization
+- Permission-based Authorization
+- RBAC Role-Permission Grouping
 - GitHub API Integration
 - Webhook Processing
 - Third-party AI API Integration as a supporting evaluation feature
@@ -49,6 +50,8 @@ Route → Controller → Service → Repository → Model → Database
 | Model | Define MongoDB schema |
 | Middleware | Handle authentication, authorization, validation, and errors |
 
+Authorization is permission-based. Roles are stored in MongoDB only as groups of permissions. Routes use `permissionMiddleware(PERMISSIONS.X)` and do not check role names directly.
+
 ---
 
 ## 3. Recommended Folder Structure
@@ -64,7 +67,6 @@ seal-be/
 │   │   └── aiProvider.js
 │   │
 │   ├── constants/
-│   │   ├── roles.js
 │   │   ├── permissions.js
 │   │   ├── status.js
 │   │   ├── eventTypes.js
@@ -335,11 +337,21 @@ const create = async (data) => {
 };
 
 const findById = async (id) => {
-  return User.findById(id).populate("roles");
+  return User.findById(id).populate({
+    path: "roles",
+    populate: {
+      path: "permissions",
+    },
+  });
 };
 
 const findByEmail = async (email) => {
-  return User.findOne({ email }).populate("roles");
+  return User.findOne({ email }).populate({
+    path: "roles",
+    populate: {
+      path: "permissions",
+    },
+  });
 };
 
 const updateById = async (id, data) => {
@@ -437,24 +449,63 @@ const express = require("express");
 const userController = require("./user.controller");
 const authMiddleware = require("../../middlewares/auth.middleware");
 const permissionMiddleware = require("../../middlewares/permission.middleware");
+const { PERMISSIONS } = require("../../constants/permissions");
 
 const router = express.Router();
 
 router.get(
   "/:id",
   authMiddleware,
-  permissionMiddleware("USER_VIEW"),
+  permissionMiddleware(PERMISSIONS.USER_VIEW),
   userController.getUserById
 );
 
 router.patch(
   "/:id/approve",
   authMiddleware,
-  permissionMiddleware("USER_APPROVE"),
+  permissionMiddleware(PERMISSIONS.PARTICIPANT_APPROVE),
   userController.approveUser
 );
 
 module.exports = router;
+```
+
+---
+
+## 9.1 Authorization Flow
+
+Authenticated requests use this authorization flow:
+
+1. `authorizationMiddleware` verifies the JWT.
+2. The middleware loads the user from MongoDB with populated `roles.permissions`.
+3. `USER_SERVICE.getPermissionCodes(user)` merges and deduplicates permission codes from every assigned role.
+4. The middleware stores `req.user = { id, email, roles, role, permissions }`.
+5. Routes call `permissionMiddleware(PERMISSIONS.PERMISSION_CODE)`.
+6. Controllers and services handle business rules such as ownership, event state, or submission state. They should not check role names for access control.
+
+Current route examples:
+
+```js
+router.get(
+  "/",
+  authorizationMiddleware,
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  eventController.listEvents
+);
+
+router.post(
+  "/",
+  authorizationMiddleware,
+  permissionMiddleware(PERMISSIONS.EVENT_CREATE),
+  eventController.createEvent
+);
+
+router.patch(
+  "/:id/roles",
+  authorizationMiddleware,
+  permissionMiddleware(PERMISSIONS.USER_ROLE_ASSIGN),
+  userController.assignRoles
+);
 ```
 
 ---
@@ -523,6 +574,7 @@ Handles:
 - current user profile
 - password hashing
 - JWT generation
+- resolved permission codes in the access token and authenticated user context
 
 ---
 
@@ -534,6 +586,7 @@ Handles:
 - user approval
 - user status
 - user role assignment
+- normalized user responses with merged permission codes
 
 ---
 
@@ -543,7 +596,10 @@ Handles:
 
 - roles
 - permissions
-- RBAC management
+- RBAC role-permission grouping
+- permission catalog management
+
+Roles are administrative containers. Runtime authorization is performed with permission codes through middleware.
 
 ---
 
@@ -737,6 +793,9 @@ SystemConfig
 
 For SEAL Hackathon Fall 2025, the database models represent the official competition rules as follows:
 
+- `Permission` stores the authorization actions used by routes, such as `EVENT_CREATE`, `TRACK_VIEW`, `USER_ROLE_ASSIGN`, `SCORE_CREATE`, and `RESULT_PUBLISH`.
+- `Role` stores permission groups only. Seeded roles include `ADMIN`, `EVENT_COORDINATOR`, `COORDINATOR`, `JUDGE`, `MENTOR`, `USER`, and `PARTICIPANT`.
+- `User.roles` stores assigned role references. Services resolve and deduplicate permissions from all assigned roles before JWT generation and request authorization.
 - `Event` stores the hackathon season, year, theme, registration window, event schedule, team size rule, and finalist slot rule.
 - `Track` represents the preliminary competition groups. Fall 2025 has:
   - `Bảng A`: AI cho Thu thập Yêu cầu & Thiết kế.

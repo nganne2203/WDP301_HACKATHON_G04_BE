@@ -3,13 +3,14 @@ import mongoose from 'mongoose'
 import { USER_REPOSITORY } from './user.repository.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
+import { PERMISSIONS } from '#constants/permissions.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
 
 const PROFILE_FIELDS = ['fullName', 'avatarUrl', 'phone', 'bio']
 const ALLOWED_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED']
-const PARTICIPANT_ROLE = 'USER'
+const PARTICIPANT_ROLES = ['USER', 'PARTICIPANT']
 
 const buildUserFilter = (query = {}) => {
   const filter = {}
@@ -58,6 +59,7 @@ const normalizeUser = (user) => {
       })
     }
   })
+  const permissions = getPermissionCodes({ roles })
 
   return {
     id: plainUser._id?.toString() || plainUser.id,
@@ -66,6 +68,7 @@ const normalizeUser = (user) => {
     fullName: plainUser.fullName,
     status: plainUser.status,
     roles,
+    permissions,
     avatarUrl: plainUser.avatarUrl,
     phone: plainUser.phone,
     bio: plainUser.bio,
@@ -81,6 +84,20 @@ const getRoleNames = (user) => {
   return (user?.roles || [])
     .map(role => role.name || role)
     .filter(Boolean)
+}
+
+const getPermissionCodes = (user) => {
+  const directPermissions = user?.permissions || []
+  const rolePermissions = (user?.roles || []).flatMap(role => role.permissions || [])
+
+  const permissionCodes = [...directPermissions, ...rolePermissions]
+    .map(permission => {
+      if (typeof permission === 'string') return permission
+      return permission.code
+    })
+    .filter(Boolean)
+
+  return [...new Set(permissionCodes)]
 }
 
 const ensureObjectId = (id) => {
@@ -145,8 +162,13 @@ const ensureParticipantStudentInfo = (payload = {}) => {
 }
 
 const ensureCanCreateRoles = (actor = {}, roleNames = []) => {
-  if (!actor.roles?.includes('ADMIN') && roleNames.includes('ADMIN')) {
-    throw new ApiError(ERROR_CODES.FORBIDDEN, ['Coordinator cannot create admin users'])
+  if (!roleNames.includes('ADMIN')) {
+    return
+  }
+
+  const actorPermissions = actor.permissions || []
+  if (!actorPermissions.includes(PERMISSIONS.USER_ROLE_ASSIGN)) {
+    throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only users with role assignment permission can create admin users'])
   }
 }
 
@@ -168,7 +190,7 @@ const createUser = async (payload = {}, actor = {}) => {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more roles do not exist'])
   }
 
-  if (roleNames.includes(PARTICIPANT_ROLE)) {
+  if (roleNames.some(roleName => PARTICIPANT_ROLES.includes(roleName))) {
     ensureParticipantStudentInfo(payload)
   }
 
@@ -253,5 +275,6 @@ export const USER_SERVICE = {
   suspendUser,
   assignRoles,
   normalizeUser,
-  getRoleNames
+  getRoleNames,
+  getPermissionCodes
 }

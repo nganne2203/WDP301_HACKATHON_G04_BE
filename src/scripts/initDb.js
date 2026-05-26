@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import { env } from '#configs/environment.js'
+import { ALL_PERMISSIONS, ROLE_PERMISSION_MAP } from '#constants/permissions.js'
 import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
 
 import User from '#models/user.model.js'
@@ -87,6 +88,13 @@ const upsertOne = async (Model, filter, data) => {
 
 const buildDate = (value) => new Date(value)
 
+const buildPermissionDescription = (code) => {
+  return code
+    .toLowerCase()
+    .replaceAll('_', ' ')
+    .replace(/^\w/, (char) => char.toUpperCase())
+}
+
 const seedBaseUser = async ({ email, fullName, roleId, passwordHash, extra = {} }) => {
   return await upsertOne(User, { email }, {
     email,
@@ -100,11 +108,24 @@ const seedBaseUser = async ({ email, fullName, roleId, passwordHash, extra = {} 
 }
 
 const seedSampleData = async () => {
-  const adminRole = await upsertOne(Role, { name: 'ADMIN' }, { name: 'ADMIN', description: 'System administrator' })
-  const coordinatorRole = await upsertOne(Role, { name: 'COORDINATOR' }, { name: 'COORDINATOR', description: 'Event coordinator' })
-  const judgeRole = await upsertOne(Role, { name: 'JUDGE' }, { name: 'JUDGE', description: 'Judge role' })
-  const mentorRole = await upsertOne(Role, { name: 'MENTOR' }, { name: 'MENTOR', description: 'Mentor role' })
-  const userRole = await upsertOne(Role, { name: 'USER' }, { name: 'USER', description: 'Basic authenticated user' })
+  const permissionRecords = await Promise.all(ALL_PERMISSIONS.map((code) => {
+    return upsertOne(Permission, { code }, {
+      code,
+      description: buildPermissionDescription(code)
+    })
+  }))
+  const permissionByCode = new Map(permissionRecords.map((permission) => [permission.code, permission]))
+  const getRolePermissionIds = (roleName) => {
+    return (ROLE_PERMISSION_MAP[roleName] || []).map((code) => permissionByCode.get(code)._id)
+  }
+
+  const adminRole = await upsertOne(Role, { name: 'ADMIN' }, { name: 'ADMIN', description: 'System administrator', permissions: getRolePermissionIds('ADMIN') })
+  const coordinatorRole = await upsertOne(Role, { name: 'COORDINATOR' }, { name: 'COORDINATOR', description: 'Event coordinator', permissions: getRolePermissionIds('COORDINATOR') })
+  await upsertOne(Role, { name: 'EVENT_COORDINATOR' }, { name: 'EVENT_COORDINATOR', description: 'Event coordinator', permissions: getRolePermissionIds('EVENT_COORDINATOR') })
+  const judgeRole = await upsertOne(Role, { name: 'JUDGE' }, { name: 'JUDGE', description: 'Judge role', permissions: getRolePermissionIds('JUDGE') })
+  const mentorRole = await upsertOne(Role, { name: 'MENTOR' }, { name: 'MENTOR', description: 'Mentor role', permissions: getRolePermissionIds('MENTOR') })
+  const userRole = await upsertOne(Role, { name: 'USER' }, { name: 'USER', description: 'Basic authenticated user', permissions: getRolePermissionIds('USER') })
+  await upsertOne(Role, { name: 'PARTICIPANT' }, { name: 'PARTICIPANT', description: 'Hackathon participant', permissions: getRolePermissionIds('PARTICIPANT') })
 
   const seededPasswordHash = await BCRYPT_UTILS.hashPassword('Password123!')
   const adminUser = await seedBaseUser({ email: 'admin@seal.local', fullName: 'Admin User', roleId: adminRole._id, passwordHash: seededPasswordHash })
