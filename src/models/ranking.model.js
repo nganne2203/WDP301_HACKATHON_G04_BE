@@ -27,6 +27,8 @@ const rankingSchema = new Schema(
     miniTestScore: { type: Number, default: 0 },
     rankSortScore: { type: Number },
     rank: { type: Number, required: true },
+    isSelectedForFinal: { type: Boolean, default: false },
+    selectionReason: { type: String },
     note: { type: String },
     publishedAt: { type: Date }
   },
@@ -38,6 +40,7 @@ rankingSchema.index({ eventId: 1, rankingType: 1, teamId: 1 })
 rankingSchema.index({ eventId: 1, rankingType: 1, participantId: 1 })
 rankingSchema.index({ eventId: 1, rankingType: 1, chapterName: 1 })
 rankingSchema.index({ eventId: 1, rankingType: 1, roundId: 1, trackId: 1, rank: 1 }, { unique: true })
+rankingSchema.index({ eventId: 1, roundId: 1, isSelectedForFinal: 1 })
 rankingSchema.index({ rank: 1 })
 
 rankingSchema.pre('validate', function validateRankingTarget(next) {
