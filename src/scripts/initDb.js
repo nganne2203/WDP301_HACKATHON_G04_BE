@@ -97,8 +97,141 @@ const buildPermissionDescription = (code) => {
     .replace(/^\w/, (char) => char.toUpperCase())
 }
 
-const seedBaseUser = async ({ email, fullName, roleId, passwordHash, extra = {} }) => {
-  return await upsertOne(User, { email }, {
+const ROLE_SEEDS = [
+  ['ADMIN', 'System administrator'],
+  ['COORDINATOR', 'Event coordinator'],
+  ['EVENT_COORDINATOR', 'Event coordinator'],
+  ['JUDGE', 'Judge role'],
+  ['MENTOR', 'Mentor role'],
+  ['SPEAKER', 'Workshop speaker role'],
+  ['USER', 'Basic authenticated user'],
+  ['PARTICIPANT', 'Hackathon participant']
+]
+
+const LEGACY_ROLE_NAME_MAP = {
+  ADMIN: 'ADMIN',
+  COORDINATOR: 'COORDINATOR',
+  EVENT_COORDINATOR: 'EVENT_COORDINATOR',
+  JUDGE: 'JUDGE',
+  MENTOR: 'MENTOR',
+  SPEAKER: 'SPEAKER',
+  USER: 'USER',
+  PARTICIPANT: 'PARTICIPANT',
+  TEAM_LEADER: 'PARTICIPANT'
+}
+
+const SEED_EMAIL_DOMAIN = 'seal-hackathon.example.com'
+
+const buildSeedEmail = (localPart) => `${localPart}@${SEED_EMAIL_DOMAIN}`
+
+const getLegacyRoleName = (value) => {
+  if (!value) return null
+  if (typeof value === 'object' && value.name) {
+    return getLegacyRoleName(value.name)
+  }
+
+  const normalizedRole = String(value).trim().toUpperCase()
+  return LEGACY_ROLE_NAME_MAP[normalizedRole] || null
+}
+
+const seedPermissions = async () => {
+  const permissionRecords = await Promise.all(ALL_PERMISSIONS.map((code) => {
+    return upsertOne(Permission, { code }, {
+      code,
+      description: buildPermissionDescription(code)
+    })
+  }))
+
+  return new Map(permissionRecords.map((permission) => [permission.code, permission]))
+}
+
+const seedRoles = async (permissionByCode) => {
+  const roleRecords = await Promise.all(ROLE_SEEDS.map(([name, description]) => {
+    const permissionIds = (ROLE_PERMISSION_MAP[name] || []).map((code) => {
+      const permission = permissionByCode.get(code)
+      if (!permission) {
+        throw new Error(`Missing permission seed for ${code}`)
+      }
+      return permission._id
+    })
+
+    return upsertOne(Role, { name }, {
+      name,
+      description,
+      permissions: permissionIds
+    })
+  }))
+
+  return new Map(roleRecords.map((role) => [role.name, role]))
+}
+
+const normalizeLegacyRoleIds = (user, roleByName) => {
+  const roleIds = []
+  const seenRoleIds = new Set()
+  const rawRoles = Array.isArray(user.roles) ? user.roles : []
+  const roleValues = [user.role, ...rawRoles]
+
+  for (const roleValue of roleValues) {
+    if (!roleValue) continue
+
+    let roleId = null
+    if (roleValue instanceof mongoose.Types.ObjectId) {
+      roleId = roleValue
+    } else if (typeof roleValue === 'object' && roleValue._id) {
+      roleId = roleValue._id
+    } else if (typeof roleValue === 'string' && mongoose.Types.ObjectId.isValid(roleValue)) {
+      roleId = new mongoose.Types.ObjectId(roleValue)
+    } else {
+      const roleName = getLegacyRoleName(roleValue)
+      roleId = roleName ? roleByName.get(roleName)?._id : null
+    }
+
+    if (!roleId) continue
+    const roleIdValue = roleId.toString()
+    if (seenRoleIds.has(roleIdValue)) continue
+    seenRoleIds.add(roleIdValue)
+    roleIds.push(roleId)
+  }
+
+  return roleIds
+}
+
+const repairLegacyUserRoles = async (roleByName) => {
+  const users = await User.collection.find({}, { projection: { _id: 1, role: 1, roles: 1 } }).toArray()
+  const operations = users
+    .map((user) => {
+      const roleIds = normalizeLegacyRoleIds(user, roleByName)
+      if (roleIds.length === 0) return null
+
+      const currentRoleIds = (Array.isArray(user.roles) ? user.roles : []).map(role => role?.toString()).filter(Boolean)
+      const nextRoleIds = roleIds.map(role => role.toString())
+      const hasSameRoles = currentRoleIds.length === nextRoleIds.length &&
+        currentRoleIds.every((roleId, index) => roleId === nextRoleIds[index])
+      const hasLegacyRoleField = Object.prototype.hasOwnProperty.call(user, 'role')
+
+      if (hasSameRoles && !hasLegacyRoleField) return null
+
+      return {
+        updateOne: {
+          filter: { _id: user._id },
+          update: {
+            $set: { roles: roleIds },
+            $unset: { role: '' }
+          }
+        }
+      }
+    })
+    .filter(Boolean)
+
+  if (operations.length > 0) {
+    await User.collection.bulkWrite(operations)
+  }
+}
+
+const seedBaseUser = async ({ email, legacyEmail, fullName, roleId, passwordHash, extra = {} }) => {
+  const filter = legacyEmail ? { $or: [{ email }, { email: legacyEmail }] } : { email }
+
+  return await upsertOne(User, filter, {
     email,
     authProvider: 'LOCAL',
     passwordHash,
@@ -110,32 +243,22 @@ const seedBaseUser = async ({ email, fullName, roleId, passwordHash, extra = {} 
 }
 
 const seedSampleData = async () => {
-  const permissionRecords = await Promise.all(ALL_PERMISSIONS.map((code) => {
-    return upsertOne(Permission, { code }, {
-      code,
-      description: buildPermissionDescription(code)
-    })
-  }))
-  const permissionByCode = new Map(permissionRecords.map((permission) => [permission.code, permission]))
-  const getRolePermissionIds = (roleName) => {
-    return (ROLE_PERMISSION_MAP[roleName] || []).map((code) => permissionByCode.get(code)._id)
-  }
+  const permissionByCode = await seedPermissions()
+  const roleByName = await seedRoles(permissionByCode)
+  await repairLegacyUserRoles(roleByName)
 
-  const adminRole = await upsertOne(Role, { name: 'ADMIN' }, { name: 'ADMIN', description: 'System administrator', permissions: getRolePermissionIds('ADMIN') })
-  const coordinatorRole = await upsertOne(Role, { name: 'COORDINATOR' }, { name: 'COORDINATOR', description: 'Event coordinator', permissions: getRolePermissionIds('COORDINATOR') })
-  await upsertOne(Role, { name: 'EVENT_COORDINATOR' }, { name: 'EVENT_COORDINATOR', description: 'Event coordinator', permissions: getRolePermissionIds('EVENT_COORDINATOR') })
-  const judgeRole = await upsertOne(Role, { name: 'JUDGE' }, { name: 'JUDGE', description: 'Judge role', permissions: getRolePermissionIds('JUDGE') })
-  const mentorRole = await upsertOne(Role, { name: 'MENTOR' }, { name: 'MENTOR', description: 'Mentor role', permissions: getRolePermissionIds('MENTOR') })
-  await upsertOne(Role, { name: 'SPEAKER' }, { name: 'SPEAKER', description: 'Workshop speaker role', permissions: getRolePermissionIds('SPEAKER') })
-  const userRole = await upsertOne(Role, { name: 'USER' }, { name: 'USER', description: 'Basic authenticated user', permissions: getRolePermissionIds('USER') })
-  await upsertOne(Role, { name: 'PARTICIPANT' }, { name: 'PARTICIPANT', description: 'Hackathon participant', permissions: getRolePermissionIds('PARTICIPANT') })
+  const adminRole = roleByName.get('ADMIN')
+  const coordinatorRole = roleByName.get('COORDINATOR')
+  const judgeRole = roleByName.get('JUDGE')
+  const mentorRole = roleByName.get('MENTOR')
+  const userRole = roleByName.get('USER')
 
   const seededPasswordHash = await BCRYPT_UTILS.hashPassword('Password123!')
-  const adminUser = await seedBaseUser({ email: 'admin@seal.local', fullName: 'Admin User', roleId: adminRole._id, passwordHash: seededPasswordHash })
-  const coordinatorUser = await seedBaseUser({ email: 'coordinator@seal.local', fullName: 'Event Coordinator', roleId: coordinatorRole._id, passwordHash: seededPasswordHash })
-  const judgeUserA = await seedBaseUser({ email: 'judge.a@seal.local', fullName: 'Judge A', roleId: judgeRole._id, passwordHash: seededPasswordHash })
-  const judgeUserB = await seedBaseUser({ email: 'judge.b@seal.local', fullName: 'Judge B', roleId: judgeRole._id, passwordHash: seededPasswordHash })
-  const mentorUser = await seedBaseUser({ email: 'mentor@seal.local', fullName: 'Mentor User', roleId: mentorRole._id, passwordHash: seededPasswordHash })
+  const adminUser = await seedBaseUser({ email: buildSeedEmail('admin'), legacyEmail: 'admin@seal.local', fullName: 'Admin User', roleId: adminRole._id, passwordHash: seededPasswordHash })
+  const coordinatorUser = await seedBaseUser({ email: buildSeedEmail('coordinator'), legacyEmail: 'coordinator@seal.local', fullName: 'Event Coordinator', roleId: coordinatorRole._id, passwordHash: seededPasswordHash })
+  const judgeUserA = await seedBaseUser({ email: buildSeedEmail('judge.a'), legacyEmail: 'judge.a@seal.local', fullName: 'Judge A', roleId: judgeRole._id, passwordHash: seededPasswordHash })
+  const judgeUserB = await seedBaseUser({ email: buildSeedEmail('judge.b'), legacyEmail: 'judge.b@seal.local', fullName: 'Judge B', roleId: judgeRole._id, passwordHash: seededPasswordHash })
+  const mentorUser = await seedBaseUser({ email: buildSeedEmail('mentor'), legacyEmail: 'mentor@seal.local', fullName: 'Mentor User', roleId: mentorRole._id, passwordHash: seededPasswordHash })
 
   const event = await upsertOne(Event, { seriesName: 'SEAL Hackathon', season: 'FALL', year: 2025 }, {
     title: 'SEAL Hackathon Fall 2025',
@@ -252,7 +375,9 @@ const seedSampleData = async () => {
 
     const members = []
     for (let memberIndex = 1; memberIndex <= 3; memberIndex += 1) {
-      const email = `${teamName.toLowerCase().replaceAll(' ', '.')}.member${memberIndex}@seal.local`
+      const emailLocalPart = `${teamName.toLowerCase().replaceAll(' ', '.')}.member${memberIndex}`
+      const email = buildSeedEmail(emailLocalPart)
+      const legacyEmail = `${emailLocalPart}@seal.local`
       const extra = {
         studentType: memberIndex % 2 === 0 ? 'EXTERNAL' : 'FPT',
         studentId: `SEAL${teamRecords.length + 1}${memberIndex}`
@@ -264,6 +389,7 @@ const seedSampleData = async () => {
 
       const user = await seedBaseUser({
         email,
+        legacyEmail,
         fullName: `${teamName} Member ${memberIndex}`,
         roleId: userRole._id,
         passwordHash: seededPasswordHash,
