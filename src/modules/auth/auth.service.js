@@ -213,11 +213,32 @@ const getMe = async (userId) => {
   return USER_SERVICE.normalizeUser(user)
 }
 
+const changePassword = async (userId, { currentPassword, newPassword }) => {
+  const user = await AUTH_REPOSITORY.findUserById(userId)
+  if (!user || !user.passwordHash) {
+    throw new ApiError(ERROR_CODES.NOT_FOUND, ['User not found'])
+  }
+
+  const passwordMatched = await BCRYPT_UTILS.comparePassword(currentPassword, user.passwordHash)
+  if (!passwordMatched) {
+    throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Current password is incorrect'])
+  }
+
+  const passwordHash = await BCRYPT_UTILS.hashPassword(newPassword)
+  const updatedUser = await AUTH_REPOSITORY.updateUserById(userId, {
+    passwordHash,
+    mustChangePassword: false
+  })
+
+  return USER_SERVICE.normalizeUser(updatedUser)
+}
+
 export const AUTH_SERVICE = {
   register,
   login,
   getGoogleLoginUrl,
   handleGoogleCallback,
   refreshToken,
-  getMe
+  getMe,
+  changePassword
 }

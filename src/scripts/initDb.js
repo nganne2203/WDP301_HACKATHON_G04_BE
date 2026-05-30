@@ -17,6 +17,7 @@ import Round from '#models/round.model.js'
 import JudgingBoard from '#models/judgingBoard.model.js'
 import Participant from '#models/participant.model.js'
 import Team from '#models/team.model.js'
+import TeamInvitation from '#models/teamInvitation.model.js'
 import Repository from '#models/repository.model.js'
 import Commit from '#models/commit.model.js'
 import CommitDiff from '#models/commitDiff.model.js'
@@ -49,6 +50,7 @@ const MODELS = [
   JudgingBoard,
   Participant,
   Team,
+  TeamInvitation,
   Repository,
   Commit,
   CommitDiff,
@@ -272,6 +274,7 @@ const seedSampleData = async () => {
     registrationEnd: buildDate('2025-10-19T23:59:59+07:00'),
     startDate: buildDate('2025-10-29T19:30:00+07:00'),
     endDate: buildDate('2025-11-02T21:00:00+07:00'),
+    maxTeams: 30,
     minTeamMembers: 3,
     maxTeamMembers: 5,
     finalistSlotsPerTrack: 5,

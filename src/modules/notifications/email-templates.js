@@ -44,6 +44,40 @@ const buildHtml = ({ greeting, heading, message, actionLabel, actionUrl }) => {
   `
 }
 
+const buildTwoActionHtml = ({
+  greeting,
+  heading,
+  message,
+  primaryLabel,
+  primaryUrl,
+  secondaryLabel,
+  secondaryUrl
+}) => {
+  const primaryAction = primaryUrl
+    ? `<a href="${escapeHtml(primaryUrl)}" style="display:inline-block;background:#16a34a;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:6px;font-weight:600;margin-right:8px;">
+          ${escapeHtml(primaryLabel)}
+        </a>`
+    : ''
+  const secondaryAction = secondaryUrl
+    ? `<a href="${escapeHtml(secondaryUrl)}" style="display:inline-block;background:#f3f4f6;color:#111827;text-decoration:none;padding:12px 18px;border-radius:6px;font-weight:600;">
+          ${escapeHtml(secondaryLabel)}
+        </a>`
+    : ''
+  const actions = primaryAction || secondaryAction
+    ? `<p style="margin:24px 0 0;">${primaryAction}${secondaryAction}</p>`
+    : ''
+
+  return `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827;max-width:560px;margin:0 auto;padding:24px;">
+      <p>${escapeHtml(greeting)}</p>
+      <h2 style="font-size:20px;margin:16px 0 8px;">${escapeHtml(heading)}</h2>
+      <p>${escapeHtml(message)}</p>
+      ${actions}
+      <p style="margin-top:28px;color:#6b7280;font-size:13px;">SEAL Hackathon Platform</p>
+    </div>
+  `
+}
+
 const buildTemplate = ({
   subject,
   fullName,
@@ -96,10 +130,83 @@ const notification = ({ fullName, title, message, actionLabel, actionUrl }) => b
   actionUrl
 })
 
+const teamInvitation = ({
+  fullName,
+  eventTitle,
+  teamName,
+  leaderName,
+  leaderEmail,
+  acceptUrl,
+  declineUrl
+}) => {
+  const safeFullName = fullName || 'there'
+  const greeting = `Hi ${safeFullName},`
+  const heading = `You are invited to join ${teamName || 'a team'}`
+  const message = `${leaderName || leaderEmail || 'A team leader'} invited you to join ${teamName || 'their team'} for ${eventTitle || 'SEAL Hackathon'}. Please confirm whether you accept this invitation.`
+
+  return {
+    subject: `Team invitation: ${teamName || 'SEAL Hackathon team'}`,
+    text: [
+      greeting,
+      '',
+      heading,
+      message,
+      acceptUrl ? `\nAccept: ${acceptUrl}` : '',
+      declineUrl ? `Decline: ${declineUrl}` : '',
+      '',
+      'SEAL Hackathon Platform'
+    ].filter(line => line !== '').join('\n'),
+    html: buildTwoActionHtml({
+      greeting,
+      heading,
+      message,
+      primaryLabel: 'Accept invitation',
+      primaryUrl: acceptUrl,
+      secondaryLabel: 'Decline',
+      secondaryUrl: declineUrl
+    })
+  }
+}
+
+const temporaryAccount = ({ fullName, email, temporaryPassword, loginUrl }) => buildTemplate({
+  subject: 'Your SEAL Hackathon temporary account',
+  fullName,
+  heading: 'Temporary account created',
+  message: `An approved account was created for ${email}. Sign in with the temporary password "${temporaryPassword}" and change your password immediately after login.`,
+  actionLabel: 'Sign in',
+  actionUrl: loginUrl
+})
+
+const teamConfirmationSuccess = ({ fullName, eventTitle, teamName }) => buildTemplate({
+  subject: `You joined ${teamName || 'your SEAL Hackathon team'}`,
+  fullName,
+  heading: 'Team membership confirmed',
+  message: `You are now confirmed as a member of ${teamName || 'your team'} for ${eventTitle || 'SEAL Hackathon'}. Watch the platform for next steps from the organizers.`
+})
+
+const teamRejected = ({ fullName, eventTitle, teamName }) => buildTemplate({
+  subject: `Team not confirmed: ${teamName || 'SEAL Hackathon team'}`,
+  fullName,
+  heading: 'Team registration was rejected',
+  message: `${teamName || 'Your team'} for ${eventTitle || 'SEAL Hackathon'} was not confirmed because the required number of confirmed teams has already been reached.`
+})
+
+const teamMemberDeclined = ({ fullName, eventTitle, teamName, declinedEmail }) => buildTemplate({
+  subject: `Team invitation declined: ${teamName || 'SEAL Hackathon team'}`,
+  fullName,
+  heading: 'A member declined your invitation',
+  message: `${declinedEmail} declined the invitation to join ${teamName || 'your team'} for ${eventTitle || 'SEAL Hackathon'}. If registration is still open and slots are available, you can invite a replacement.`
+})
+
 export const EMAIL_TEMPLATE_KEYS = {
   ACCOUNT_APPROVED: 'ACCOUNT_APPROVED',
   ACCOUNT_REJECTED: 'ACCOUNT_REJECTED',
   EVENT_INVITATION: 'EVENT_INVITATION',
+  TEAM_INVITATION: 'TEAM_INVITATION',
+  TEMPORARY_ACCOUNT: 'TEMPORARY_ACCOUNT',
+  TEAM_CONFIRMATION_SUCCESS: 'TEAM_CONFIRMATION_SUCCESS',
+  TEAM_REJECTED: 'TEAM_REJECTED',
+  TEAM_MEMBER_DECLINED: 'TEAM_MEMBER_DECLINED',
   NOTIFICATION: 'NOTIFICATION'
 }
 
@@ -107,6 +214,11 @@ const TEMPLATES = {
   [EMAIL_TEMPLATE_KEYS.ACCOUNT_APPROVED]: accountApproved,
   [EMAIL_TEMPLATE_KEYS.ACCOUNT_REJECTED]: accountRejected,
   [EMAIL_TEMPLATE_KEYS.EVENT_INVITATION]: eventInvitation,
+  [EMAIL_TEMPLATE_KEYS.TEAM_INVITATION]: teamInvitation,
+  [EMAIL_TEMPLATE_KEYS.TEMPORARY_ACCOUNT]: temporaryAccount,
+  [EMAIL_TEMPLATE_KEYS.TEAM_CONFIRMATION_SUCCESS]: teamConfirmationSuccess,
+  [EMAIL_TEMPLATE_KEYS.TEAM_REJECTED]: teamRejected,
+  [EMAIL_TEMPLATE_KEYS.TEAM_MEMBER_DECLINED]: teamMemberDeclined,
   [EMAIL_TEMPLATE_KEYS.NOTIFICATION]: notification
 }
 

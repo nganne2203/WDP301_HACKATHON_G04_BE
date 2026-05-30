@@ -13,6 +13,10 @@ const parseNumber = (value) => {
 }
 
 const nodeEnv = process.env.NODE_ENV
+const clientUrls = process.env.CLIENT_URLS?.split(',').map(url => url.trim()).filter(Boolean) || []
+const localFrontendUrl = ['prod', 'production'].includes(nodeEnv) ? undefined : 'http://localhost:5173'
+const frontendUrl = process.env.FRONTEND_URL || clientUrls[0] || localFrontendUrl
+const allowedClientUrls = clientUrls.length > 0 ? clientUrls : (frontendUrl ? [frontendUrl] : [])
 const legacyEmailHost = process.env.EMAIL_HOST
 const legacyEmailHostIsAddress = legacyEmailHost?.includes('@')
 const emailUser = process.env.SMTP_USER || process.env.EMAIL_USER || (legacyEmailHostIsAddress ? legacyEmailHost : undefined)
@@ -28,10 +32,10 @@ export const env = {
     uri: process.env.MONGODB_URI
   },
   client: {
-    urls: process.env.CLIENT_URLS?.split(',') || [],
-    frontendUrl: process.env.FRONTEND_URL
+    urls: allowedClientUrls,
+    frontendUrl
   },
-  CLIENT_URLS: process.env.CLIENT_URLS?.split(',') || [],
+  CLIENT_URLS: allowedClientUrls,
   swagger: {
     user: process.env.SWAGGER_USER,
     password: process.env.SWAGGER_PASSWORD
@@ -51,6 +55,10 @@ export const env = {
     password: process.env.SMTP_PASSWORD || process.env.EMAIL_PASSWORD,
     from: process.env.EMAIL_FROM || process.env.SMTP_FROM || emailUser,
     devMode: process.env.EMAIL_DEV_MODE || (['dev', 'development', 'test'].includes(nodeEnv) ? 'console' : 'silent')
+  },
+  teamInvitation: {
+    expiresHours: parseNumber(process.env.TEAM_INVITATION_EXPIRES_HOURS) || 72,
+    temporaryPassword: process.env.TEAM_INVITATION_TEMP_PASSWORD || 'test'
   },
   otp: {
     expiresIn: process.env.OTP_EXPIRES_IN

@@ -361,6 +361,13 @@ router.post(
  */
 router.get('/me', authorizationMiddleware, AUTH_CONTROLLER.getMe)
 
+router.post(
+  '/change-password',
+  authorizationMiddleware,
+  validationHandlingMiddleware(AUTH_VALIDATION.changePassword),
+  AUTH_CONTROLLER.changePassword
+)
+
 /**
  * @swagger
  * /api/auth/logout:

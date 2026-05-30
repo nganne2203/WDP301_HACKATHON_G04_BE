@@ -98,6 +98,7 @@ const normalizeUser = (user) => {
     authProvider: plainUser.authProvider,
     fullName: plainUser.fullName,
     status: plainUser.status,
+    mustChangePassword: Boolean(plainUser.mustChangePassword),
     roles,
     permissions,
     googleAuth: plainUser.googleAuth

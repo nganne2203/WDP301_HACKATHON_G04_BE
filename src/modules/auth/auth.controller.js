@@ -81,6 +81,19 @@ const getMe = async (req, res, next) => {
   }
 }
 
+const changePassword = async (req, res, next) => {
+  try {
+    const user = await AUTH_SERVICE.changePassword(req.user.id, req.body)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Change password successfully',
+      data: user
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const logout = async (req, res, next) => {
   try {
     res.status(StatusCodes.OK).json(responseSuccess({
@@ -99,5 +112,6 @@ export const AUTH_CONTROLLER = {
   googleCallback,
   refreshToken,
   getMe,
+  changePassword,
   logout
 }
