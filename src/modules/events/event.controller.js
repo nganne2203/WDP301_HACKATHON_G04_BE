@@ -82,11 +82,25 @@ const deleteEvent = async (req, res, next) => {
   }
 }
 
+const sendInvitations = async (req, res, next) => {
+  try {
+    const result = await EVENT_SERVICE.sendInvitations(req.params.id, req.body, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Send event invitations successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const EVENT_CONTROLLER = {
   listEvents,
   getEventById,
   createEvent,
   updateEvent,
   updateEventStatus,
-  deleteEvent
+  deleteEvent,
+  sendInvitations
 }

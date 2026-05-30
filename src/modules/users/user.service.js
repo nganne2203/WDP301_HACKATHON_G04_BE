@@ -7,10 +7,41 @@ import { PERMISSIONS } from '#constants/permissions.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
+import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
+import { EMAIL_TEMPLATE_KEYS } from '#modules/notifications/email-templates.js'
+import { env } from '#configs/environment.js'
 
 const PROFILE_FIELDS = ['fullName', 'avatarUrl', 'phone', 'bio']
 const ALLOWED_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED']
+const EMAIL_NOTIFICATION_STATUSES = ['APPROVED', 'REJECTED']
 const PARTICIPANT_ROLES = ['USER', 'PARTICIPANT']
+
+const getLoginUrl = () => {
+  const frontendUrl = env.client.frontendUrl || env.client.urls[0]
+  if (!frontendUrl) return null
+
+  return new URL('/login', frontendUrl).toString()
+}
+
+const buildStatusNotification = (status) => {
+  if (status === 'APPROVED') {
+    return {
+      title: 'Account approved',
+      message: 'Your SEAL Hackathon account has been approved.',
+      emailTemplate: EMAIL_TEMPLATE_KEYS.ACCOUNT_APPROVED,
+      emailContext: {
+        loginUrl: getLoginUrl()
+      }
+    }
+  }
+
+  return {
+    title: 'Account registration not approved',
+    message: 'Your SEAL Hackathon account registration was not approved.',
+    emailTemplate: EMAIL_TEMPLATE_KEYS.ACCOUNT_REJECTED,
+    emailContext: {}
+  }
+}
 
 const buildUserFilter = (query = {}) => {
   const filter = {}
@@ -246,10 +277,30 @@ const updateStatus = async (id, status) => {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Invalid user status'])
   }
 
-  await ensureUserExists(id)
+  const existingUser = await ensureUserExists(id)
   const updatedUser = await USER_REPOSITORY.updateById(id, { status })
+  const normalizedUser = normalizeUser(updatedUser)
 
-  return normalizeUser(updatedUser)
+  if (existingUser.status !== status && EMAIL_NOTIFICATION_STATUSES.includes(status)) {
+    const notification = buildStatusNotification(status)
+    const delivery = await NOTIFICATION_SERVICE.notifyUser({
+      user: updatedUser,
+      type: 'SYSTEM',
+      title: notification.title,
+      message: notification.message,
+      emailTemplate: notification.emailTemplate,
+      emailContext: notification.emailContext,
+      metadata: {
+        userId: updatedUser._id?.toString(),
+        status
+      }
+    })
+
+    normalizedUser.notification = delivery.notification
+    normalizedUser.emailNotification = delivery.email
+  }
+
+  return normalizedUser
 }
 
 const approveUser = async (id) => {

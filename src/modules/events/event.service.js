@@ -5,6 +5,7 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
+import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 
 const EVENT_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED']
 const EVENT_FIELDS = [
@@ -224,6 +225,17 @@ const deleteEvent = async (id) => {
   await EVENT_REPOSITORY.deleteById(id)
 }
 
+const sendInvitations = async (id, payload = {}, actor = {}) => {
+  const event = await ensureEventExists(id)
+
+  return await NOTIFICATION_SERVICE.sendEventInvitations({
+    event,
+    emails: payload.emails || [],
+    message: payload.message,
+    actor
+  })
+}
+
 export const EVENT_SERVICE = {
   EVENT_STATUSES,
   listEvents,
@@ -233,5 +245,6 @@ export const EVENT_SERVICE = {
   updateEvent,
   updateEventStatus,
   deleteEvent,
+  sendInvitations,
   normalizeEvent
 }

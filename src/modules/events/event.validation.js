@@ -74,10 +74,24 @@ const getEventById = {
   params: idParam
 }
 
+const sendInvitations = {
+  params: idParam,
+  body: Joi.object({
+    emails: Joi.array()
+      .items(Joi.string().email().trim().lowercase())
+      .min(1)
+      .max(100)
+      .unique()
+      .required(),
+    message: Joi.string().trim().max(1000).allow('', null)
+  })
+}
+
 export const EVENT_VALIDATION = {
   listEvents,
   createEvent,
   updateEvent,
   updateEventStatus,
-  getEventById
+  getEventById,
+  sendInvitations
 }
