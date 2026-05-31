@@ -1,0 +1,447 @@
+import { GITHUB_REPOSITORY } from './github.repository.js'
+import ApiError from '#utils/ApiError.js'
+import { ERROR_CODES } from '#constants/errorCode.js'
+import { ENCRYPTION_UTILS } from '#utils/encryption.util.js'
+import { LOGGER } from '#utils/logger.js'
+
+const buildEventConfigKey = (eventId) => `github.event.${eventId}.organization`
+
+const GITHUB_API_BASE_URL = 'https://api.github.com'
+const GITHUB_API_VERSION = '2022-11-28'
+
+const normalizeString = (value) => {
+  return typeof value === 'string' ? value.trim() : value
+}
+
+const normalizeConfig = (record, eventId) => {
+  const value = record?.value || {}
+
+  return {
+    eventId: value.eventId || eventId,
+    organizationName: value.organizationName || '',
+    ownerUsername: value.ownerUsername || '',
+    enabled: Boolean(value.enabled),
+    hasToken: Boolean(value.tokenEncrypted)
+  }
+}
+
+const getGithubErrorMessage = (data, fallback) => {
+  if (!data) return fallback
+  if (typeof data === 'string') return data
+  if (data.message) return data.message
+  if (Array.isArray(data.errors) && data.errors.length > 0) {
+    return data.errors.map(error => error.message || error.code || JSON.stringify(error)).join(', ')
+  }
+
+  return fallback
+}
+
+const createGithubClient = ({ fetchImpl = globalThis.fetch } = {}) => {
+  if (!fetchImpl) {
+    throw new Error('Fetch API is not available in this Node.js runtime')
+  }
+
+  return async ({ method = 'GET', path, token, body }) => {
+    const response = await fetchImpl(`${GITHUB_API_BASE_URL}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': GITHUB_API_VERSION,
+        ...(body ? { 'Content-Type': 'application/json' } : {})
+      },
+      body: body ? JSON.stringify(body) : undefined
+    })
+
+    const text = await response.text()
+    let data = null
+    if (text) {
+      try {
+        data = JSON.parse(text)
+      } catch {
+        data = text
+      }
+    }
+
+    if (!response.ok) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [
+        `GitHub API error (${response.status}): ${getGithubErrorMessage(data, response.statusText)}`
+      ])
+    }
+
+    return {
+      data,
+      status: response.status,
+      headers: response.headers
+    }
+  }
+}
+
+const sanitizeMetadata = (metadata = {}) => {
+  const safeMetadata = { ...metadata }
+  delete safeMetadata.githubToken
+  delete safeMetadata.token
+  delete safeMetadata.encryptedToken
+  delete safeMetadata.tokenEncrypted
+  return safeMetadata
+}
+
+export const createGithubService = ({
+  repository = GITHUB_REPOSITORY,
+  encryption = ENCRYPTION_UTILS,
+  githubClient = createGithubClient(),
+  logger = LOGGER
+} = {}) => {
+  const audit = async ({ actor, action, resourceType = 'GitHub', resourceId, metadata = {} }) => {
+    try {
+      await repository.createAuditLog({
+        userId: actor?.id,
+        action,
+        resourceType,
+        resourceId,
+        metadata: sanitizeMetadata(metadata)
+      })
+    } catch (error) {
+      logger.error('GitHub audit log creation failed', {
+        action,
+        error: error.message
+      })
+    }
+  }
+
+  const loadConfigRecord = async (eventId) => {
+    if (!eventId) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['eventId is required for GitHub configuration'])
+    }
+
+    return await repository.findConfigByKey(buildEventConfigKey(eventId))
+  }
+
+  const getConfig = async (eventId) => {
+    return normalizeConfig(await loadConfigRecord(eventId), eventId)
+  }
+
+  const saveConfig = async (payload = {}, actor = {}) => {
+    const existingRecord = await loadConfigRecord(payload.eventId)
+    const existingValue = existingRecord?.value || {}
+    const nextToken = normalizeString(payload.githubToken)
+    let tokenEncrypted = existingValue.tokenEncrypted
+
+    if (nextToken) {
+      try {
+        tokenEncrypted = encryption.encrypt(nextToken)
+      } catch (error) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, [
+          `Could not encrypt GitHub token: ${error.message}`
+        ])
+      }
+    }
+
+    const configRecord = await repository.upsertConfig({
+      key: buildEventConfigKey(payload.eventId),
+      value: {
+        eventId: payload.eventId,
+        organizationName: normalizeString(payload.organizationName),
+        ownerUsername: normalizeString(payload.ownerUsername),
+        tokenEncrypted,
+        enabled: Boolean(payload.enabled)
+      },
+      isEncrypted: Boolean(tokenEncrypted),
+      updatedBy: actor.id
+    })
+
+    await audit({
+      actor,
+      action: 'GITHUB_CONFIG_SAVE',
+      resourceType: 'SystemConfiguration',
+      resourceId: payload.eventId,
+      metadata: {
+        eventId: payload.eventId,
+        organizationName: payload.organizationName,
+        ownerUsername: payload.ownerUsername,
+        enabled: Boolean(payload.enabled),
+        tokenUpdated: Boolean(nextToken),
+        hadTokenBeforeUpdate: Boolean(existingValue.tokenEncrypted)
+      }
+    })
+
+    return normalizeConfig(configRecord, payload.eventId)
+  }
+
+  const loadOperationalConfig = async ({ eventId, requireEnabled = true, requireOwner = false } = {}) => {
+    const record = await loadConfigRecord(eventId)
+    const safeConfig = normalizeConfig(record, eventId)
+    const value = record?.value || {}
+
+    if (requireEnabled && !safeConfig.enabled) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['GitHub integration is disabled for this event'])
+    }
+
+    if (!safeConfig.organizationName) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['GitHub organization name is not configured for this event'])
+    }
+
+    if (requireOwner && !safeConfig.ownerUsername) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['GitHub owner username is not configured for this event'])
+    }
+
+    const encryptedToken = value.tokenEncrypted
+    if (!encryptedToken) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['GitHub token is not configured for this event'])
+    }
+
+    let token
+    try {
+      token = encryption.decrypt(encryptedToken)
+    } catch (error) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [
+        `Could not decrypt GitHub token: ${error.message}`
+      ])
+    }
+
+    return {
+      ...safeConfig,
+      token
+    }
+  }
+
+  const requestGithub = async ({ method, path, token, body }) => {
+    return await githubClient({ method, path, token, body })
+  }
+
+  const testConnection = async ({ eventId }, actor = {}) => {
+    const config = await loadOperationalConfig({ eventId, requireEnabled: false })
+    const { data, status } = await requestGithub({
+      method: 'GET',
+      path: `/orgs/${encodeURIComponent(config.organizationName)}`,
+      token: config.token
+    })
+
+    await audit({
+      actor,
+      action: 'GITHUB_CONFIG_TEST',
+      resourceId: eventId,
+      metadata: {
+        eventId,
+        organizationName: config.organizationName,
+        status
+      }
+    })
+
+    return {
+      organizationName: data?.login || config.organizationName,
+      ownerUsername: config.ownerUsername,
+      eventId,
+      enabled: config.enabled,
+      accessible: true,
+      htmlUrl: data?.html_url,
+      id: data?.id
+    }
+  }
+
+  const createRepository = async (payload = {}, actor = {}) => {
+    const config = await loadOperationalConfig({ eventId: payload.eventId })
+    const requestBody = {
+      name: payload.repoName,
+      description: payload.description || '',
+      private: payload.private !== false,
+      auto_init: true
+    }
+
+    const { data, status } = await requestGithub({
+      method: 'POST',
+      path: `/orgs/${encodeURIComponent(config.organizationName)}/repos`,
+      token: config.token,
+      body: requestBody
+    })
+
+    if (payload.teamId) {
+      await repository.createRepositoryRecord({
+        eventId: payload.eventId,
+        teamId: payload.teamId,
+        githubOrg: config.organizationName,
+        repoName: data?.name || payload.repoName,
+        repoUrl: data?.html_url,
+        defaultBranch: data?.default_branch || 'main'
+      })
+    }
+
+    await audit({
+      actor,
+      action: 'GITHUB_REPOSITORY_CREATE',
+      resourceId: payload.eventId,
+      metadata: {
+        eventId: payload.eventId,
+        organizationName: config.organizationName,
+        repoName: data?.name || payload.repoName,
+        private: requestBody.private,
+        status,
+        teamId: payload.teamId
+      }
+    })
+
+    return {
+      repoName: data?.name || payload.repoName,
+      htmlUrl: data?.html_url,
+      cloneUrl: data?.clone_url,
+      visibility: data?.visibility || (data?.private ? 'private' : 'public')
+    }
+  }
+
+  const assignCollaborator = async ({ eventId, repoName, username, permission }, actor = {}) => {
+    const config = await loadOperationalConfig({ eventId })
+    const { status } = await requestGithub({
+      method: 'PUT',
+      path: `/repos/${encodeURIComponent(config.organizationName)}/${encodeURIComponent(repoName)}/collaborators/${encodeURIComponent(username)}`,
+      token: config.token,
+      body: { permission }
+    })
+
+    await audit({
+      actor,
+      action: 'GITHUB_COLLABORATOR_ASSIGN',
+      resourceId: eventId,
+      metadata: {
+        eventId,
+        organizationName: config.organizationName,
+        repoName,
+        username,
+        permission,
+        status
+      }
+    })
+
+    return {
+      repoName,
+      username,
+      permission,
+      status: status === 204 ? 'already_collaborator' : 'invited_or_added'
+    }
+  }
+
+  const inviteOrganizationMember = async ({ eventId, email, role }, actor = {}) => {
+    const config = await loadOperationalConfig({ eventId })
+    const { data, status } = await requestGithub({
+      method: 'POST',
+      path: `/orgs/${encodeURIComponent(config.organizationName)}/invitations`,
+      token: config.token,
+      body: { email, role }
+    })
+
+    await audit({
+      actor,
+      action: 'GITHUB_ORG_MEMBER_INVITE',
+      resourceId: eventId,
+      metadata: {
+        eventId,
+        organizationName: config.organizationName,
+        email,
+        role,
+        status
+      }
+    })
+
+    return {
+      id: data?.id,
+      email: data?.email || email,
+      role: data?.role || role,
+      invitationUrl: data?.html_url
+    }
+  }
+
+  const listOrganizationMembers = async ({ organizationName, token }) => {
+    const members = []
+    let page = 1
+    let hasNextPage = true
+
+    while (hasNextPage) {
+      const { data } = await requestGithub({
+        method: 'GET',
+        path: `/orgs/${encodeURIComponent(organizationName)}/members?per_page=100&page=${page}`,
+        token
+      })
+
+      const pageMembers = Array.isArray(data) ? data : []
+      members.push(...pageMembers)
+      hasNextPage = pageMembers.length === 100
+      page += 1
+    }
+
+    return members
+  }
+
+  const revokeMembers = async ({ eventId, confirmationText }, actor = {}) => {
+    if (confirmationText !== 'REVOKE MEMBERS') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Confirmation text must be REVOKE MEMBERS'])
+    }
+
+    const config = await loadOperationalConfig({ eventId, requireOwner: true })
+    const members = await listOrganizationMembers({
+      organizationName: config.organizationName,
+      token: config.token
+    })
+    const removed = []
+    const skipped = []
+    const failed = []
+    const ownerUsername = String(config.ownerUsername).toLowerCase()
+
+    for (const member of members) {
+      const username = member?.login
+      if (!username) continue
+
+      if (username.toLowerCase() === ownerUsername) {
+        skipped.push(username)
+        continue
+      }
+
+      try {
+        await requestGithub({
+          method: 'DELETE',
+          path: `/orgs/${encodeURIComponent(config.organizationName)}/members/${encodeURIComponent(username)}`,
+          token: config.token
+        })
+        removed.push(username)
+      } catch (error) {
+        failed.push({
+          username,
+          reason: error.errors?.[0] || error.message
+        })
+      }
+    }
+
+    const result = { removed, skipped, failed }
+    logger.info('GitHub organization members revoke completed', {
+      organizationName: config.organizationName,
+      removed,
+      skipped,
+      failed
+    })
+
+    await audit({
+      actor,
+      action: 'GITHUB_ORG_MEMBERS_REVOKE',
+      resourceId: eventId,
+      metadata: {
+        eventId,
+        organizationName: config.organizationName,
+        removed,
+        skipped,
+        failed
+      }
+    })
+
+    return result
+  }
+
+  return {
+    getConfig,
+    saveConfig,
+    testConnection,
+    createRepository,
+    assignCollaborator,
+    inviteOrganizationMember,
+    revokeMembers
+  }
+}
+
+export const GITHUB_SERVICE = createGithubService()

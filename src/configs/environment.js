@@ -1,19 +1,41 @@
 import 'dotenv/config'
 
+const parseBoolean = (value, fallback = false) => {
+  if (value === undefined || value === null || value === '') return fallback
+  return ['true', '1', 'yes', 'on'].includes(String(value).toLowerCase())
+}
+
+const parseNumber = (value) => {
+  if (value === undefined || value === null || value === '') return undefined
+
+  const parsed = Number(value)
+  return Number.isNaN(parsed) ? undefined : parsed
+}
+
+const nodeEnv = process.env.NODE_ENV
+const clientUrls = process.env.CLIENT_URLS?.split(',').map(url => url.trim()).filter(Boolean) || []
+const localFrontendUrl = ['prod', 'production'].includes(nodeEnv) ? undefined : 'http://localhost:5173'
+const frontendUrl = process.env.FRONTEND_URL || clientUrls[0] || localFrontendUrl
+const allowedClientUrls = clientUrls.length > 0 ? clientUrls : (frontendUrl ? [frontendUrl] : [])
+const legacyEmailHost = process.env.EMAIL_HOST
+const legacyEmailHostIsAddress = legacyEmailHost?.includes('@')
+const emailUser = process.env.SMTP_USER || process.env.EMAIL_USER || (legacyEmailHostIsAddress ? legacyEmailHost : undefined)
+const emailHost = process.env.SMTP_HOST || (!legacyEmailHostIsAddress ? legacyEmailHost : undefined)
+
 export const env = {
   server: {
     port: process.env.PORT || 3000,
     hostname: process.env.HOSTNAME,
-    nodeEnv: process.env.NODE_ENV
+    nodeEnv
   },
   db: {
     uri: process.env.MONGODB_URI
   },
   client: {
-    urls: process.env.CLIENT_URLS?.split(',') || [],
-    frontendUrl: process.env.FRONTEND_URL
+    urls: allowedClientUrls,
+    frontendUrl
   },
-  CLIENT_URLS: process.env.CLIENT_URLS?.split(',') || [],
+  CLIENT_URLS: allowedClientUrls,
   swagger: {
     user: process.env.SWAGGER_USER,
     password: process.env.SWAGGER_PASSWORD
@@ -25,8 +47,18 @@ export const env = {
     refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN
   },
   email: {
-    user: process.env.EMAIL_USER,
-    password: process.env.EMAIL_PASSWORD
+    service: process.env.EMAIL_SERVICE,
+    host: emailHost,
+    port: parseNumber(process.env.SMTP_PORT),
+    secure: parseBoolean(process.env.SMTP_SECURE, false),
+    user: emailUser,
+    password: process.env.SMTP_PASSWORD || process.env.EMAIL_PASSWORD,
+    from: process.env.EMAIL_FROM || process.env.SMTP_FROM || emailUser,
+    devMode: process.env.EMAIL_DEV_MODE || (['dev', 'development', 'test'].includes(nodeEnv) ? 'console' : 'silent')
+  },
+  teamInvitation: {
+    expiresHours: parseNumber(process.env.TEAM_INVITATION_EXPIRES_HOURS) || 72,
+    temporaryPassword: process.env.TEAM_INVITATION_TEMP_PASSWORD || 'test'
   },
   otp: {
     expiresIn: process.env.OTP_EXPIRES_IN
