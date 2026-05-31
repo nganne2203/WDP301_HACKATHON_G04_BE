@@ -45,6 +45,22 @@ const isSameId = (left, right) => {
   return Boolean(leftId && rightId && leftId === rightId)
 }
 
+const normalizeEmailAddress = (email) => {
+  return String(email || '').trim().toLowerCase()
+}
+
+const ensureEmailIsNotLeader = (email, leader) => {
+  if (normalizeEmailAddress(email) === normalizeEmailAddress(leader?.email)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team leader cannot invite their own email'])
+  }
+}
+
+const ensureMembersDoNotContainLeader = (members = [], leader) => {
+  for (const member of members) {
+    ensureEmailIsNotLeader(member.email, leader)
+  }
+}
+
 export const hashInvitationToken = (token) => {
   return crypto.createHash('sha256').update(token).digest('hex')
 }
@@ -427,9 +443,7 @@ const createInvitationForEmail = async ({
   jobs,
   excludeInvitationId = null
 }) => {
-  if (String(email).toLowerCase() === String(leader.email).toLowerCase()) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team member must not be the team leader'])
-  }
+  ensureEmailIsNotLeader(email, leader)
 
   let invitedUser = await repository.findUserByEmail(email, { session })
   let temporaryPassword = null
@@ -682,6 +696,7 @@ export const createTeamService = ({
         if (invitedMembers.length > Math.max((event.maxTeamMembers || 5) - 1, 0)) {
           throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Too many invited members for this event'])
         }
+        ensureMembersDoNotContainLeader(invitedMembers, leader)
 
         const team = await repository.createTeam({
           eventId: getId(event),
@@ -757,6 +772,7 @@ export const createTeamService = ({
           members: payload.members,
           emails: payload.emails
         })
+        ensureMembersDoNotContainLeader(invitedMembers, leader)
 
         if (currentMemberCount + pendingInvitations.length + invitedMembers.length > (event.maxTeamMembers || 5)) {
           throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Too many team members for this event'])

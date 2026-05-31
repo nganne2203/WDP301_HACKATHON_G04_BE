@@ -113,6 +113,38 @@ test('createTeam rejects duplicate team creation for the same event leader', asy
   )
 })
 
+test('createTeam rejects inviting the leader email as a team member', async () => {
+  const leader = { _id: 'leader-1', email: 'Leader@Example.com', fullName: 'Leader', status: 'APPROVED' }
+  const repository = {
+    createSession,
+    findEventById: async () => ({
+      _id: 'event-1',
+      title: 'SEAL Hackathon',
+      status: 'OPEN_REGISTRATION',
+      minTeamMembers: 3,
+      maxTeamMembers: 5,
+      maxTeams: 30
+    }),
+    countTeams: async () => 0,
+    findUserById: async () => leader,
+    findTeamByLeaderAndEvent: async () => null,
+    findParticipantByEventAndUser: async () => null,
+    findBlockingInvitation: async () => null
+  }
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.createTeam({
+      eventId: 'event-1',
+      name: 'New Team',
+      invitedMembers: [{ fullName: 'Leader Duplicate', email: 'leader@example.com' }]
+    }, { id: 'leader-1' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Team leader cannot invite their own email')
+  )
+})
+
 test('createTeam sends temporary account and invitation emails for unknown invitees', async () => {
   const sentEmails = []
   const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'APPROVED' }
