@@ -2,6 +2,7 @@ import { Router } from 'express'
 
 import authRoutes from '#modules/auth/auth.route.js'
 import eventRoutes from '#modules/events/event.route.js'
+import githubRoutes from '#modules/github/github.route.js'
 import googleRoutes from '#modules/google/google.route.js'
 import notificationRoutes from '#modules/notifications/notification.route.js'
 import teamRoutes from '#modules/teams/team.route.js'
@@ -17,6 +18,7 @@ router.get('/status', (req, res) => {
 
 router.use('/auth', authRoutes)
 router.use('/events', eventRoutes)
+router.use('/github', githubRoutes)
 router.use('/google', googleRoutes)
 router.use('/notifications', notificationRoutes)
 router.use('/teams', teamRoutes)
