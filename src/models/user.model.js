@@ -27,6 +27,7 @@ const userSchema = new Schema(
       default: 'LOCAL'
     },
     passwordHash: { type: String },
+    mustChangePassword: { type: Boolean, default: false },
     fullName: { type: String, required: true, trim: true },
     studentType: {
       type: String,

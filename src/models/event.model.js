@@ -18,6 +18,7 @@ const eventSchema = new Schema(
     registrationEnd: { type: Date },
     startDate: { type: Date },
     endDate: { type: Date },
+    maxTeams: { type: Number, default: 30 },
     minTeamMembers: { type: Number, default: 3 },
     maxTeamMembers: { type: Number, default: 5 },
     finalistSlotsPerTrack: { type: Number, default: 5 },

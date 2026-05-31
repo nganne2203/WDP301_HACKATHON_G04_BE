@@ -28,6 +28,13 @@ const refreshToken = {
   })
 }
 
+const changePassword = {
+  body: Joi.object({
+    currentPassword: Joi.string().required(),
+    newPassword: Joi.string().min(8).max(128).required()
+  })
+}
+
 const googleCallback = {
   query: Joi.object({
     code: Joi.string().trim().required(),
@@ -42,5 +49,6 @@ export const AUTH_VALIDATION = {
   register,
   login,
   refreshToken,
+  changePassword,
   googleCallback
 }

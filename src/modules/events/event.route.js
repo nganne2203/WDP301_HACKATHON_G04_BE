@@ -155,6 +155,22 @@ router.post(
 
 /**
  * @swagger
+ * /api/events/{id}/invitations:
+ *   post:
+ *     summary: Send participant invitation emails for an event
+ *     tags: [Events]
+ *     security:
+ *       - BearerAuth: []
+ */
+router.post(
+  '/:id/invitations',
+  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  validationHandlingMiddleware(EVENT_VALIDATION.sendInvitations),
+  EVENT_CONTROLLER.sendInvitations
+)
+
+/**
+ * @swagger
  * /api/events/{id}:
  *   get:
  *     summary: Get an event by id

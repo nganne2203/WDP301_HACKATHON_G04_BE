@@ -7,13 +7,13 @@
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "build": "rimraf dist && copyfiles -u 1 \"src/**/*\" dist",
+    "build": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});fs.cpSync('src','dist',{recursive:true});\"",
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "db:init": "node src/scripts/initDb.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test tests/*.test.js"
   },
   "imports": {
     "#configs/*": "./src/configs/*",
@@ -39,6 +39,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.5.1",
     "morgan": "^1.10.0",
+    "nodemailer": "^8.0.10",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
   },

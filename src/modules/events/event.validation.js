@@ -33,6 +33,7 @@ const createEvent = {
     registrationEnd: Joi.date().iso().min(Joi.ref('registrationStart')),
     startDate: Joi.date().iso(),
     endDate: Joi.date().iso().min(Joi.ref('startDate')),
+    maxTeams: Joi.number().integer().min(1).default(30),
     minTeamMembers: Joi.number().integer().min(1).max(20).default(3),
     maxTeamMembers: Joi.number().integer().min(Joi.ref('minTeamMembers')).max(20).default(5),
     finalistSlotsPerTrack: Joi.number().integer().min(1).default(5),
@@ -55,6 +56,7 @@ const updateEvent = {
     registrationEnd: Joi.date().iso(),
     startDate: Joi.date().iso(),
     endDate: Joi.date().iso(),
+    maxTeams: Joi.number().integer().min(1),
     minTeamMembers: Joi.number().integer().min(1).max(20),
     maxTeamMembers: Joi.number().integer().min(1).max(20),
     finalistSlotsPerTrack: Joi.number().integer().min(1),
@@ -74,10 +76,24 @@ const getEventById = {
   params: idParam
 }
 
+const sendInvitations = {
+  params: idParam,
+  body: Joi.object({
+    emails: Joi.array()
+      .items(Joi.string().email().trim().lowercase())
+      .min(1)
+      .max(100)
+      .unique()
+      .required(),
+    message: Joi.string().trim().max(1000).allow('', null)
+  })
+}
+
 export const EVENT_VALIDATION = {
   listEvents,
   createEvent,
   updateEvent,
   updateEventStatus,
-  getEventById
+  getEventById,
+  sendInvitations
 }
