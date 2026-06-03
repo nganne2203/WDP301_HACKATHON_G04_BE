@@ -32,6 +32,7 @@ import AiReview from '#models/aiReview.model.js'
 import AiReviewCriterion from '#models/aiReviewCriterion.model.js'
 import Notification from '#models/notification.model.js'
 import Media from '#models/media.model.js'
+import MediaActivity from '#models/mediaActivity.model.js'
 import AuditLog from '#models/auditLog.model.js'
 import SystemConfiguration from '#models/systemConfiguration.model.js'
 
@@ -65,6 +66,7 @@ const MODELS = [
   AiReviewCriterion,
   Notification,
   Media,
+  MediaActivity,
   AuditLog,
   SystemConfiguration
 ]
@@ -910,12 +912,35 @@ const seedSampleData = async () => {
     metadata: { eventId: event._id }
   })
 
-  await upsertOne(Media, { url: 'https://example.com/media/seal-fall-2025-awards.jpg' }, {
+  const seedMediaStoragePath = `events/${event._id}/users/${coordinatorUser._id}/seed-seal-fall-2025-awards.jpg`
+  const seedMedia = await upsertOne(Media, { storagePath: seedMediaStoragePath }, {
     eventId: event._id,
     uploadedBy: coordinatorUser._id,
-    url: 'https://example.com/media/seal-fall-2025-awards.jpg',
-    caption: 'SEAL Hackathon Fall 2025 award ceremony',
-    tags: ['event', 'fall-2025', 'awards']
+    title: 'SEAL Hackathon Fall 2025 award ceremony',
+    description: 'Award ceremony gallery item for the seeded event.',
+    mediaType: 'IMAGE',
+    storageProvider: 'SUPABASE',
+    bucketName: 'event-media',
+    storagePath: seedMediaStoragePath,
+    fileUrl: `https://example.supabase.co/storage/v1/object/event-media/${seedMediaStoragePath}`,
+    originalFileName: 'seal-fall-2025-awards.jpg',
+    mimeType: 'image/jpeg',
+    fileSize: 1024,
+    fileExtension: 'jpg',
+    tags: ['event', 'fall-2025', 'awards'],
+    status: 'APPROVED',
+    reviewedBy: coordinatorUser._id,
+    reviewedAt: buildDate('2025-11-02T20:30:00+07:00'),
+    uploadedAt: buildDate('2025-11-02T20:00:00+07:00')
+  })
+
+  await upsertOne(MediaActivity, { mediaId: seedMedia._id, action: 'UPLOAD' }, {
+    mediaId: seedMedia._id,
+    eventId: event._id,
+    userId: coordinatorUser._id,
+    action: 'UPLOAD',
+    metadata: { seeded: true },
+    createdAt: buildDate('2025-11-02T20:00:00+07:00')
   })
 
   await upsertOne(AuditLog, { action: 'SEED_INIT', resourceType: 'Event', resourceId: event._id }, {
@@ -949,6 +974,23 @@ const seedSampleData = async () => {
     isEncrypted: false,
     updatedBy: adminUser._id
   })
+
+  await Promise.all([
+    ['media.storage_provider', 'SUPABASE'],
+    ['media.supabase_bucket', 'event-media'],
+    ['media.bucket_visibility', 'private'],
+    ['media.max_image_size_mb', 10],
+    ['media.max_video_size_mb', 200],
+    ['media.max_document_size_mb', 50],
+    ['media.allowed_image_types', ['jpg', 'jpeg', 'png', 'webp']],
+    ['media.allowed_video_types', ['mp4', 'mov', 'webm']],
+    ['media.allowed_document_types', ['pdf', 'doc', 'docx', 'ppt', 'pptx']]
+  ].map(([key, value]) => upsertOne(SystemConfiguration, { key }, {
+    key,
+    value,
+    isEncrypted: false,
+    updatedBy: adminUser._id
+  })))
 }
 
 const run = async () => {

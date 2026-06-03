@@ -1,9 +1,11 @@
 import { Router } from 'express'
 
+import adminMediaRoutes from '#modules/media/admin-media.route.js'
 import authRoutes from '#modules/auth/auth.route.js'
 import eventRoutes from '#modules/events/event.route.js'
 import githubRoutes from '#modules/github/github.route.js'
 import googleRoutes from '#modules/google/google.route.js'
+import mediaRoutes from '#modules/media/media.route.js'
 import notificationRoutes from '#modules/notifications/notification.route.js'
 import teamRoutes from '#modules/teams/team.route.js'
 import trackRoutes from '#modules/tracks/track.route.js'
@@ -16,10 +18,12 @@ router.get('/status', (req, res) => {
   res.status(200).json({ status: 'ok' })
 })
 
+router.use('/admin/media', adminMediaRoutes)
 router.use('/auth', authRoutes)
 router.use('/events', eventRoutes)
 router.use('/github', githubRoutes)
 router.use('/google', googleRoutes)
+router.use('/media', mediaRoutes)
 router.use('/notifications', notificationRoutes)
 router.use('/teams', teamRoutes)
 router.use('/tracks', trackRoutes)
