@@ -599,24 +599,67 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ### 2.26 media
 
-**Purpose:** Uploaded media and gallery items.
+**Purpose:** Uploaded event media metadata for Supabase Storage-backed galleries, participant upload history, and moderation.
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events)
-- `uploadedBy` (ObjectId, ref: users)
-- `url` (string, required)
-- `caption` (string)
+- `eventId` (ObjectId, ref: events, required)
+- `uploadedBy` (ObjectId, ref: users, required)
+- `teamId` (ObjectId, ref: teams)
+- `title` (string)
+- `description` (string)
+- `mediaType` (string, enum: IMAGE, VIDEO, DOCUMENT)
+- `storageProvider` (string, default: SUPABASE)
+- `bucketName` (string, required)
+- `storagePath` (string, required)
+- `fileUrl` (string)
+- `originalFileName` (string, required)
+- `mimeType` (string, required)
+- `fileSize` (number, required)
+- `fileExtension` (string, required)
 - `tags` (string[])
+- `status` (string, enum: PENDING, APPROVED, REJECTED)
+- `reviewedBy` (ObjectId, ref: users)
+- `reviewedAt` (date)
+- `rejectReason` (string)
+- `uploadedAt` (date)
 - `createdAt`, `updatedAt`
 
 **Indexes**
-- `eventId, createdAt`
+- `eventId`
+- `uploadedBy`
+- `teamId`
+- `mediaType`
+- `status`
+- `uploadedAt`
+- `eventId, uploadedAt`
+- `uploadedBy, uploadedAt`
 - `tags`
 
 ---
 
-### 2.27 auditLogs
+### 2.27 mediaActivities
+
+**Purpose:** Track media upload, view, moderation, and delete activity.
+
+**Fields**
+- `_id` (ObjectId)
+- `mediaId` (ObjectId, ref: media, required)
+- `eventId` (ObjectId, ref: events, required)
+- `userId` (ObjectId, ref: users, required)
+- `action` (string, enum: UPLOAD, VIEW, DOWNLOAD, APPROVE, REJECT, DELETE)
+- `metadata` (object)
+- `createdAt` (date)
+
+**Indexes**
+- `mediaId, createdAt`
+- `eventId, createdAt`
+- `userId, createdAt`
+- `action, createdAt`
+
+---
+
+### 2.28 auditLogs
 
 **Purpose:** Track critical actions.
 
@@ -635,14 +678,14 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.28 systemConfigurations
+### 2.29 systemConfigurations
 
 **Purpose:** Admin-managed external integration settings.
 
 **Fields**
 - `_id` (ObjectId)
 - `key` (string, unique, required)
-- `value` (object, required)
+- `value` (mixed, required)
 - `isEncrypted` (boolean, default: true)
 - `updatedBy` (ObjectId, ref: users)
 - `updatedAt` (date)
@@ -670,6 +713,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 - One `rubric` has many `criteria`.
 - One `aiReview` has many `aiReviewCriteria`.
 - One `user` can have multiple `participants` across events.
+- One `media` item has many `mediaActivities`.
 
 ---
 
@@ -680,6 +724,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 - **Finalist selection:** filter `rankings` by `isSelectedForFinal` and review `selectionReason`.
 - **Workshop rating:** average `workshopFeedback.rating` by `workshopId`.
 - **Dashboard totals:** precompute counts for participants, teams, submissions, commits, pending AI reviews.
+- **Media statistics:** aggregate `media` by event, team, uploader, status, media type, and upload date; aggregate `mediaActivities` by `VIEW` action for most-viewed media.
 
 ---
 
@@ -690,5 +735,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 - Enforce exactly one leader per team with a unique constraint on `teamId + teamRole = LEADER` or application-level validation.
 - Ensure `roundId + teamId` uniqueness for submissions.
 - Store external secrets in `systemConfigurations` with encryption at rest.
+- Store actual event media files in Supabase Storage, and store only metadata in `media`.
+- Store `media.supabase_service_role_key_encrypted` encrypted in `systemConfigurations`; never return the service role key from APIs.
 - Keep authorization checks permission-based. Roles should remain permission groups, not route-level access conditions.
 - For webhook reliability, store processing status in `auditLogs` or a dedicated webhook log collection if needed.

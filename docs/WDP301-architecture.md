@@ -779,6 +779,37 @@ Sensitive data should be encrypted before saving to the database.
 
 ---
 
+### 11.16 Media Module
+
+Handles Supabase-backed event media upload, gallery access, tracking, moderation, and statistics.
+
+Responsibilities:
+
+- parse multipart uploads through the backend,
+- validate file extension, MIME type, and size,
+- store files in a private Supabase Storage bucket,
+- store media metadata in MongoDB,
+- generate short-lived signed URLs,
+- track upload/view/moderation/delete actions,
+- write audit logs for media actions,
+- keep Supabase service role keys encrypted and hidden from API responses.
+
+Routes:
+
+- `POST /api/media/upload`
+- `GET /api/media/my-history`
+- `GET /api/events/:id/gallery`
+- `GET /api/media/:mediaId/view-url`
+- `DELETE /api/media/:mediaId`
+- `GET /api/admin/media`
+- `PATCH /api/admin/media/:mediaId/approve`
+- `PATCH /api/admin/media/:mediaId/reject`
+- `GET /api/admin/media/statistics`
+- `GET /api/admin/media/config`
+- `PUT /api/admin/media/config`
+
+---
+
 ## 12. Database Models
 
 Main models:
@@ -809,6 +840,7 @@ AIReview
 AIReviewCriterion
 Notification
 Media
+MediaActivity
 AuditLog
 SystemConfig
 ```

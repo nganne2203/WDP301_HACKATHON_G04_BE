@@ -2,9 +2,9 @@
 
 ## 1. Current Implementation Summary
 
-* Implemented modules: authentication/local login/register/Google login/JWT refresh, user approval/status/role assignment, Google Calendar connect, event CRUD, track CRUD, workshop CRUD/questions/votes/ratings/feedback/Google Meet.
+* Implemented modules: authentication/local login/register/Google login/JWT refresh, user approval/status/role assignment, Google Calendar connect, event CRUD, track CRUD, workshop CRUD/questions/votes/ratings/feedback/Google Meet, backend media upload/gallery/history/moderation/statistics with Supabase Storage integration, frontend media upload/history/gallery/moderation/statistics screens.
 * Partially implemented modules: RBAC admin, event lifecycle, tracks, participants, teams, check-in, repositories, submissions, judging, scoring, rankings, AI review, notifications, audit logs, configurations.
-* Missing modules: timeline API, participant API, team API, rounds/judging-board API, repository/GitHub/webhook/commit APIs, submission/rubric/scoring/ranking/result APIs, AI-review API, notification/audit/config/media APIs.
+* Missing modules: timeline API, participant API, rounds/judging-board API, repository/webhook/commit APIs, submission/rubric/scoring/ranking/result APIs, AI-review API, notification/audit APIs.
 
 ## 2. Documentation Sources Reviewed
 
@@ -29,7 +29,8 @@
 | Submissions/rubrics/scoring | Submit artifacts, rubric scoring, score sheets | Models/seed only; FE mock | APIs, judge workflow, validation, locks | P2 |
 | Rankings/results | Ranking, finalists, tie-breakers, publish | Models/seed only; FE mock | Ranking generation, tie-break API, publish history | P3 |
 | AI review | Provider config, diff cache, retry, summaries | Models/seed only | Provider service, review API, retry flow, UI | P3 |
-| Notifications/audit/config | Reminders, audit search, external secrets | Models only; audit middleware imports missing repository | APIs, encryption, middleware repair, UI | P3 |
+| Media | Supabase-backed upload, gallery, history, tracking, moderation, statistics | Backend and frontend implemented | None for requested media scope | Done |
+| Notifications/audit/config | Reminders, audit search, external secrets | Media storage config implemented; other config/audit APIs still partial; audit middleware imports missing repository | Non-media APIs, middleware repair, UI | P3 |
 
 ## 4. Recommended Implementation Order
 
