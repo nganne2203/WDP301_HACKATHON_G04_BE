@@ -2,6 +2,28 @@ import mongoose from 'mongoose'
 
 const { Schema } = mongoose
 
+const competitionConfigSchema = new Schema(
+  {
+    boardCount: { type: Number, min: 1 },
+    trackCount: { type: Number, min: 1 },
+    maxTeamsPerBoard: { type: Number, min: 1 },
+    finalistCount: { type: Number, min: 1 },
+    finalistsPerBoard: { type: Number, min: 1 },
+    finalistSelectionMode: {
+      type: String,
+      enum: ['FIXED_PER_BOARD', 'TOP_PER_BOARD_WITH_WILDCARD', 'OVERALL_SCORE', 'CUSTOM']
+    },
+    fillRemainingFinalistsByOverallScore: { type: Boolean, default: false },
+    rankingScopes: [{
+      type: String,
+      enum: ['TEAM', 'CHAPTER', 'INDIVIDUAL']
+    }],
+    tieBreakRule: { type: String, trim: true },
+    tieBreakDurationMinutes: { type: Number, min: 1 }
+  },
+  { _id: false }
+)
+
 const eventSchema = new Schema(
   {
     title: { type: String, required: true, trim: true },
@@ -21,6 +43,10 @@ const eventSchema = new Schema(
     maxTeams: { type: Number, default: 30 },
     minTeamMembers: { type: Number, default: 3 },
     maxTeamMembers: { type: Number, default: 5 },
+    competitionConfig: {
+      type: competitionConfigSchema,
+      default: () => ({ rankingScopes: ['TEAM'] })
+    },
     finalistSlotsPerTrack: { type: Number, default: 5 },
     totalFinalistSlots: { type: Number, default: 10 },
     status: {

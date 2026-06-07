@@ -3,6 +3,21 @@ import Joi from 'joi'
 const objectId = Joi.string().hex().length(24)
 const eventStatus = Joi.string().trim().uppercase().valid('DRAFT', 'OPEN_REGISTRATION', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED')
 const season = Joi.string().trim().uppercase().valid('SPRING', 'SUMMER', 'FALL')
+const rankingScope = Joi.string().trim().uppercase().valid('TEAM', 'CHAPTER', 'INDIVIDUAL')
+const finalistSelectionMode = Joi.string().trim().uppercase().valid('FIXED_PER_BOARD', 'TOP_PER_BOARD_WITH_WILDCARD', 'OVERALL_SCORE', 'CUSTOM')
+
+const competitionConfig = Joi.object({
+  boardCount: Joi.number().integer().min(1),
+  trackCount: Joi.number().integer().min(1),
+  maxTeamsPerBoard: Joi.number().integer().min(1),
+  finalistCount: Joi.number().integer().min(1),
+  finalistsPerBoard: Joi.number().integer().min(1),
+  finalistSelectionMode,
+  fillRemainingFinalistsByOverallScore: Joi.boolean(),
+  rankingScopes: Joi.array().items(rankingScope).min(1).unique(),
+  tieBreakRule: Joi.string().trim().max(500).allow('', null),
+  tieBreakDurationMinutes: Joi.number().integer().min(1)
+})
 
 const idParam = Joi.object({
   id: objectId.required()
@@ -36,6 +51,7 @@ const createEvent = {
     maxTeams: Joi.number().integer().min(1).default(30),
     minTeamMembers: Joi.number().integer().min(1).max(20).default(3),
     maxTeamMembers: Joi.number().integer().min(Joi.ref('minTeamMembers')).max(20).default(5),
+    competitionConfig: competitionConfig.default(),
     finalistSlotsPerTrack: Joi.number().integer().min(1).default(5),
     totalFinalistSlots: Joi.number().integer().min(1).default(10),
     status: eventStatus.default('DRAFT')
@@ -59,6 +75,7 @@ const updateEvent = {
     maxTeams: Joi.number().integer().min(1),
     minTeamMembers: Joi.number().integer().min(1).max(20),
     maxTeamMembers: Joi.number().integer().min(1).max(20),
+    competitionConfig,
     finalistSlotsPerTrack: Joi.number().integer().min(1),
     totalFinalistSlots: Joi.number().integer().min(1),
     status: eventStatus

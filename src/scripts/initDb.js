@@ -94,6 +94,35 @@ const upsertOne = async (Model, filter, data) => {
 
 const buildDate = (value) => new Date(value)
 
+const FALL_2025_SAMPLE_CONFIG = {
+  boardCount: 2,
+  trackCount: 2,
+  maxTeamsPerBoard: 20,
+  finalistCount: 10,
+  finalistsPerBoard: 5,
+  finalistSelectionMode: 'FIXED_PER_BOARD',
+  fillRemainingFinalistsByOverallScore: false,
+  rankingScopes: ['TEAM', 'CHAPTER', 'INDIVIDUAL'],
+  tieBreakRule: 'Judges resolve ties using rubric-level discussion and final deliberation.'
+}
+
+const FALL_2025_TRACK_SEEDS = [
+  {
+    code: 'A',
+    name: 'Bang A',
+    description: 'AI for Requirements and Design',
+    type: 'PRELIMINARY_GROUP',
+    maxTeams: FALL_2025_SAMPLE_CONFIG.maxTeamsPerBoard
+  },
+  {
+    code: 'B',
+    name: 'Bang B',
+    description: 'AI for Development, Testing, and Operations',
+    type: 'PRELIMINARY_GROUP',
+    maxTeams: FALL_2025_SAMPLE_CONFIG.maxTeamsPerBoard
+  }
+]
+
 const buildPermissionDescription = (code) => {
   return code
     .toLowerCase()
@@ -279,8 +308,9 @@ const seedSampleData = async () => {
     maxTeams: 30,
     minTeamMembers: 3,
     maxTeamMembers: 5,
-    finalistSlotsPerTrack: 5,
-    totalFinalistSlots: 10,
+    competitionConfig: FALL_2025_SAMPLE_CONFIG,
+    finalistSlotsPerTrack: FALL_2025_SAMPLE_CONFIG.finalistsPerBoard,
+    totalFinalistSlots: FALL_2025_SAMPLE_CONFIG.finalistCount,
     status: 'COMPLETED',
     createdBy: coordinatorUser._id
   })
@@ -346,6 +376,14 @@ const seedSampleData = async () => {
     maxTeams: 20,
     status: 'LOCKED'
   })
+
+  await Promise.all(FALL_2025_TRACK_SEEDS.map((trackSeed) => {
+    return upsertOne(Track, { eventId: event._id, code: trackSeed.code }, {
+      eventId: event._id,
+      ...trackSeed,
+      status: 'LOCKED'
+    })
+  }))
 
   const teamDefinitions = [
     ['Agent Pioneers', 'SE', trackA, 'Requirements Copilot', 92, 1, true],
@@ -487,7 +525,7 @@ const seedSampleData = async () => {
     roundType: 'PRELIMINARY',
     assignedTeamIds: trackATeams,
     promotedTeamIds: finalistRecords.filter(({ track }) => track._id.equals(trackA._id)).map(({ team }) => team._id),
-    maxPromotedTeams: 5,
+    maxPromotedTeams: FALL_2025_SAMPLE_CONFIG.finalistsPerBoard,
     startTime: buildDate('2025-11-02T06:00:00+07:00'),
     endTime: buildDate('2025-11-02T17:00:00+07:00'),
     submissionDeadline: buildDate('2025-11-02T14:00:00+07:00'),
@@ -505,7 +543,7 @@ const seedSampleData = async () => {
     roundType: 'PRELIMINARY',
     assignedTeamIds: trackBTeams,
     promotedTeamIds: finalistRecords.filter(({ track }) => track._id.equals(trackB._id)).map(({ team }) => team._id),
-    maxPromotedTeams: 5,
+    maxPromotedTeams: FALL_2025_SAMPLE_CONFIG.finalistsPerBoard,
     startTime: buildDate('2025-11-02T06:00:00+07:00'),
     endTime: buildDate('2025-11-02T17:00:00+07:00'),
     submissionDeadline: buildDate('2025-11-02T14:00:00+07:00'),
@@ -967,8 +1005,9 @@ const seedSampleData = async () => {
       minTeamMembers: 3,
       maxTeamMembers: 5,
       preliminaryTracks: ['A', 'B'],
-      finalistSlotsPerTrack: 5,
-      totalFinalistSlots: 10,
+      competitionConfig: FALL_2025_SAMPLE_CONFIG,
+      finalistSlotsPerTrack: FALL_2025_SAMPLE_CONFIG.finalistsPerBoard,
+      totalFinalistSlots: FALL_2025_SAMPLE_CONFIG.finalistCount,
       prizeSlots: 6
     },
     isEncrypted: false,
