@@ -73,5 +73,21 @@ export const QUEUE_SERVICE = {
     return await getGithubPushQueue().add(JOB_TYPES.COMPUTE_IMPACT_SCORE, data, {
       jobId
     })
+  },
+
+  async enqueueRunPerPushAudit(data) {
+    const jobId = `run-per-push-audit:${data.repositoryId}:${data.commitSha}`
+
+    return await getGithubPushQueue().add(JOB_TYPES.RUN_PER_PUSH_AUDIT, data, {
+      jobId
+    })
+  },
+
+  async enqueueRunTeamAggregateAudit(data) {
+    const jobId = `run-team-aggregate-audit:${data.repositoryId}:${data.batchId || 'latest'}`
+
+    return await getGithubPushQueue().add(JOB_TYPES.RUN_TEAM_AGGREGATE_AUDIT, data, {
+      jobId
+    })
   }
 }

@@ -8,16 +8,21 @@ const aiReviewCriterionSchema = new Schema(
     name: { type: String, required: true, trim: true },
     code: { type: String, trim: true },
     description: { type: String },
-    maxScore: { type: Number, required: true },
+    maxScore: { type: Number, default: 0 },
     score: { type: Number },
     weight: { type: Number, default: 1 },
     feedback: { type: String },
+    qualitativeLevel: {
+      type: String,
+      enum: ['EXCELLENT', 'GOOD', 'FAIR', 'AVERAGE', 'WEAK', 'NOT_ENOUGH_EVIDENCE']
+    },
     strengths: [{ type: String }],
     weaknesses: [{ type: String }],
     suggestions: [{ type: String }],
     evidence: [{ type: String }],
+    risks: [{ type: String }],
     order: { type: Number, default: 0 },
-    criterionId: { type: Schema.Types.ObjectId, ref: 'Criterion', required: true }
+    criterionId: { type: Schema.Types.ObjectId, ref: 'Criterion' }
   },
   { timestamps: true }
 )

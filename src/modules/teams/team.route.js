@@ -1,5 +1,7 @@
 import { Router } from 'express'
 
+import { AI_REVIEW_CONTROLLER } from '#modules/ai-reviews/ai-review.controller.js'
+import { AI_REVIEW_VALIDATION } from '#modules/ai-reviews/ai-review.validation.js'
 import { TEAM_CONTROLLER } from './team.controller.js'
 import { TEAM_VALIDATION } from './team.validation.js'
 import { PERMISSIONS } from '#constants/permissions.js'
@@ -49,6 +51,13 @@ router.get(
   permissionMiddleware(PERMISSIONS.TEAM_VIEW),
   validationHandlingMiddleware(TEAM_VALIDATION.getTeamById),
   TEAM_CONTROLLER.getTeamById
+)
+
+router.get(
+  '/:teamId/ai-audit-summary',
+  permissionMiddleware(PERMISSIONS.AI_REVIEW_VIEW),
+  validationHandlingMiddleware(AI_REVIEW_VALIDATION.getTeamAiAuditSummary),
+  AI_REVIEW_CONTROLLER.getTeamAiAuditSummary
 )
 
 router.patch(

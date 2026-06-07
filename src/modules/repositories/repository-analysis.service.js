@@ -655,6 +655,16 @@ export const createRepositoryAnalysisService = ({
       }
     })
 
+    if (
+      queueService.enqueueRunPerPushAudit &&
+      ['CALL_PER_PUSH_AUDIT', 'URGENT_AUDIT_AND_HUMAN_REVIEW'].includes(decisionPayload.decision)
+    ) {
+      await queueService.enqueueRunPerPushAudit({
+        repositoryId,
+        commitSha
+      })
+    }
+
     return normalizeImpactDecision(persistedDecision)
   }
 

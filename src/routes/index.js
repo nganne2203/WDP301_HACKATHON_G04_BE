@@ -2,6 +2,7 @@ import { Router } from 'express'
 
 import adminMediaRoutes from '#modules/media/admin-media.route.js'
 import authRoutes from '#modules/auth/auth.route.js'
+import aiReviewRoutes from '#modules/ai-reviews/ai-review.route.js'
 import eventRoutes from '#modules/events/event.route.js'
 import githubRoutes from '#modules/github/github.route.js'
 import githubWebhookRoutes from '#modules/github-webhooks/github-webhook.route.js'
@@ -25,6 +26,7 @@ router.get('/status', (req, res) => {
 })
 
 router.use('/admin/media', adminMediaRoutes)
+router.use('/ai-reviews', aiReviewRoutes)
 router.use('/auth', authRoutes)
 router.use('/events', eventRoutes)
 router.use('/github/webhooks', githubWebhookRoutes)

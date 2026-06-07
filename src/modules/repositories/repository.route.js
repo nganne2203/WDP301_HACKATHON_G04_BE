@@ -1,5 +1,7 @@
 import { Router } from 'express'
 
+import { AI_REVIEW_CONTROLLER } from '#modules/ai-reviews/ai-review.controller.js'
+import { AI_REVIEW_VALIDATION } from '#modules/ai-reviews/ai-review.validation.js'
 import { REPOSITORY_CONTROLLER } from './repository.controller.js'
 import { REPOSITORY_VALIDATION } from './repository.validation.js'
 import { PERMISSIONS } from '#constants/permissions.js'
@@ -60,6 +62,13 @@ router.get(
   REPOSITORY_CONTROLLER.listRepositoryImpactDecisions
 )
 
+router.get(
+  '/:id/ai-reviews',
+  permissionMiddleware(PERMISSIONS.AI_REVIEW_VIEW),
+  validationHandlingMiddleware(AI_REVIEW_VALIDATION.repositoryAiReviews),
+  AI_REVIEW_CONTROLLER.listRepositoryAiReviews
+)
+
 router.patch(
   '/:id',
   permissionMiddleware(PERMISSIONS.GITHUB_REPOSITORY_CREATE),
@@ -79,6 +88,20 @@ router.post(
   permissionMiddleware(PERMISSIONS.GITHUB_REPOSITORY_CREATE),
   validationHandlingMiddleware(REPOSITORY_VALIDATION.analyzeCommit),
   REPOSITORY_CONTROLLER.analyzeCommit
+)
+
+router.post(
+  '/:id/ai-reviews/per-push',
+  permissionMiddleware(PERMISSIONS.AI_REVIEW_TRIGGER),
+  validationHandlingMiddleware(AI_REVIEW_VALIDATION.createPerPushAudit),
+  AI_REVIEW_CONTROLLER.createPerPushAudit
+)
+
+router.post(
+  '/:id/ai-reviews/team-aggregate',
+  permissionMiddleware(PERMISSIONS.AI_REVIEW_TRIGGER),
+  validationHandlingMiddleware(AI_REVIEW_VALIDATION.createTeamAggregateAudit),
+  AI_REVIEW_CONTROLLER.createTeamAggregateAudit
 )
 
 export default router

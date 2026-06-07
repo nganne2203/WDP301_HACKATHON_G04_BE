@@ -1,6 +1,7 @@
 import IORedis from 'ioredis'
 import { Worker } from 'bullmq'
 
+import { AI_REVIEW_SERVICE } from '#modules/ai-reviews/ai-review.service.js'
 import { REPOSITORY_ANALYSIS_SERVICE } from '#modules/repositories/repository-analysis.service.js'
 import { REPOSITORY_EVIDENCE_SERVICE } from '#modules/repositories/repository-evidence.service.js'
 import { env } from '#configs/environment.js'
@@ -41,7 +42,8 @@ export const processGithubPushEventJob = async (job) => {
 
 export const processGithubIngestionJob = async (job, {
   repositoryEvidenceService = REPOSITORY_EVIDENCE_SERVICE,
-  repositoryAnalysisService = REPOSITORY_ANALYSIS_SERVICE
+  repositoryAnalysisService = REPOSITORY_ANALYSIS_SERVICE,
+  aiReviewService = AI_REVIEW_SERVICE
 } = {}) => {
   if (job.name === JOB_TYPES.PROCESS_GITHUB_PUSH_EVENT) {
     return await processGithubPushEventJob(job)
@@ -61,6 +63,14 @@ export const processGithubIngestionJob = async (job, {
 
   if (job.name === JOB_TYPES.COMPUTE_IMPACT_SCORE) {
     return await repositoryAnalysisService.processComputeImpactScoreJob(job.data)
+  }
+
+  if (job.name === JOB_TYPES.RUN_PER_PUSH_AUDIT) {
+    return await aiReviewService.processPerPushAuditJob(job.data)
+  }
+
+  if (job.name === JOB_TYPES.RUN_TEAM_AGGREGATE_AUDIT) {
+    return await aiReviewService.processTeamAggregateAuditJob(job.data)
   }
 
   return null
