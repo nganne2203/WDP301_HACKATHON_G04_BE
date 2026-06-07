@@ -28,7 +28,17 @@ const upsertConfig = async ({ key, value, isEncrypted, updatedBy }) => {
 const createRepositoryRecord = async (data) => {
   return await Repository.findOneAndUpdate(
     { teamId: data.teamId },
-    { $set: data },
+    {
+      $set: {
+        ...data,
+        githubOwner: data.githubOwner || data.githubOrg,
+        githubRepo: data.githubRepo || data.repoName,
+        repositoryFullName: data.repositoryFullName || `${data.githubOwner || data.githubOrg}/${data.githubRepo || data.repoName}`,
+        repositoryUrl: data.repositoryUrl || data.repoUrl,
+        status: data.status || 'ACTIVE',
+        accessState: data.accessState || 'GRANTED'
+      }
+    },
     {
       new: true,
       upsert: true,

@@ -32,7 +32,8 @@ const createRepository = {
     repoName: githubName.required(),
     description: Joi.string().trim().max(500).allow('', null),
     private: Joi.boolean().default(true),
-    teamId: objectId
+    teamId: objectId,
+    roundId: objectId.allow(null)
   })
 }
 

@@ -259,10 +259,17 @@ export const createGithubService = ({
       await repository.createRepositoryRecord({
         eventId: payload.eventId,
         teamId: payload.teamId,
+        roundId: payload.roundId,
+        githubOwner: config.organizationName,
+        githubRepo: data?.name || payload.repoName,
+        repositoryFullName: `${config.organizationName}/${data?.name || payload.repoName}`,
+        repositoryUrl: data?.html_url,
         githubOrg: config.organizationName,
         repoName: data?.name || payload.repoName,
         repoUrl: data?.html_url,
-        defaultBranch: data?.default_branch || 'main'
+        defaultBranch: data?.default_branch || 'main',
+        status: 'ACTIVE',
+        accessState: 'GRANTED'
       })
     }
 

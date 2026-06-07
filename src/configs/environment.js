@@ -69,6 +69,12 @@ export const env = {
     authCallbackUrl: process.env.GOOGLE_AUTH_CALLBACK_URL,
     connectCallbackUrl: process.env.GOOGLE_CONNECT_CALLBACK_URL
   },
+  github: {
+    webhookSecret: process.env.GITHUB_WEBHOOK_SECRET
+  },
+  redis: {
+    url: process.env.REDIS_URL || 'redis://127.0.0.1:6379'
+  },
   security: {
     tokenEncryptionSecret: process.env.TOKEN_ENCRYPTION_SECRET
   }
