@@ -27,6 +27,7 @@
     "#services/*": "./src/services/*"
   },
   "dependencies": {
+    "@octokit/rest": "^22.0.1",
     "bcrypt": "^5.1.1",
     "bullmq": "^5.78.0",
     "cors": "^2.8.5",

@@ -21,6 +21,14 @@ const listRepositories = {
   })
 }
 
+const repositoryEvidenceQuery = {
+  params: idParam,
+  query: Joi.object({
+    page: Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).max(100).default(10)
+  })
+}
+
 const createRepository = {
   body: Joi.object({
     eventId: objectId.required(),
@@ -60,5 +68,18 @@ export const REPOSITORY_VALIDATION = {
   listRepositories,
   createRepository,
   updateRepository,
-  getRepositoryById
+  getRepositoryById,
+  listRepositoryCommits: repositoryEvidenceQuery,
+  listRepositoryCommitDiffs: repositoryEvidenceQuery,
+  listRepositoryStaticAnalysis: repositoryEvidenceQuery,
+  listRepositoryImpactDecisions: repositoryEvidenceQuery,
+  syncRepositoryCommits: {
+    params: idParam
+  },
+  analyzeCommit: {
+    params: idParam,
+    body: Joi.object({
+      commitSha: Joi.string().trim().max(100).allow('', null)
+    }).default({})
+  }
 }

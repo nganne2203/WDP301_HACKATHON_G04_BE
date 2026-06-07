@@ -69,6 +69,10 @@ export const env = {
     authCallbackUrl: process.env.GOOGLE_AUTH_CALLBACK_URL,
     connectCallbackUrl: process.env.GOOGLE_CONNECT_CALLBACK_URL
   },
+  analysis: {
+    eslintCommand: process.env.STATIC_ANALYSIS_ESLINT_COMMAND,
+    tscCommand: process.env.STATIC_ANALYSIS_TSC_COMMAND
+  },
   github: {
     webhookSecret: process.env.GITHUB_WEBHOOK_SECRET
   },

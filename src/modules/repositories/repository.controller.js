@@ -1,5 +1,7 @@
 import { StatusCodes } from 'http-status-codes'
 
+import { REPOSITORY_ANALYSIS_SERVICE } from './repository-analysis.service.js'
+import { REPOSITORY_EVIDENCE_SERVICE } from './repository-evidence.service.js'
 import { REPOSITORY_SERVICE } from './repository.service.js'
 import { responseSuccess } from '#utils/responseUtil.js'
 
@@ -52,9 +54,120 @@ const updateRepository = async (req, res, next) => {
   }
 }
 
+const listRepositoryCommits = async (req, res, next) => {
+  try {
+    const { repository, commits, pagination } = await REPOSITORY_EVIDENCE_SERVICE.listCommits({
+      repositoryId: req.params.id,
+      query: req.validated?.query || req.query
+    })
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get repository commits successfully',
+      data: {
+        repository,
+        commits
+      },
+      pagination
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const listRepositoryCommitDiffs = async (req, res, next) => {
+  try {
+    const { repository, commitDiffs, pagination } = await REPOSITORY_EVIDENCE_SERVICE.listCommitDiffs({
+      repositoryId: req.params.id,
+      query: req.validated?.query || req.query
+    })
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get repository commit diffs successfully',
+      data: {
+        repository,
+        commitDiffs
+      },
+      pagination
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const syncRepositoryCommits = async (req, res, next) => {
+  try {
+    const result = await REPOSITORY_EVIDENCE_SERVICE.syncRepositoryCommits({
+      repositoryId: req.params.id
+    })
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Repository commit sync queued successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const listRepositoryStaticAnalysis = async (req, res, next) => {
+  try {
+    const { repository, results, pagination } = await REPOSITORY_ANALYSIS_SERVICE.listStaticAnalysisResults({
+      repositoryId: req.params.id,
+      query: req.validated?.query || req.query
+    })
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get repository static analysis results successfully',
+      data: {
+        repository,
+        results
+      },
+      pagination
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const listRepositoryImpactDecisions = async (req, res, next) => {
+  try {
+    const { repository, decisions, pagination } = await REPOSITORY_ANALYSIS_SERVICE.listImpactDecisions({
+      repositoryId: req.params.id,
+      query: req.validated?.query || req.query
+    })
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get repository impact decisions successfully',
+      data: {
+        repository,
+        decisions
+      },
+      pagination
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const analyzeCommit = async (req, res, next) => {
+  try {
+    const result = await REPOSITORY_ANALYSIS_SERVICE.analyzeCommit({
+      repositoryId: req.params.id,
+      commitSha: req.body?.commitSha || null
+    })
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Repository commit analysis queued successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const REPOSITORY_CONTROLLER = {
   listRepositories,
   getRepositoryById,
   createRepository,
-  updateRepository
+  updateRepository,
+  listRepositoryCommits,
+  listRepositoryCommitDiffs,
+  syncRepositoryCommits,
+  listRepositoryStaticAnalysis,
+  listRepositoryImpactDecisions,
+  analyzeCommit
 }
