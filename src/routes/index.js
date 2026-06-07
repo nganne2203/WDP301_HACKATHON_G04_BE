@@ -5,9 +5,11 @@ import authRoutes from '#modules/auth/auth.route.js'
 import eventRoutes from '#modules/events/event.route.js'
 import githubRoutes from '#modules/github/github.route.js'
 import googleRoutes from '#modules/google/google.route.js'
+import judgingBoardRoutes from '#modules/judging-boards/judging-board.route.js'
 import mediaRoutes from '#modules/media/media.route.js'
 import notificationRoutes from '#modules/notifications/notification.route.js'
 import participantRoutes from '#modules/participants/participant.route.js'
+import roundRoutes from '#modules/rounds/round.route.js'
 import teamRoutes from '#modules/teams/team.route.js'
 import timelineRoutes from '#modules/timelines/timeline.route.js'
 import trackRoutes from '#modules/tracks/track.route.js'
@@ -25,9 +27,11 @@ router.use('/auth', authRoutes)
 router.use('/events', eventRoutes)
 router.use('/github', githubRoutes)
 router.use('/google', googleRoutes)
+router.use('/judging-boards', judgingBoardRoutes)
 router.use('/media', mediaRoutes)
 router.use('/notifications', notificationRoutes)
 router.use('/participants', participantRoutes)
+router.use('/rounds', roundRoutes)
 router.use('/teams', teamRoutes)
 router.use('/timelines', timelineRoutes)
 router.use('/tracks', trackRoutes)
