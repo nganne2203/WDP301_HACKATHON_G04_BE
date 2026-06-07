@@ -4,6 +4,8 @@ import { EVENT_CONTROLLER } from './event.controller.js'
 import { EVENT_VALIDATION } from './event.validation.js'
 import { MEDIA_CONTROLLER } from '#modules/media/media.controller.js'
 import { MEDIA_VALIDATION } from '#modules/media/media.validation.js'
+import { TEAM_CONTROLLER } from '#modules/teams/team.controller.js'
+import { TEAM_VALIDATION } from '#modules/teams/team.validation.js'
 import { PERMISSIONS } from '#constants/permissions.js'
 import { authorizationMiddleware } from '#middlewares/authHandlingMiddleware.js'
 import { permissionMiddleware } from '#middlewares/permission.middleware.js'
@@ -185,6 +187,13 @@ router.get(
   permissionMiddleware(PERMISSIONS.EVENT_VIEW),
   validationHandlingMiddleware(MEDIA_VALIDATION.eventGallery),
   MEDIA_CONTROLLER.getEventGallery
+)
+
+router.get(
+  '/:eventId/teams/capacity',
+  permissionMiddleware(PERMISSIONS.TEAM_VIEW),
+  validationHandlingMiddleware(TEAM_VALIDATION.getEventCapacity),
+  TEAM_CONTROLLER.getEventTeamCapacity
 )
 
 /**

@@ -51,6 +51,20 @@ router.get(
   TEAM_CONTROLLER.getTeamById
 )
 
+router.patch(
+  '/:id/status',
+  permissionMiddleware(PERMISSIONS.TEAM_UPDATE),
+  validationHandlingMiddleware(TEAM_VALIDATION.updateTeamStatus),
+  TEAM_CONTROLLER.updateTeamStatus
+)
+
+router.patch(
+  '/:id/placement',
+  permissionMiddleware(PERMISSIONS.TEAM_UPDATE),
+  validationHandlingMiddleware(TEAM_VALIDATION.updateTeamPlacement),
+  TEAM_CONTROLLER.updateTeamPlacement
+)
+
 router.post(
   '/:id/invitations',
   permissionMiddleware(PERMISSIONS.TEAM_VIEW),

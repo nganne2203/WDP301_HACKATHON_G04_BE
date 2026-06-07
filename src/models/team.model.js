@@ -16,6 +16,9 @@ const teamSchema = new Schema(
       enum: ['DRAW', 'MANUAL', 'SYSTEM'],
       default: 'MANUAL'
     },
+    boardNumber: { type: Number, min: 1 },
+    placementSlot: { type: Number, min: 1 },
+    waitlistPosition: { type: Number, min: 1 },
     trackAssignedAt: { type: Date },
     qualificationStatus: {
       type: String,
@@ -24,7 +27,7 @@ const teamSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'WAITING_FOR_MEMBERS', 'CONFIRMED', 'REJECTED', 'ACTIVE', 'INACTIVE', 'DISQUALIFIED'],
+      enum: ['PENDING', 'WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED', 'REJECTED', 'ACTIVE', 'INACTIVE', 'DISQUALIFIED'],
       default: 'WAITING_FOR_MEMBERS'
     },
     confirmedAt: { type: Date },

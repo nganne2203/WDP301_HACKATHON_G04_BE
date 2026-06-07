@@ -128,6 +128,45 @@ const cancelInvitation = async (req, res, next) => {
   }
 }
 
+const updateTeamStatus = async (req, res, next) => {
+  try {
+    const team = await TEAM_SERVICE.updateTeamStatus(req.params.id, req.body, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Update team status successfully',
+      data: team
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const updateTeamPlacement = async (req, res, next) => {
+  try {
+    const team = await TEAM_SERVICE.updateTeamPlacement(req.params.id, req.body, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Update team placement successfully',
+      data: team
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const getEventTeamCapacity = async (req, res, next) => {
+  try {
+    const capacity = await TEAM_SERVICE.getEventTeamCapacity(req.params.eventId, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get team capacity successfully',
+      data: capacity
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const TEAM_CONTROLLER = {
   listTeams,
   createTeam,
@@ -137,5 +176,8 @@ export const TEAM_CONTROLLER = {
   acceptInvitation,
   declineInvitation,
   replaceInvitation,
-  cancelInvitation
+  cancelInvitation,
+  updateTeamStatus,
+  updateTeamPlacement,
+  getEventTeamCapacity
 }
