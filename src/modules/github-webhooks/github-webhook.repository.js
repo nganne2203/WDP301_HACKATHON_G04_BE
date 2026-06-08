@@ -17,7 +17,18 @@ const updateDeliveryById = async (id, data) => {
 }
 
 const findRepositoryByFullName = async (repositoryFullName) => {
-  return await Repository.findOne({ repositoryFullName })
+  const directMatch = await Repository.findOne({ repositoryFullName })
+  if (directMatch) return directMatch
+
+  const [owner, repo] = String(repositoryFullName || '').split('/')
+  if (!owner || !repo) return null
+
+  return await Repository.findOne({
+    $or: [
+      { githubOwner: owner, githubRepo: repo },
+      { githubOrg: owner, repoName: repo }
+    ]
+  })
 }
 
 const updateRepositoryById = async (id, data) => {

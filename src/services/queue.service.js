@@ -7,6 +7,16 @@ import { JOB_TYPES, QUEUE_NAMES } from '#constants/queue.js'
 let redisConnection
 let githubPushQueue
 
+const sanitizeJobIdSegment = (value) => {
+  return String(value ?? 'none')
+    .trim()
+    .replace(/[:\s/\\]+/g, '_')
+}
+
+export const buildQueueJobId = (...segments) => {
+  return segments.map(sanitizeJobIdSegment).join('__')
+}
+
 const getRedisConnection = () => {
   if (!redisConnection) {
     redisConnection = new IORedis(env.redis.url, {
@@ -60,8 +70,8 @@ export const QUEUE_SERVICE = {
 
   async enqueueFetchCommitDiff(data) {
     const jobId = data.deliveryId
-      ? `fetch-commit-diff:${data.deliveryId}`
-      : `fetch-commit-diff:${data.repositoryId}:${data.afterCommitSha || data.headCommitSha || Date.now()}`
+      ? buildQueueJobId('fetch-commit-diff', data.deliveryId)
+      : buildQueueJobId('fetch-commit-diff', data.repositoryId, data.afterCommitSha || data.headCommitSha || Date.now())
 
     return await getGithubPushQueue().add(JOB_TYPES.FETCH_COMMIT_DIFF, data, {
       jobId
@@ -70,8 +80,8 @@ export const QUEUE_SERVICE = {
 
   async enqueueHourlyRepositoryScan(data = {}) {
     const jobId = data.repositoryId
-      ? `hourly-repository-scan:${data.repositoryId}`
-      : 'hourly-repository-scan:all'
+      ? buildQueueJobId('hourly-repository-scan', data.repositoryId)
+      : buildQueueJobId('hourly-repository-scan', 'all')
 
     return await getGithubPushQueue().add(JOB_TYPES.HOURLY_REPOSITORY_SCAN, data, {
       jobId
@@ -79,7 +89,7 @@ export const QUEUE_SERVICE = {
   },
 
   async enqueueRunStaticAnalysis(data) {
-    const jobId = `run-static-analysis:${data.repositoryId}:${data.commitSha}`
+    const jobId = buildQueueJobId('run-static-analysis', data.repositoryId, data.commitSha)
 
     return await getGithubPushQueue().add(JOB_TYPES.RUN_STATIC_ANALYSIS, data, {
       jobId
@@ -87,7 +97,7 @@ export const QUEUE_SERVICE = {
   },
 
   async enqueueComputeImpactScore(data) {
-    const jobId = `compute-impact-score:${data.repositoryId}:${data.commitSha}`
+    const jobId = buildQueueJobId('compute-impact-score', data.repositoryId, data.commitSha)
 
     return await getGithubPushQueue().add(JOB_TYPES.COMPUTE_IMPACT_SCORE, data, {
       jobId
@@ -95,7 +105,7 @@ export const QUEUE_SERVICE = {
   },
 
   async enqueueRunPerPushAudit(data) {
-    const jobId = `run-per-push-audit:${data.repositoryId}:${data.commitSha}`
+    const jobId = buildQueueJobId('run-per-push-audit', data.repositoryId, data.commitSha)
 
     return await getGithubPushQueue().add(JOB_TYPES.RUN_PER_PUSH_AUDIT, data, {
       jobId
@@ -103,7 +113,7 @@ export const QUEUE_SERVICE = {
   },
 
   async enqueueRunTeamAggregateAudit(data) {
-    const jobId = `run-team-aggregate-audit:${data.repositoryId}:${data.batchId || 'latest'}`
+    const jobId = buildQueueJobId('run-team-aggregate-audit', data.repositoryId, data.batchId || 'latest')
 
     return await getGithubPushQueue().add(JOB_TYPES.RUN_TEAM_AGGREGATE_AUDIT, data, {
       jobId

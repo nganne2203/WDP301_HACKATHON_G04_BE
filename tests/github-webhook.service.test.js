@@ -107,6 +107,53 @@ test('handleWebhook accepts a valid push signature, persists delivery, and enque
   assert.equal(deliveries.get('delivery-1').signatureValid, true)
 })
 
+test('handleWebhook links legacy repository records when repositoryFullName is absent but owner and repo fields exist', async () => {
+  const jobs = []
+  const service = createGithubWebhookService({
+    repository: {
+      findDeliveryById: async () => null,
+      createDelivery: async (data) => ({ _id: '000000000000000000000999', ...data }),
+      updateDeliveryById: async (_id, data) => data,
+      findRepositoryByFullName: async (repositoryFullName) => {
+        if (repositoryFullName !== 'seal-org/team-alpha') return null
+        return {
+          _id: '000000000000000000000111',
+          eventId: '000000000000000000000222',
+          teamId: '000000000000000000000333',
+          roundId: '000000000000000000000444',
+          githubOwner: 'seal-org',
+          githubRepo: 'team-alpha'
+        }
+      },
+      updateRepositoryById: async () => null
+    },
+    queueService: {
+      enqueueGithubPushEvent: async (data) => {
+        jobs.push(data)
+        return { id: data.deliveryId }
+      }
+    },
+    webhookSecret: 'phase-5-secret'
+  })
+
+  const rawBody = Buffer.from(JSON.stringify(createPushPayload()))
+  const signature = service.buildSignature({
+    secret: 'phase-5-secret',
+    rawBody
+  })
+
+  await service.handleWebhook({
+    rawBody,
+    deliveryId: 'delivery-legacy-link',
+    eventType: 'push',
+    signature
+  })
+
+  assert.equal(jobs.length, 1)
+  assert.equal(jobs[0].repositoryId, '000000000000000000000111')
+  assert.equal(jobs[0].teamId, '000000000000000000000333')
+})
+
 test('handleWebhook rejects an invalid signature and persists a rejected delivery', async () => {
   const { repository, deliveries } = createWebhookRepository()
   const service = createGithubWebhookService({
