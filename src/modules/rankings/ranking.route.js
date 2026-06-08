@@ -5,6 +5,7 @@ import { RANKING_VALIDATION } from './ranking.validation.js'
 import { PERMISSIONS } from '#constants/permissions.js'
 import { authorizationMiddleware } from '#middlewares/authHandlingMiddleware.js'
 import { permissionMiddleware } from '#middlewares/permission.middleware.js'
+import { sensitiveRateLimiter } from '#middlewares/rateLimitHandlingMiddleware.js'
 import { validationHandlingMiddleware } from '#middlewares/validationHandlingMiddleware.js'
 
 const router = Router()
@@ -20,6 +21,7 @@ router.get(
 
 router.post(
   '/generate',
+  sensitiveRateLimiter,
   permissionMiddleware(PERMISSIONS.RESULT_PUBLISH),
   validationHandlingMiddleware(RANKING_VALIDATION.generateRankings),
   RANKING_CONTROLLER.generateRankings

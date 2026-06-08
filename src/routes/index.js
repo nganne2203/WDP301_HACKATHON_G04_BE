@@ -1,6 +1,7 @@
 import { Router } from 'express'
 
 import adminMediaRoutes from '#modules/media/admin-media.route.js'
+import auditLogRoutes from '#modules/audit-logs/audit-log.route.js'
 import authRoutes from '#modules/auth/auth.route.js'
 import aiReviewRoutes from '#modules/ai-reviews/ai-review.route.js'
 import eventRoutes from '#modules/events/event.route.js'
@@ -10,6 +11,7 @@ import googleRoutes from '#modules/google/google.route.js'
 import judgingBoardRoutes from '#modules/judging-boards/judging-board.route.js'
 import mediaRoutes from '#modules/media/media.route.js'
 import notificationRoutes from '#modules/notifications/notification.route.js'
+import operationsRoutes from '#modules/operations/operations.route.js'
 import participantRoutes from '#modules/participants/participant.route.js'
 import repositoryRoutes from '#modules/repositories/repository.route.js'
 import resultRoutes from '#modules/results/result.route.js'
@@ -32,6 +34,7 @@ router.get('/status', (req, res) => {
 })
 
 router.use('/admin/media', adminMediaRoutes)
+router.use('/audit-logs', auditLogRoutes)
 router.use('/ai-reviews', aiReviewRoutes)
 router.use('/auth', authRoutes)
 router.use('/events', eventRoutes)
@@ -41,6 +44,7 @@ router.use('/google', googleRoutes)
 router.use('/judging-boards', judgingBoardRoutes)
 router.use('/media', mediaRoutes)
 router.use('/notifications', notificationRoutes)
+router.use('/operations', operationsRoutes)
 router.use('/participants', participantRoutes)
 router.use('/finalists', finalistRoutes)
 router.use('/rankings', rankingRoutes)

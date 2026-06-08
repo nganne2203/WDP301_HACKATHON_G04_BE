@@ -18,6 +18,13 @@ const RUBRIC_FIELDS = [
   'status'
 ]
 
+const RUBRIC_UPDATE_FIELDS = [
+  'title',
+  'description',
+  'version',
+  'status'
+]
+
 const normalizeCriterion = (criterion) => {
   if (!criterion) return null
   const plainCriterion = typeof criterion.toObject === 'function'
@@ -103,6 +110,13 @@ export const createRubricService = ({
     return rubric
   }
 
+  const ensureCriterionExists = async (id) => {
+    ensureObjectId(id, 'criterion id')
+    const criterion = await repository.findCriterionById(id)
+    if (!criterion) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Criterion not found'])
+    return criterion
+  }
+
   const ensureContext = async ({ eventId, roundId = null }) => {
     ensureObjectId(eventId, 'event id')
     const event = await eventModel.findById(eventId)
@@ -160,6 +174,14 @@ export const createRubricService = ({
     return await normalizeRubric(await repository.findRubricById(rubric._id), repository)
   }
 
+  const updateRubric = async (id, payload = {}) => {
+    const existingRubric = await ensureRubricExists(id)
+    const safePayload = pickSafeFields(payload, RUBRIC_UPDATE_FIELDS)
+
+    const updatedRubric = await repository.updateRubricById(existingRubric._id, safePayload)
+    return await normalizeRubric(updatedRubric, repository)
+  }
+
   const addCriterion = async (rubricId, payload = {}) => {
     await ensureRubricExists(rubricId)
     const criteria = await repository.findCriteriaByRubricId(rubricId)
@@ -185,11 +207,60 @@ export const createRubricService = ({
     }
   }
 
+  const updateCriterion = async (rubricId, criterionId, payload = {}) => {
+    await ensureRubricExists(rubricId)
+    const criterion = await ensureCriterionExists(criterionId)
+    if (criterion.rubricId?.toString() !== rubricId.toString()) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Criterion does not belong to the specified rubric'])
+    }
+
+    const updatedCriterion = await repository.updateCriterionById(criterionId, {
+      name: payload.name ?? criterion.name,
+      description: payload.description ?? criterion.description,
+      maxScore: payload.maxScore ?? criterion.maxScore,
+      weight: payload.weight ?? criterion.weight,
+      order: payload.order ?? criterion.order,
+      judgeOnly: payload.judgeOnly ?? criterion.judgeOnly,
+      aiSupportForAudit: payload.aiSupportForAudit ?? criterion.aiSupportForAudit,
+      aiInstruction: payload.aiInstruction ?? criterion.aiInstruction
+    })
+
+    const criteria = await repository.findCriteriaByRubricId(rubricId)
+    const totalScore = criteria.reduce((sum, item) => sum + (item.maxScore || 0), 0)
+    await repository.updateRubricById(rubricId, { totalScore })
+
+    return {
+      criterion: normalizeCriterion(updatedCriterion),
+      rubric: await normalizeRubric(await repository.findRubricById(rubricId), repository)
+    }
+  }
+
+  const deleteCriterion = async (rubricId, criterionId) => {
+    await ensureRubricExists(rubricId)
+    const criterion = await ensureCriterionExists(criterionId)
+    if (criterion.rubricId?.toString() !== rubricId.toString()) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Criterion does not belong to the specified rubric'])
+    }
+
+    await repository.deleteCriterionById(criterionId)
+    const criteria = await repository.findCriteriaByRubricId(rubricId)
+    const totalScore = criteria.reduce((sum, item) => sum + (item.maxScore || 0), 0)
+    await repository.updateRubricById(rubricId, { totalScore })
+
+    return {
+      deletedCriterionId: criterionId,
+      rubric: await normalizeRubric(await repository.findRubricById(rubricId), repository)
+    }
+  }
+
   return {
     listRubrics,
     getRubricById,
     createRubric,
-    addCriterion
+    updateRubric,
+    addCriterion,
+    updateCriterion,
+    deleteCriterion
   }
 }
 

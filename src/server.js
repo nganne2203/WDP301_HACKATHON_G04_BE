@@ -1,4 +1,5 @@
 import { env } from '#configs/environment.js'
+import { validateRuntimeEnvironment } from '#configs/env-validation.js'
 import { CONNECT_DB, CLOSE_DB } from '#configs/mongodb.js'
 import { LOGGER } from '#utils/logger.js'
 import { createApp } from './app.js'
@@ -10,6 +11,11 @@ const HOSTNAME = env.server.hostname || '0.0.0.0'
 let httpServer = null
 
 const startServer = async () => {
+  const validation = validateRuntimeEnvironment({ runtime: 'api' })
+  for (const warning of validation.warnings) {
+    LOGGER.warn('Environment validation warning', { runtime: 'api', warning })
+  }
+
   await CONNECT_DB()
   httpServer = app.listen(PORT, HOSTNAME, () => {
     LOGGER.info('HTTP server started', {

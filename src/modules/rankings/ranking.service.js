@@ -6,6 +6,7 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import Event from '#models/event.model.js'
+import Repository from '#models/repository.model.js'
 import Round from '#models/round.model.js'
 
 const normalizeRanking = (ranking) => {
@@ -115,7 +116,8 @@ export const createRankingService = ({
   repository = RANKING_REPOSITORY,
   auditLogRepository = AUDIT_LOG_REPOSITORY,
   eventModel = Event,
-  roundModel = Round
+  roundModel = Round,
+  repositoryModel = Repository
 } = {}) => {
   const ensureEventRoundContext = async ({ eventId, roundId }) => {
     ensureObjectId(eventId, 'event id')
@@ -377,7 +379,39 @@ export const createRankingService = ({
     }
   }
 
-  const publishResults = async ({ eventId, roundId }, actor = {}) => {
+  const applyRepositoryAccessAction = async ({ eventId, roundId, teamIds = [], action, publishedAt }) => {
+    if (action === 'NONE' || teamIds.length === 0) {
+      return {
+        action: 'NONE',
+        affectedRepositories: 0
+      }
+    }
+
+    const filter = {
+      eventId,
+      teamId: { $in: teamIds }
+    }
+
+    const update = action === 'REVOKE'
+      ? {
+        accessState: 'REVOKED',
+        accessRevokedAt: publishedAt,
+        status: 'ARCHIVED',
+        roundId
+      }
+      : {
+        status: 'DISCONNECTED',
+        roundId
+      }
+
+    const result = await repositoryModel.updateMany(filter, update)
+    return {
+      action,
+      affectedRepositories: result.modifiedCount || result.matchedCount || 0
+    }
+  }
+
+  const publishResults = async ({ eventId, roundId, repositoryAccessAction = 'NONE' }, actor = {}) => {
     await ensureEventRoundContext({ eventId, roundId })
     const rankings = await repository.findRankings({
       filter: { eventId, roundId, rankingType: 'TEAM' },
@@ -388,10 +422,24 @@ export const createRankingService = ({
     }
 
     const publishedAt = new Date()
+    const teamIds = rankings
+      .map(item => item.teamId?._id?.toString?.() || item.teamId?.toString?.())
+      .filter(Boolean)
     await repository.updateManyRankings(
       { eventId, roundId, rankingType: 'TEAM' },
       { publishedAt, publishedBy: actor.id || null }
     )
+    await roundModel.findByIdAndUpdate(roundId, {
+      status: 'COMPLETED',
+      publishTime: publishedAt
+    })
+    const repositoryActionSummary = await applyRepositoryAccessAction({
+      eventId,
+      roundId,
+      teamIds,
+      action: repositoryAccessAction,
+      publishedAt
+    })
 
     await auditLogRepository.create({
       userId: actor.id || null,
@@ -402,7 +450,9 @@ export const createRankingService = ({
         roundId,
         publishedCount: rankings.length,
         source: 'OFFICIAL_JUDGE_SCORES_ONLY',
-        aiReviewUsed: false
+        aiReviewUsed: false,
+        repositoryAccessAction: repositoryActionSummary.action,
+        affectedRepositories: repositoryActionSummary.affectedRepositories
       }
     })
 
@@ -413,7 +463,8 @@ export const createRankingService = ({
 
     return {
       publishedAt,
-      rankings: publishedRankings.map(normalizeRanking)
+      rankings: publishedRankings.map(normalizeRanking),
+      repositoryAccessAction: repositoryActionSummary
     }
   }
 

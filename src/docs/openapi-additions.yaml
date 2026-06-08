@@ -68,6 +68,20 @@ tags:
     description: Finalist selection endpoints based on event competition configuration.
   - name: Results
     description: Official round result publication.
+  - name: Audit Logs
+    description: |
+      Search and summary APIs for operational and business audit trails.
+
+      FE notes:
+      - Use list view for timeline tables.
+      - Use summary view for admin dashboards and incident triage.
+  - name: Operations
+    description: |
+      Coordinator-facing operational visibility endpoints for queue, webhook, and AI pipeline status.
+
+      FE notes:
+      - These endpoints are designed for admin dashboards, not contestant UI.
+      - Redis outages may return degraded queue data instead of crashing the page.
   - name: Timelines
     description: Event schedule and timeline management endpoints.
   - name: Notifications
@@ -469,6 +483,32 @@ components:
         status:
           type: string
           enum: [DRAFT, SUBMITTED, ACCEPTED, REJECTED]
+    SubmissionUpdateRequest:
+      type: object
+      description: Update draft submission artifacts before final submit.
+      properties:
+        repositoryId:
+          type: string
+          nullable: true
+        demoUrl:
+          type: string
+          format: uri
+          nullable: true
+        reportUrl:
+          type: string
+          format: uri
+          nullable: true
+        presentationUrl:
+          type: string
+          format: uri
+          nullable: true
+    SubmissionStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [DRAFT, SUBMITTED, ACCEPTED, REJECTED]
     RubricRequest:
       type: object
       description: Create a rubric that can later be linked to a round.
@@ -491,10 +531,44 @@ components:
         status:
           type: string
           enum: [DRAFT, ACTIVE, ARCHIVED]
+    RubricUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        version:
+          type: integer
+        status:
+          type: string
+          enum: [DRAFT, ACTIVE, ARCHIVED]
     CriterionRequest:
       type: object
       description: Add a criterion to a rubric, including AI-specific audit hints.
       required: [name, maxScore]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        maxScore:
+          type: number
+        weight:
+          type: number
+        order:
+          type: integer
+        judgeOnly:
+          type: boolean
+        aiSupportForAudit:
+          type: boolean
+        aiInstruction:
+          type: string
+          nullable: true
+    CriterionUpdateRequest:
+      type: object
       properties:
         name:
           type: string
@@ -683,6 +757,133 @@ components:
           type: string
         roundId:
           type: string
+        repositoryAccessAction:
+          type: string
+          enum: [NONE, FREEZE, REVOKE]
+          description: Optional repository lifecycle action applied to ranked teams after publication.
+    AuditLogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+          nullable: true
+        action:
+          type: string
+        resourceType:
+          type: string
+          nullable: true
+        resourceId:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+    AuditLogSummary:
+      type: object
+      properties:
+        totalItems:
+          type: integer
+        actionBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              action:
+                type: string
+              count:
+                type: integer
+        resourceBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              resourceType:
+                type: string
+              count:
+                type: integer
+        recentAuditLogs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogEntry'
+    OperationsDashboardResponse:
+      type: object
+      properties:
+        scope:
+          type: object
+          properties:
+            eventId:
+              type: string
+              nullable: true
+            roundId:
+              type: string
+              nullable: true
+        metrics:
+          type: object
+          properties:
+            participants:
+              type: integer
+            teams:
+              type: integer
+            submissions:
+              type: integer
+            repositories:
+              type: integer
+            pendingAiReviews:
+              type: integer
+            fallbackAiReviews:
+              type: integer
+            failedJobs:
+              type: integer
+        queue:
+          type: object
+          additionalProperties: true
+    PipelineSummaryResponse:
+      type: object
+      properties:
+        scope:
+          type: object
+          properties:
+            eventId:
+              type: string
+              nullable: true
+            roundId:
+              type: string
+              nullable: true
+        queue:
+          type: object
+          additionalProperties: true
+        webhookStatusBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              status:
+                type: string
+              count:
+                type: integer
+        commitDiffStatusBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              status:
+                type: string
+              count:
+                type: integer
+        aiReviewStatusBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              status:
+                type: string
+              count:
+                type: integer
     TimelineRequest:
       type: object
       required: [eventId, title]
@@ -1899,9 +2100,14 @@ paths:
       responses:
         '200':
           description: Submission returned
-  /api/submissions/{id}/status:
     patch:
-      summary: Update submission status
+      summary: Update a draft submission
+      description: |
+        Update submission artifact links while the submission is still in draft mode.
+
+        FE notes:
+        - This endpoint is intended for edit/save-draft behavior.
+        - Final team submission should use `/api/submissions/{id}/submit`.
       tags: [Submissions]
       security:
         - BearerAuth: []
@@ -1916,12 +2122,55 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [status]
-              properties:
-                status:
-                  type: string
-                  enum: [DRAFT, SUBMITTED, ACCEPTED, REJECTED]
+              $ref: '#/components/schemas/SubmissionUpdateRequest'
+      responses:
+        '200':
+          description: Submission updated
+  /api/submissions/{id}/submit:
+    post:
+      summary: Submit a draft submission
+      description: |
+        Transition a submission from draft to submitted after deadline and artifact validation pass.
+
+        FE notes:
+        - Use this as the contestant-facing final submit action.
+        - The backend enforces deadline and minimum artifact requirements.
+      tags: [Submissions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Submission submitted
+  /api/submissions/{id}/status:
+    patch:
+      summary: Update submission status
+      description: |
+        Coordinator/admin decision endpoint for accepting or rejecting a submitted record.
+
+        FE notes:
+        - This is not the same as the team final-submit action.
+        - Prefer `/submit` for contestant workflows and `/status` for reviewer workflows.
+      tags: [Submissions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionStatusRequest'
       responses:
         '200':
           description: Submission status updated
@@ -1977,6 +2226,28 @@ paths:
       responses:
         '200':
           description: Rubric returned
+    patch:
+      summary: Update rubric metadata
+      description: |
+        Update rubric title, description, version, or lifecycle status without changing criteria rows.
+      tags: [Rubrics]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RubricUpdateRequest'
+      responses:
+        '200':
+          description: Rubric updated
   /api/rubrics/{id}/criteria:
     post:
       summary: Add a criterion to a rubric
@@ -2011,6 +2282,55 @@ paths:
       responses:
         '201':
           description: Criterion added
+  /api/rubrics/{id}/criteria/{criterionId}:
+    patch:
+      summary: Update one rubric criterion
+      description: |
+        Update an existing criterion and automatically recalculate rubric total score.
+      tags: [Rubrics]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: criterionId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CriterionUpdateRequest'
+      responses:
+        '200':
+          description: Criterion updated
+    delete:
+      summary: Delete one rubric criterion
+      description: |
+        Remove a criterion from the rubric and automatically recalculate total score.
+      tags: [Rubrics]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: criterionId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Criterion deleted
 
   /api/rounds:
     get:
@@ -2426,6 +2746,7 @@ paths:
 
         FE notes:
         - Treat this as a high-impact admin action and confirm with users before triggering.
+        - `repositoryAccessAction` can freeze or revoke repository access for ranked teams after publication.
       tags: [Results]
       security:
         - BearerAuth: []
@@ -2438,6 +2759,152 @@ paths:
       responses:
         '200':
           description: Results published
+
+  /api/audit-logs:
+    get:
+      summary: Search audit logs
+      description: |
+        Search audit log entries by actor, action, resource, and time range.
+
+        FE notes:
+        - Best suited for admin tables with filters and pagination.
+        - Use the summary endpoint together with this list for dashboards.
+      tags: [Audit Logs]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: limit
+          schema:
+            type: integer
+        - in: query
+          name: userId
+          schema:
+            type: string
+        - in: query
+          name: action
+          schema:
+            type: string
+        - in: query
+          name: resourceType
+          schema:
+            type: string
+        - in: query
+          name: resourceId
+          schema:
+            type: string
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Audit logs returned
+  /api/audit-logs/summary:
+    get:
+      summary: Get audit log summary
+      description: |
+        Return aggregate counts by action and resource type, plus a recent activity sample.
+      tags: [Audit Logs]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: userId
+          schema:
+            type: string
+        - in: query
+          name: action
+          schema:
+            type: string
+        - in: query
+          name: resourceType
+          schema:
+            type: string
+        - in: query
+          name: resourceId
+          schema:
+            type: string
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Audit summary returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogSummary'
+
+  /api/operations/dashboard:
+    get:
+      summary: Get coordinator dashboard metrics
+      description: |
+        Return high-level operational metrics for participants, teams, submissions, repositories, AI reviews, and failed jobs.
+
+        FE notes:
+        - Safe for admin dashboard cards and quick overview pages.
+        - Queue data may be degraded instead of hard-failing when Redis is unavailable.
+      tags: [Operations]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: roundId
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Dashboard metrics returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationsDashboardResponse'
+  /api/operations/pipeline-summary:
+    get:
+      summary: Get repository pipeline summary
+      description: |
+        Return queue, webhook, commit-diff, and AI-review pipeline breakdowns for operations monitoring.
+      tags: [Operations]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: roundId
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pipeline summary returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PipelineSummaryResponse'
 
   /api/timelines:
     get:

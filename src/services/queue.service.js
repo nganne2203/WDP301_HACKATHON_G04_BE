@@ -41,6 +41,17 @@ export const QUEUE_SERVICE = {
     return await getRedisConnection().ping()
   },
 
+  async getQueueSummary() {
+    const queue = getGithubPushQueue()
+    const counts = await queue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed', 'paused')
+
+    return {
+      queueName: QUEUE_NAMES.GITHUB_PUSH_EVENTS,
+      redisStatus: 'ready',
+      counts
+    }
+  },
+
   async enqueueGithubPushEvent(data) {
     return await getGithubPushQueue().add(JOB_TYPES.PROCESS_GITHUB_PUSH_EVENT, data, {
       jobId: data.deliveryId

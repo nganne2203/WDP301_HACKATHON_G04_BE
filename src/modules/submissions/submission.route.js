@@ -33,6 +33,20 @@ router.get(
 )
 
 router.patch(
+  '/:id',
+  permissionMiddleware(PERMISSIONS.TEAM_VIEW),
+  validationHandlingMiddleware(SUBMISSION_VALIDATION.updateSubmission),
+  SUBMISSION_CONTROLLER.updateSubmission
+)
+
+router.post(
+  '/:id/submit',
+  permissionMiddleware(PERMISSIONS.TEAM_VIEW),
+  validationHandlingMiddleware(SUBMISSION_VALIDATION.submitSubmission),
+  SUBMISSION_CONTROLLER.submitSubmission
+)
+
+router.patch(
   '/:id/status',
   permissionMiddleware(PERMISSIONS.TEAM_UPDATE),
   validationHandlingMiddleware(SUBMISSION_VALIDATION.updateSubmissionStatus),

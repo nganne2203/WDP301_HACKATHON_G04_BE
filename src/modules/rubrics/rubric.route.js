@@ -25,6 +25,13 @@ router.post(
   RUBRIC_CONTROLLER.createRubric
 )
 
+router.patch(
+  '/:id',
+  permissionMiddleware(PERMISSIONS.JUDGING_ASSIGN),
+  validationHandlingMiddleware(RUBRIC_VALIDATION.updateRubric),
+  RUBRIC_CONTROLLER.updateRubric
+)
+
 router.get(
   '/:id',
   permissionMiddleware(PERMISSIONS.EVENT_VIEW),
@@ -37,6 +44,20 @@ router.post(
   permissionMiddleware(PERMISSIONS.JUDGING_ASSIGN),
   validationHandlingMiddleware(RUBRIC_VALIDATION.addCriterion),
   RUBRIC_CONTROLLER.addCriterion
+)
+
+router.patch(
+  '/:id/criteria/:criterionId',
+  permissionMiddleware(PERMISSIONS.JUDGING_ASSIGN),
+  validationHandlingMiddleware(RUBRIC_VALIDATION.updateCriterion),
+  RUBRIC_CONTROLLER.updateCriterion
+)
+
+router.delete(
+  '/:id/criteria/:criterionId',
+  permissionMiddleware(PERMISSIONS.JUDGING_ASSIGN),
+  validationHandlingMiddleware(RUBRIC_VALIDATION.deleteCriterion),
+  RUBRIC_CONTROLLER.deleteCriterion
 )
 
 export default router

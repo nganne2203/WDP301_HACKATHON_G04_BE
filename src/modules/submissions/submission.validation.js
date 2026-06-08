@@ -32,6 +32,22 @@ export const SUBMISSION_VALIDATION = {
       id: objectId.required()
     })
   },
+  updateSubmission: {
+    params: Joi.object({
+      id: objectId.required()
+    }),
+    body: Joi.object({
+      repositoryId: objectId.allow(null),
+      demoUrl: Joi.string().uri().allow('', null),
+      reportUrl: Joi.string().uri().allow('', null),
+      presentationUrl: Joi.string().uri().allow('', null)
+    }).min(1)
+  },
+  submitSubmission: {
+    params: Joi.object({
+      id: objectId.required()
+    })
+  },
   updateSubmissionStatus: {
     params: Joi.object({
       id: objectId.required()

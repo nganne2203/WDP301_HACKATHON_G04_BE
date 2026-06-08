@@ -27,6 +27,10 @@ const findByRoundAndTeam = async ({ roundId, teamId }) => {
   return await Submission.findOne({ roundId, teamId }).populate(submissionPopulate)
 }
 
+const findByTeamId = async (teamId) => {
+  return await Submission.find({ teamId }).populate(submissionPopulate)
+}
+
 const create = async (data) => {
   return await Submission.create(data)
 }
@@ -43,6 +47,7 @@ export const SUBMISSION_REPOSITORY = {
   findAll,
   findById,
   findByRoundAndTeam,
+  findByTeamId,
   create,
   updateById
 }

@@ -1,4 +1,5 @@
 import { env } from '#configs/environment.js'
+import { validateRuntimeEnvironment } from '#configs/env-validation.js'
 import { CLOSE_DB, CONNECT_DB } from '#configs/mongodb.js'
 import { createRepositoryScanScheduler } from '#services/repository-scan-scheduler.service.js'
 import { QUEUE_SERVICE } from '#services/queue.service.js'
@@ -9,6 +10,11 @@ let worker = null
 let scheduler = null
 
 const startWorkerRuntime = async () => {
+  const validation = validateRuntimeEnvironment({ runtime: 'worker' })
+  for (const warning of validation.warnings) {
+    LOGGER.warn('Environment validation warning', { runtime: 'worker', warning })
+  }
+
   await CONNECT_DB()
 
   worker = createGithubPushWorker()

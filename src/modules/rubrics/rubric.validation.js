@@ -24,6 +24,17 @@ export const RUBRIC_VALIDATION = {
       status: rubricStatus.default('DRAFT')
     })
   },
+  updateRubric: {
+    params: Joi.object({
+      id: objectId.required()
+    }),
+    body: Joi.object({
+      title: Joi.string().trim().min(2).max(200),
+      description: Joi.string().trim().max(2000).allow('', null),
+      version: Joi.number().integer().min(1),
+      status: rubricStatus
+    }).min(1)
+  },
   getRubricById: {
     params: Joi.object({
       id: objectId.required()
@@ -42,6 +53,28 @@ export const RUBRIC_VALIDATION = {
       judgeOnly: Joi.boolean().default(false),
       aiSupportForAudit: Joi.boolean().default(true),
       aiInstruction: Joi.string().trim().max(2000).allow('', null)
+    })
+  },
+  updateCriterion: {
+    params: Joi.object({
+      id: objectId.required(),
+      criterionId: objectId.required()
+    }),
+    body: Joi.object({
+      name: Joi.string().trim().min(2).max(200),
+      description: Joi.string().trim().max(2000).allow('', null),
+      maxScore: Joi.number().min(0),
+      weight: Joi.number().min(0),
+      order: Joi.number().integer().min(1),
+      judgeOnly: Joi.boolean(),
+      aiSupportForAudit: Joi.boolean(),
+      aiInstruction: Joi.string().trim().max(2000).allow('', null)
+    }).min(1)
+  },
+  deleteCriterion: {
+    params: Joi.object({
+      id: objectId.required(),
+      criterionId: objectId.required()
     })
   }
 }

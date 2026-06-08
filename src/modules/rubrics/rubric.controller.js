@@ -28,6 +28,18 @@ const createRubric = async (req, res, next) => {
   }
 }
 
+const updateRubric = async (req, res, next) => {
+  try {
+    const rubric = await RUBRIC_SERVICE.updateRubric(req.params.id, req.body)
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Update rubric successfully',
+      data: rubric
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const getRubricById = async (req, res, next) => {
   try {
     const rubric = await RUBRIC_SERVICE.getRubricById(req.params.id)
@@ -52,9 +64,36 @@ const addCriterion = async (req, res, next) => {
   }
 }
 
+const updateCriterion = async (req, res, next) => {
+  try {
+    const result = await RUBRIC_SERVICE.updateCriterion(req.params.id, req.params.criterionId, req.body)
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Update rubric criterion successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const deleteCriterion = async (req, res, next) => {
+  try {
+    const result = await RUBRIC_SERVICE.deleteCriterion(req.params.id, req.params.criterionId)
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Delete rubric criterion successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const RUBRIC_CONTROLLER = {
   listRubrics,
   createRubric,
+  updateRubric,
   getRubricById,
-  addCriterion
+  addCriterion,
+  updateCriterion,
+  deleteCriterion
 }

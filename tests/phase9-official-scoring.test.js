@@ -25,6 +25,13 @@ const ids = {
 const createModel = (items) => ({
   async findById(id) {
     return items.get(id) || null
+  },
+  async findByIdAndUpdate(id, data) {
+    const current = items.get(id)
+    if (!current) return null
+    const updated = { ...current, ...data, _id: id }
+    items.set(id, updated)
+    return updated
   }
 })
 
@@ -151,6 +158,7 @@ const createRankingFixture = () => {
   const events = new Map()
   const rounds = new Map()
   const teams = new Map()
+  const repositories = new Map()
   const rankings = new Map()
   const scoreSheets = []
   const auditLogs = []
@@ -174,6 +182,10 @@ const createRankingFixture = () => {
   teams.set(ids.team2, { _id: ids.team2, name: 'Beta', boardNumber: 1, chapterName: 'B' })
   teams.set(ids.team3, { _id: ids.team3, name: 'Gamma', boardNumber: 2, chapterName: 'C' })
   teams.set(ids.team4, { _id: ids.team4, name: 'Delta', boardNumber: 2, chapterName: 'D' })
+  repositories.set('repo-1', { _id: 'repo-1', eventId: ids.event, teamId: ids.team1, status: 'ACTIVE', accessState: 'GRANTED' })
+  repositories.set('repo-2', { _id: 'repo-2', eventId: ids.event, teamId: ids.team2, status: 'ACTIVE', accessState: 'GRANTED' })
+  repositories.set('repo-3', { _id: 'repo-3', eventId: ids.event, teamId: ids.team3, status: 'ACTIVE', accessState: 'GRANTED' })
+  repositories.set('repo-4', { _id: 'repo-4', eventId: ids.event, teamId: ids.team4, status: 'ACTIVE', accessState: 'GRANTED' })
 
   scoreSheets.push(
     { _id: 'sheet-1', eventId: ids.event, roundId: ids.round, teamId: teams.get(ids.team1), judgeId: { _id: ids.judge1 }, boardId: { boardNumber: 1 }, finalScore: 95, status: 'LOCKED' },
@@ -238,9 +250,24 @@ const createRankingFixture = () => {
       },
       eventModel: createModel(events),
       roundModel: createModel(rounds),
-      teamModel: createModel(teams)
+      teamModel: createModel(teams),
+      repositoryModel: {
+        async updateMany(filter, data) {
+          let modifiedCount = 0
+          for (const [id, repositoryRecord] of repositories.entries()) {
+            const matchesTeam = Array.isArray(filter.teamId?.$in)
+              ? filter.teamId.$in.includes(repositoryRecord.teamId)
+              : true
+            if (repositoryRecord.eventId === filter.eventId && matchesTeam) {
+              repositories.set(id, { ...repositoryRecord, ...data })
+              modifiedCount += 1
+            }
+          }
+          return { modifiedCount }
+        }
+      }
     }),
-    stores: { rankings, auditLogs, scoreSheets, events, rounds }
+    stores: { rankings, auditLogs, scoreSheets, events, rounds, repositories }
   }
 }
 
@@ -381,4 +408,23 @@ test('result publication works and audit log is written for critical ranking act
     'FINALISTS_SELECTED',
     'RESULTS_PUBLISHED'
   ])
+})
+
+test('publishResults can revoke repository access for ranked teams', async () => {
+  const { service, stores } = createRankingFixture()
+  await service.generateRankings({
+    eventId: ids.event,
+    roundId: ids.round,
+    rankingType: 'TEAM'
+  }, { id: ids.judge1 })
+
+  const result = await service.publishResults({
+    eventId: ids.event,
+    roundId: ids.round,
+    repositoryAccessAction: 'REVOKE'
+  }, { id: ids.judge1 })
+
+  assert.equal(result.repositoryAccessAction.action, 'REVOKE')
+  assert.equal(result.repositoryAccessAction.affectedRepositories, 4)
+  assert.equal([...stores.repositories.values()].every(item => item.accessState === 'REVOKED'), true)
 })

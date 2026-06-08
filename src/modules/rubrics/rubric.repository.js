@@ -38,6 +38,21 @@ const createCriterion = async (data) => {
   return await Criterion.create(data)
 }
 
+const findCriterionById = async (id) => {
+  return await Criterion.findById(id)
+}
+
+const updateCriterionById = async (id, data) => {
+  return await Criterion.findByIdAndUpdate(id, data, {
+    new: true,
+    runValidators: true
+  })
+}
+
+const deleteCriterionById = async (id) => {
+  return await Criterion.findByIdAndDelete(id)
+}
+
 const findCriteriaByRubricId = async (rubricId) => {
   return await Criterion.find({ rubricId }).sort({ order: 1, createdAt: 1 })
 }
@@ -49,5 +64,8 @@ export const RUBRIC_REPOSITORY = {
   createRubric,
   updateRubricById,
   createCriterion,
+  findCriterionById,
+  updateCriterionById,
+  deleteCriterionById,
   findCriteriaByRubricId
 }

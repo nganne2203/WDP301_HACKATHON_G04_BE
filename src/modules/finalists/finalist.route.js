@@ -5,6 +5,7 @@ import { FINALIST_VALIDATION } from './finalist.validation.js'
 import { PERMISSIONS } from '#constants/permissions.js'
 import { authorizationMiddleware } from '#middlewares/authHandlingMiddleware.js'
 import { permissionMiddleware } from '#middlewares/permission.middleware.js'
+import { sensitiveRateLimiter } from '#middlewares/rateLimitHandlingMiddleware.js'
 import { validationHandlingMiddleware } from '#middlewares/validationHandlingMiddleware.js'
 
 const router = Router()
@@ -20,6 +21,7 @@ router.get(
 
 router.post(
   '/select',
+  sensitiveRateLimiter,
   permissionMiddleware(PERMISSIONS.RESULT_PUBLISH),
   validationHandlingMiddleware(FINALIST_VALIDATION.selectFinalists),
   FINALIST_CONTROLLER.selectFinalists

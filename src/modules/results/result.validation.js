@@ -6,7 +6,8 @@ export const RESULT_VALIDATION = {
   publishResults: {
     body: Joi.object({
       eventId: objectId.required(),
-      roundId: objectId.required()
+      roundId: objectId.required(),
+      repositoryAccessAction: Joi.string().trim().uppercase().valid('NONE', 'FREEZE', 'REVOKE').default('NONE')
     })
   }
 }

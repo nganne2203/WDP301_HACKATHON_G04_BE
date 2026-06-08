@@ -7,6 +7,7 @@ import { REPOSITORY_VALIDATION } from './repository.validation.js'
 import { PERMISSIONS } from '#constants/permissions.js'
 import { authorizationMiddleware } from '#middlewares/authHandlingMiddleware.js'
 import { permissionMiddleware } from '#middlewares/permission.middleware.js'
+import { sensitiveRateLimiter } from '#middlewares/rateLimitHandlingMiddleware.js'
 import { validationHandlingMiddleware } from '#middlewares/validationHandlingMiddleware.js'
 
 const router = Router()
@@ -22,6 +23,7 @@ router.get(
 
 router.post(
   '/',
+  sensitiveRateLimiter,
   permissionMiddleware(PERMISSIONS.GITHUB_REPOSITORY_CREATE),
   validationHandlingMiddleware(REPOSITORY_VALIDATION.createRepository),
   REPOSITORY_CONTROLLER.createRepository
@@ -71,6 +73,7 @@ router.get(
 
 router.patch(
   '/:id',
+  sensitiveRateLimiter,
   permissionMiddleware(PERMISSIONS.GITHUB_REPOSITORY_CREATE),
   validationHandlingMiddleware(REPOSITORY_VALIDATION.updateRepository),
   REPOSITORY_CONTROLLER.updateRepository
@@ -78,6 +81,7 @@ router.patch(
 
 router.post(
   '/:id/sync-commits',
+  sensitiveRateLimiter,
   permissionMiddleware(PERMISSIONS.GITHUB_REPOSITORY_CREATE),
   validationHandlingMiddleware(REPOSITORY_VALIDATION.syncRepositoryCommits),
   REPOSITORY_CONTROLLER.syncRepositoryCommits
@@ -85,6 +89,7 @@ router.post(
 
 router.post(
   '/:id/analyze-commit',
+  sensitiveRateLimiter,
   permissionMiddleware(PERMISSIONS.GITHUB_REPOSITORY_CREATE),
   validationHandlingMiddleware(REPOSITORY_VALIDATION.analyzeCommit),
   REPOSITORY_CONTROLLER.analyzeCommit
@@ -92,6 +97,7 @@ router.post(
 
 router.post(
   '/:id/ai-reviews/per-push',
+  sensitiveRateLimiter,
   permissionMiddleware(PERMISSIONS.AI_REVIEW_TRIGGER),
   validationHandlingMiddleware(AI_REVIEW_VALIDATION.createPerPushAudit),
   AI_REVIEW_CONTROLLER.createPerPushAudit
@@ -99,6 +105,7 @@ router.post(
 
 router.post(
   '/:id/ai-reviews/team-aggregate',
+  sensitiveRateLimiter,
   permissionMiddleware(PERMISSIONS.AI_REVIEW_TRIGGER),
   validationHandlingMiddleware(AI_REVIEW_VALIDATION.createTeamAggregateAudit),
   AI_REVIEW_CONTROLLER.createTeamAggregateAudit
