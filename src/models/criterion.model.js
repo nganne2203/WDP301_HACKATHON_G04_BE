@@ -9,7 +9,10 @@ const criterionSchema = new Schema(
     description: { type: String },
     maxScore: { type: Number, required: true },
     weight: { type: Number, default: 1 },
-    order: { type: Number, default: 1, min: 1 }
+    order: { type: Number, default: 1, min: 1 },
+    judgeOnly: { type: Boolean, default: false },
+    aiSupportForAudit: { type: Boolean, default: true },
+    aiInstruction: { type: String }
   },
   { timestamps: true }
 )

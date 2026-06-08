@@ -80,6 +80,9 @@ export const createGithubPushWorker = () => {
   return new Worker(
     QUEUE_NAMES.GITHUB_PUSH_EVENTS,
     processGithubIngestionJob,
-    { connection: createConnection() }
+    {
+      connection: createConnection(),
+      concurrency: env.worker.concurrency
+    }
   )
 }

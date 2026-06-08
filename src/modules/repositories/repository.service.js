@@ -75,6 +75,11 @@ const normalizeRepository = (repository) => {
     lastProcessedCommitSha: plain.lastProcessedCommitSha || null,
     status: plain.status,
     accessState: plain.accessState,
+    accessGrantedAt: plain.accessGrantedAt || null,
+    accessRevokedAt: plain.accessRevokedAt || null,
+    webhookRegisteredAt: plain.webhookRegisteredAt || null,
+    webhookStatus: plain.webhookStatus || 'NOT_CONFIGURED',
+    lastWebhookRegistrationError: plain.lastWebhookRegistrationError || null,
     createdAt: plain.createdAt,
     updatedAt: plain.updatedAt
   }

@@ -47,6 +47,20 @@ router.put(
 )
 
 router.post(
+  '/repositories/:repoName/webhooks/register',
+  permissionMiddleware(PERMISSIONS.GITHUB_REPOSITORY_CREATE),
+  validationHandlingMiddleware(GITHUB_VALIDATION.registerRepositoryWebhook),
+  GITHUB_CONTROLLER.registerRepositoryWebhook
+)
+
+router.delete(
+  '/repositories/:repoName/collaborators/:username',
+  permissionMiddleware(PERMISSIONS.GITHUB_ACCESS_REVOKE),
+  validationHandlingMiddleware(GITHUB_VALIDATION.revokeCollaborator),
+  GITHUB_CONTROLLER.revokeCollaborator
+)
+
+router.post(
   '/organization/invitations',
   permissionMiddleware(PERMISSIONS.GITHUB_REPOSITORY_CREATE),
   validationHandlingMiddleware(GITHUB_VALIDATION.inviteOrganizationMember),

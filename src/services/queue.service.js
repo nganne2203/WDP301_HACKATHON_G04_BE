@@ -22,9 +22,13 @@ const getGithubPushQueue = () => {
     githubPushQueue = new Queue(QUEUE_NAMES.GITHUB_PUSH_EVENTS, {
       connection: getRedisConnection(),
       defaultJobOptions: {
-        removeOnComplete: 1000,
-        removeOnFail: 1000,
-        attempts: 3
+        removeOnComplete: true,
+        removeOnFail: false,
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 1000
+        }
       }
     })
   }
@@ -33,6 +37,10 @@ const getGithubPushQueue = () => {
 }
 
 export const QUEUE_SERVICE = {
+  async ping() {
+    return await getRedisConnection().ping()
+  },
+
   async enqueueGithubPushEvent(data) {
     return await getGithubPushQueue().add(JOB_TYPES.PROCESS_GITHUB_PUSH_EVENT, data, {
       jobId: data.deliveryId
@@ -89,5 +97,17 @@ export const QUEUE_SERVICE = {
     return await getGithubPushQueue().add(JOB_TYPES.RUN_TEAM_AGGREGATE_AUDIT, data, {
       jobId
     })
+  },
+
+  async close() {
+    if (githubPushQueue) {
+      await githubPushQueue.close()
+      githubPushQueue = null
+    }
+
+    if (redisConnection) {
+      await redisConnection.quit()
+      redisConnection = null
+    }
   }
 }

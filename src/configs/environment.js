@@ -26,7 +26,9 @@ export const env = {
   server: {
     port: process.env.PORT || 3000,
     hostname: process.env.HOSTNAME,
-    nodeEnv
+    nodeEnv,
+    publicUrl: process.env.APP_BASE_URL || process.env.SERVER_PUBLIC_URL,
+    readinessRequiresRedis: parseBoolean(process.env.READINESS_REQUIRES_REDIS, true)
   },
   db: {
     uri: process.env.MONGODB_URI
@@ -74,10 +76,18 @@ export const env = {
     tscCommand: process.env.STATIC_ANALYSIS_TSC_COMMAND
   },
   github: {
-    webhookSecret: process.env.GITHUB_WEBHOOK_SECRET
+    webhookSecret: process.env.GITHUB_WEBHOOK_SECRET,
+    webhookCallbackUrl: process.env.GITHUB_WEBHOOK_CALLBACK_URL,
+    webhookEvents: process.env.GITHUB_WEBHOOK_EVENTS?.split(',').map(value => value.trim()).filter(Boolean) || ['push']
   },
   redis: {
     url: process.env.REDIS_URL || 'redis://127.0.0.1:6379'
+  },
+  worker: {
+    concurrency: parseNumber(process.env.WORKER_CONCURRENCY) || 3,
+    enableScheduler: parseBoolean(process.env.WORKER_ENABLE_SCHEDULER, false),
+    schedulerIntervalMs: parseNumber(process.env.WORKER_SCHEDULER_INTERVAL_MS) || 60 * 60 * 1000,
+    schedulerRunOnStart: parseBoolean(process.env.WORKER_SCHEDULER_RUN_ON_START, false)
   },
   security: {
     tokenEncryptionSecret: process.env.TOKEN_ENCRYPTION_SECRET

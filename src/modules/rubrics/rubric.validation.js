@@ -38,7 +38,10 @@ export const RUBRIC_VALIDATION = {
       description: Joi.string().trim().max(2000).allow('', null),
       maxScore: Joi.number().min(0).required(),
       weight: Joi.number().min(0).default(1),
-      order: Joi.number().integer().min(1)
+      order: Joi.number().integer().min(1),
+      judgeOnly: Joi.boolean().default(false),
+      aiSupportForAudit: Joi.boolean().default(true),
+      aiInstruction: Joi.string().trim().max(2000).allow('', null)
     })
   }
 }

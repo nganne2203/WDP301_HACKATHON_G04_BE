@@ -453,105 +453,124 @@ export const createRepositoryEvidenceService = ({
     branch,
     deliveryEventId = null
   }) => {
-    const existingRepository = await repository.findRepositoryById(repositoryId)
-    if (!existingRepository) {
-      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Repository not found'])
-    }
-
-    const eventId = existingRepository.eventId?._id?.toString?.() || existingRepository.eventId?.toString?.() || existingRepository.eventId
-    const { token } = await getGithubAccess(eventId)
-    const octokit = octokitFactory({ token })
-    const owner = existingRepository.githubOwner || existingRepository.githubOrg
-    const repoName = existingRepository.githubRepo || existingRepository.repoName
-    const repositoryFullName = existingRepository.repositoryFullName || `${owner}/${repoName}`
-    const headCommitSha = afterCommitSha || existingRepository.latestCommitSha
-
-    if (!headCommitSha) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['afterCommitSha is required to fetch commit evidence'])
-    }
-
-    let compareData
-    let commitRecord
-
-    if (beforeCommitSha && beforeCommitSha !== headCommitSha && !/^0+$/.test(beforeCommitSha)) {
-      const { data } = await octokit.repos.compareCommitsWithBasehead({
-        owner,
-        repo: repoName,
-        basehead: `${beforeCommitSha}...${headCommitSha}`
-      })
-      compareData = data
-
-      const compareCommitShas = new Set((data.commits || []).map(commit => commit.sha))
-      compareCommitShas.add(headCommitSha)
-      for (const commitSha of compareCommitShas) {
-        commitRecord = await fetchCommitMetadata({
-          octokit,
-          owner,
-          repo: repoName,
-          sha: commitSha,
-          branch,
-          repositoryId,
-          repositoryFullName
-        })
-      }
-    } else {
-      commitRecord = await fetchCommitMetadata({
-        octokit,
-        owner,
-        repo: repoName,
-        sha: headCommitSha,
-        branch,
-        repositoryId,
-        repositoryFullName
-      })
-
-      const { data } = await octokit.repos.getCommit({
-        owner,
-        repo: repoName,
-        ref: headCommitSha
-      })
-      compareData = {
-        files: data.files || []
-      }
-    }
-
-    const diffPayload = buildDiffPayloadFromCompare({
-      compareData,
-      repositoryId,
-      headCommitSha,
-      baseCommitSha: beforeCommitSha || null,
-      commitId: commitRecord?._id
-    })
-
-    const commitDiff = await repository.upsertCommitDiff({
-      repositoryId,
-      headCommitSha,
-      data: diffPayload
-    })
-
-    await repository.updateRepositoryById(repositoryId, {
-      latestCommitSha: headCommitSha,
-      lastProcessedCommitSha: headCommitSha,
-      lastSyncAt: new Date()
-    })
-
     if (deliveryEventId) {
       await repository.updateWebhookDeliveryById(deliveryEventId, {
-        status: 'PROCESSED',
-        processedAt: new Date(),
+        status: 'PROCESSING',
         errorMessage: null
       })
     }
 
-    await queueService.enqueueRunStaticAnalysis({
-      repositoryId,
-      commitSha: headCommitSha
-    })
+    try {
+      const existingRepository = await repository.findRepositoryById(repositoryId)
+      if (!existingRepository) {
+        throw new ApiError(ERROR_CODES.NOT_FOUND, ['Repository not found'])
+      }
 
-    return {
-      repository: normalizeRepository(await repository.findRepositoryById(repositoryId)),
-      commitDiff: normalizeCommitDiff(commitDiff),
-      queuedJobType: JOB_TYPES.RUN_STATIC_ANALYSIS
+      const eventId = existingRepository.eventId?._id?.toString?.() || existingRepository.eventId?.toString?.() || existingRepository.eventId
+      const { token } = await getGithubAccess(eventId)
+      const octokit = octokitFactory({ token })
+      const owner = existingRepository.githubOwner || existingRepository.githubOrg
+      const repoName = existingRepository.githubRepo || existingRepository.repoName
+      const repositoryFullName = existingRepository.repositoryFullName || `${owner}/${repoName}`
+      const headCommitSha = afterCommitSha || existingRepository.latestCommitSha
+
+      if (!headCommitSha) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['afterCommitSha is required to fetch commit evidence'])
+      }
+
+      let compareData
+      let commitRecord
+
+      if (beforeCommitSha && beforeCommitSha !== headCommitSha && !/^0+$/.test(beforeCommitSha)) {
+        const { data } = await octokit.repos.compareCommitsWithBasehead({
+          owner,
+          repo: repoName,
+          basehead: `${beforeCommitSha}...${headCommitSha}`
+        })
+        compareData = data
+
+        const compareCommitShas = new Set((data.commits || []).map(commit => commit.sha))
+        compareCommitShas.add(headCommitSha)
+        for (const commitSha of compareCommitShas) {
+          commitRecord = await fetchCommitMetadata({
+            octokit,
+            owner,
+            repo: repoName,
+            sha: commitSha,
+            branch,
+            repositoryId,
+            repositoryFullName
+          })
+        }
+      } else {
+        commitRecord = await fetchCommitMetadata({
+          octokit,
+          owner,
+          repo: repoName,
+          sha: headCommitSha,
+          branch,
+          repositoryId,
+          repositoryFullName
+        })
+
+        const { data } = await octokit.repos.getCommit({
+          owner,
+          repo: repoName,
+          ref: headCommitSha
+        })
+        compareData = {
+          files: data.files || []
+        }
+      }
+
+      const diffPayload = buildDiffPayloadFromCompare({
+        compareData,
+        repositoryId,
+        headCommitSha,
+        baseCommitSha: beforeCommitSha || null,
+        commitId: commitRecord?._id
+      })
+
+      const commitDiff = await repository.upsertCommitDiff({
+        repositoryId,
+        headCommitSha,
+        data: diffPayload
+      })
+
+      await repository.updateRepositoryById(repositoryId, {
+        latestCommitSha: headCommitSha,
+        lastProcessedCommitSha: headCommitSha,
+        lastSyncAt: new Date()
+      })
+
+      if (deliveryEventId) {
+        await repository.updateWebhookDeliveryById(deliveryEventId, {
+          status: 'PROCESSED',
+          processedAt: new Date(),
+          errorMessage: null
+        })
+      }
+
+      await queueService.enqueueRunStaticAnalysis({
+        repositoryId,
+        commitSha: headCommitSha
+      })
+
+      return {
+        repository: normalizeRepository(await repository.findRepositoryById(repositoryId)),
+        commitDiff: normalizeCommitDiff(commitDiff),
+        queuedJobType: JOB_TYPES.RUN_STATIC_ANALYSIS
+      }
+    } catch (error) {
+      if (deliveryEventId) {
+        await repository.updateWebhookDeliveryById(deliveryEventId, {
+          status: 'FAILED',
+          processedAt: new Date(),
+          errorMessage: error.message
+        })
+      }
+
+      throw error
     }
   }
 

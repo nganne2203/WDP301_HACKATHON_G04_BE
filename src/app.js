@@ -2,14 +2,17 @@ import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import morgan from 'morgan'
+import mongoose from 'mongoose'
 import swaggerUi from 'swagger-ui-express'
 
 import { corsOptions } from '#configs/cors.js'
+import { env } from '#configs/environment.js'
 import { swaggerSpec } from '#configs/swagger.js'
 import { swaggerHandlingMiddleware } from '#middlewares/swaggerHandlingMiddleware.js'
 import { errorHandlingMiddleware } from '#middlewares/errorHandlingMiddleware.js'
 import { apiRateLimiter } from '#middlewares/rateLimitHandlingMiddleware.js'
 import apiRoutes from '#routes/index.js'
+import { QUEUE_SERVICE } from '#services/queue.service.js'
 
 export const createApp = () => {
   const app = express()
@@ -32,6 +35,31 @@ export const createApp = () => {
 
   app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok' })
+  })
+
+  app.get('/ready', async (req, res) => {
+    const dbReady = mongoose.connection.readyState === 1
+    let redisReady = true
+    let redisError = null
+
+    if (env.server.readinessRequiresRedis) {
+      try {
+        redisReady = (await QUEUE_SERVICE.ping()) === 'PONG'
+      } catch (error) {
+        redisReady = false
+        redisError = error.message
+      }
+    }
+
+    const ready = dbReady && redisReady
+    res.status(ready ? 200 : 503).json({
+      status: ready ? 'ok' : 'degraded',
+      checks: {
+        mongodb: dbReady ? 'ready' : 'not_ready',
+        redis: redisReady ? 'ready' : 'not_ready'
+      },
+      ...(redisError ? { redisError } : {})
+    })
   })
 
   app.use('/api', apiRoutes)

@@ -32,6 +32,9 @@ const normalizeCriterion = (criterion) => {
     maxScore: plainCriterion.maxScore,
     weight: plainCriterion.weight,
     order: plainCriterion.order,
+    judgeOnly: Boolean(plainCriterion.judgeOnly),
+    aiSupportForAudit: plainCriterion.aiSupportForAudit !== false,
+    aiInstruction: plainCriterion.aiInstruction || null,
     createdAt: plainCriterion.createdAt,
     updatedAt: plainCriterion.updatedAt
   }
@@ -166,7 +169,10 @@ export const createRubricService = ({
       description: payload.description,
       maxScore: payload.maxScore,
       weight: payload.weight,
-      order: payload.order || (criteria.length + 1)
+      order: payload.order || (criteria.length + 1),
+      judgeOnly: Boolean(payload.judgeOnly),
+      aiSupportForAudit: payload.aiSupportForAudit !== false,
+      aiInstruction: payload.aiInstruction || null
     })
 
     const updatedCriteria = [...criteria, criterion]

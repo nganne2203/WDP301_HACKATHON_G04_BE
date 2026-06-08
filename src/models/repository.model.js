@@ -33,7 +33,16 @@ const repositorySchema = new Schema(
       enum: ['NOT_SUBMITTED', 'SUBMITTED', 'APPROVED'],
       default: 'NOT_SUBMITTED'
     },
-    lastSyncAt: { type: Date }
+    lastSyncAt: { type: Date },
+    accessGrantedAt: { type: Date },
+    accessRevokedAt: { type: Date },
+    webhookRegisteredAt: { type: Date },
+    webhookStatus: {
+      type: String,
+      enum: ['NOT_CONFIGURED', 'PENDING', 'REGISTERED', 'FAILED'],
+      default: 'NOT_CONFIGURED'
+    },
+    lastWebhookRegistrationError: { type: String, trim: true }
   },
   { timestamps: true }
 )

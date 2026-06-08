@@ -36,7 +36,12 @@ const createRepositoryRecord = async (data) => {
         repositoryFullName: data.repositoryFullName || `${data.githubOwner || data.githubOrg}/${data.githubRepo || data.repoName}`,
         repositoryUrl: data.repositoryUrl || data.repoUrl,
         status: data.status || 'ACTIVE',
-        accessState: data.accessState || 'GRANTED'
+        accessState: data.accessState || 'PENDING',
+        accessGrantedAt: data.accessGrantedAt,
+        accessRevokedAt: data.accessRevokedAt,
+        webhookRegisteredAt: data.webhookRegisteredAt,
+        webhookStatus: data.webhookStatus || 'NOT_CONFIGURED',
+        lastWebhookRegistrationError: data.lastWebhookRegistrationError || null
       }
     },
     {
@@ -46,6 +51,27 @@ const createRepositoryRecord = async (data) => {
       runValidators: true
     }
   )
+}
+
+const findRepositoryByEventAndRepoName = async ({ eventId, repoName, githubOwner }) => {
+  const ownerFilter = githubOwner
+    ? [{ githubOwner }, { githubOrg: githubOwner }]
+    : [{}]
+
+  return await Repository.findOne({
+    eventId,
+    $or: ownerFilter.flatMap((ownerClause) => ([
+      { ...ownerClause, repoName },
+      { ...ownerClause, githubRepo: repoName }
+    ]))
+  })
+}
+
+const updateRepositoryById = async (id, data) => {
+  return await Repository.findByIdAndUpdate(id, data, {
+    new: true,
+    runValidators: true
+  })
 }
 
 const createAuditLog = async ({ userId, action, resourceType, resourceId, metadata }) => {
@@ -62,5 +88,7 @@ export const GITHUB_REPOSITORY = {
   findConfigByKey,
   upsertConfig,
   createRepositoryRecord,
+  findRepositoryByEventAndRepoName,
+  updateRepositoryById,
   createAuditLog
 }

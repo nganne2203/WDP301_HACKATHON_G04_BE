@@ -265,6 +265,9 @@ const buildPerPushPromptInput = ({
         description: criterion.description,
         maxScore: criterion.maxScore,
         weight: criterion.weight,
+        judgeOnly: Boolean(criterion.judgeOnly),
+        aiSupportForAudit: criterion.aiSupportForAudit !== false,
+        aiInstruction: criterion.aiInstruction || null,
         order: index
       }))
     } : null,
@@ -333,6 +336,9 @@ const buildAggregatePromptInput = ({
         description: criterion.description,
         maxScore: criterion.maxScore,
         weight: criterion.weight,
+        judgeOnly: Boolean(criterion.judgeOnly),
+        aiSupportForAudit: criterion.aiSupportForAudit !== false,
+        aiInstruction: criterion.aiInstruction || null,
         order: index
       }))
     } : null,
