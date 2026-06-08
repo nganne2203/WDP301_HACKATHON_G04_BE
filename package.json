@@ -12,6 +12,9 @@
     "dev:worker": "node --watch src/worker.js",
     "start": "node src/server.js",
     "start:worker": "node src/worker.js",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f api worker",
     "db:init": "node src/scripts/initDb.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -26,7 +29,8 @@
     "#routes/*": "./src/routes/*",
     "#utils/*": "./src/utils/*",
     "#repositories/*": "./src/repositories/*",
-    "#services/*": "./src/services/*"
+    "#services/*": "./src/services/*",
+    "#workers/*": "./src/workers/*"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",
