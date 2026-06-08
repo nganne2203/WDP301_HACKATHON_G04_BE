@@ -273,6 +273,55 @@ const validAiResponse = JSON.stringify({
   suggestedScore: 9.5
 })
 
+const validAggregateAiResponse = JSON.stringify({
+  reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
+  status: 'DONE',
+  isScoreBased: false,
+  isFinalDecision: false,
+  overallPicture: {
+    pushSummary: 'The team improved core backend modules over multiple commits.',
+    significantChange: true,
+    changeImpactLevel: 'HIGH',
+    mainAffectedAreas: ['Repository analysis', 'AI review runtime']
+  },
+  techStackDetected: {
+    frontend: [],
+    backend: ['express'],
+    database: ['mongoose'],
+    ai: ['openai'],
+    retrieval: [],
+    testing: ['node:test']
+  },
+  technicalFindings: [{
+    type: 'MAINTAINABILITY',
+    severity: 'HIGH',
+    title: 'Core runtime path changed repeatedly',
+    evidence: ['repository-analysis.service.js', 'ai-review.service.js'],
+    comment: 'Review regression coverage before go-live.',
+    recommendedAction: 'Run integrated runtime verification.'
+  }],
+  rubricAwareComments: [{
+    criterionId: 'criterion-1',
+    criterionName: 'Architecture',
+    qualitativeLevel: 'GOOD',
+    comment: 'The architecture is converging toward a workable production flow.',
+    evidence: ['Queue and worker separation'],
+    risks: ['Operational regression if env is incomplete']
+  }],
+  suggestedTestCases: [{
+    title: 'End-to-end runtime verification',
+    purpose: 'Verify webhook to worker flow',
+    expectedObservation: 'A real push creates evidence and a completed AI review.'
+  }],
+  suggestedJudgeQuestions: ['What failure recovery exists if the AI provider is temporarily unavailable?'],
+  costControlNotes: {
+    llmCallReason: 'Aggregate technical summary required',
+    skippedFiles: [],
+    tokenSavingStrategy: ['Use summarized diff evidence only']
+  },
+  needsHumanReview: true
+})
+
 test('per-push audit is skipped for LOW/SKIP_LLM', async () => {
   const { repository, stores, repositoryId, commitSha } = createRepositoryFixture({
     impactDecision: { impactLevel: 'LOW', decision: 'SKIP_LLM' },
@@ -490,4 +539,41 @@ test('malformed JSON triggers repair successfully when repair returns valid JSON
   })
 
   assert.equal(result.review.status, 'COMPLETED')
+})
+
+test('team aggregate audit enriches canonical aggregate fields when provider omits them', async () => {
+  const { repository, repositoryId } = createRepositoryFixture({
+    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+  })
+
+  const service = createAiReviewService({
+    repository,
+    queueService: {
+      enqueueRunPerPushAudit: async () => null,
+      enqueueRunTeamAggregateAudit: async () => null
+    },
+    llmService: {
+      async generateAudit() {
+        return {
+          rawResponse: validAggregateAiResponse,
+          modelName: 'mock-model',
+          provider: 'mock'
+        }
+      },
+      async repairJson() {
+        throw new Error('should not repair')
+      }
+    }
+  })
+
+  const result = await service.createTeamAggregateAudit({
+    repositoryId,
+    requestedBy: 'user-1'
+  })
+
+  assert.equal(result.review.status, 'COMPLETED')
+  assert.equal(Boolean(result.review.normalizedOutput.historicalSynthesis), true)
+  assert.equal(Boolean(result.review.normalizedOutput.currentTechnicalSnapshot), true)
+  assert.equal(Array.isArray(result.review.normalizedOutput.riskSummary), true)
+  assert.equal(Boolean(result.review.normalizedOutput.judgeDashboardSummary?.headline), true)
 })

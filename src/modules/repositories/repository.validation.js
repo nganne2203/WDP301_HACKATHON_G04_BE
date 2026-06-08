@@ -37,6 +37,7 @@ const createRepository = {
     githubOwner: Joi.string().trim().min(1).max(100).required(),
     githubRepo: Joi.string().trim().min(1).max(100).required(),
     repositoryUrl: Joi.string().uri().required(),
+    repositoryLocalPath: Joi.string().trim().max(500).allow('', null),
     defaultBranch: Joi.string().trim().min(1).max(100).default('main'),
     latestCommitSha: Joi.string().trim().max(100).allow('', null),
     lastProcessedCommitSha: Joi.string().trim().max(100).allow('', null),
@@ -55,6 +56,7 @@ const updateRepository = {
     status: repositoryStatus,
     accessState,
     repositoryUrl: Joi.string().uri(),
+    repositoryLocalPath: Joi.string().trim().max(500).allow('', null),
     githubOwner: Joi.string().trim().min(1).max(100),
     githubRepo: Joi.string().trim().min(1).max(100)
   }).min(1)

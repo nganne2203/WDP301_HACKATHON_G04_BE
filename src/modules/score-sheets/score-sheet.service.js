@@ -254,9 +254,7 @@ export const createScoreSheetService = ({
       scoreValue: Number(score.scoreValue),
       comment: score.comment,
       isOverridden: false,
-      overrideReason: null,
-      aiSuggestedScore: null,
-      aiReviewCriterionId: null
+      overrideReason: null
     })))
   }
 

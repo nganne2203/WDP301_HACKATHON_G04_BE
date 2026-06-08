@@ -54,7 +54,7 @@ Keep `STATIC_ANALYSIS_ESLINT_COMMAND` and `STATIC_ANALYSIS_TSC_COMMAND` empty du
 
 ## 2. Start runtime
 
-Build and run services:
+Build and run services: docker compose up -d --build
 
 ```powershell
 npm run docker:up

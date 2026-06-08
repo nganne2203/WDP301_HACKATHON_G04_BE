@@ -6,6 +6,7 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import ApiError from '#utils/ApiError.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { QUEUE_SERVICE } from '#services/queue.service.js'
+import { AI_RUNTIME_SERVICE } from '#services/ai-runtime.service.js'
 
 const FORBIDDEN_FIELDS = new Set([
   'suggestedScore',
@@ -65,6 +66,19 @@ const aiReviewOutputSchema = Joi.object({
     skippedFiles: Joi.array().items(Joi.string()).default([]),
     tokenSavingStrategy: Joi.array().items(Joi.string()).default([])
   }).required(),
+  historicalSynthesis: Joi.string().allow('', null),
+  currentTechnicalSnapshot: Joi.string().allow('', null),
+  riskSummary: Joi.array().items(Joi.object({
+    severity: severity.required(),
+    title: Joi.string().required(),
+    summary: Joi.string().allow('', null)
+  })).default([]),
+  judgeDashboardSummary: Joi.object({
+    headline: Joi.string().allow('', null),
+    needsHumanReview: Joi.boolean().required(),
+    primaryConcerns: Joi.array().items(Joi.string()).default([]),
+    recommendedJudgeFocus: Joi.array().items(Joi.string()).default([])
+  }),
   needsHumanReview: Joi.boolean().required()
 })
 
@@ -342,6 +356,12 @@ const buildAggregatePromptInput = ({
         order: index
       }))
     } : null,
+    aggregateReportContract: {
+      historicalSynthesis: 'Summarize technical evolution across the commit history.',
+      currentTechnicalSnapshot: 'Describe the current architecture/code health snapshot from the recent evidence.',
+      riskSummary: 'List the most important technical risks with severity and short summary.',
+      judgeDashboardSummary: 'Provide a short judge-facing headline, top concerns, and follow-up focus areas.'
+    },
     requiredOutputSchema: 'PHASE_8_AI_TECHNICAL_AUDITOR_V1'
   }
 }
@@ -377,17 +397,52 @@ const buildFallbackOutput = ({ reviewKind, impactDecision, reason }) => ({
   needsHumanReview: true
 })
 
+const enrichCanonicalAggregateOutput = ({ reviewKind, normalizedOutput }) => {
+  if (reviewKind !== 'TEAM_AGGREGATE_TECHNICAL_AUDIT') {
+    return normalizedOutput
+  }
+
+  const technicalFindings = ensureArray(normalizedOutput.technicalFindings)
+  const suggestedJudgeQuestions = ensureArray(normalizedOutput.suggestedJudgeQuestions)
+  const riskSummary = ensureArray(normalizedOutput.riskSummary).length > 0
+    ? ensureArray(normalizedOutput.riskSummary)
+    : technicalFindings.map(finding => ({
+      severity: finding.severity,
+      title: finding.title,
+      summary: finding.comment || finding.recommendedAction || ''
+    }))
+
+  const judgeDashboardSummary = normalizedOutput.judgeDashboardSummary || {
+    headline: normalizedOutput.overallPicture?.pushSummary || '',
+    needsHumanReview: Boolean(normalizedOutput.needsHumanReview),
+    primaryConcerns: riskSummary.slice(0, 3).map(item => item.title),
+    recommendedJudgeFocus: suggestedJudgeQuestions.slice(0, 3)
+  }
+
+  const historicalSynthesis = normalizedOutput.historicalSynthesis
+    || normalizedOutput.overallPicture?.pushSummary
+    || 'Aggregate technical review generated from repository evidence.'
+
+  const currentTechnicalSnapshot = normalizedOutput.currentTechnicalSnapshot
+    || technicalFindings
+      .slice(0, 3)
+      .map(finding => `${finding.severity}: ${finding.title}`)
+      .join(' ')
+    || 'No strong technical findings were detected from the sampled evidence.'
+
+  return {
+    ...normalizedOutput,
+    historicalSynthesis,
+    currentTechnicalSnapshot,
+    riskSummary,
+    judgeDashboardSummary
+  }
+}
+
 export const createAiReviewService = ({
   repository = AI_REVIEW_REPOSITORY,
   queueService = QUEUE_SERVICE,
-  llmService = {
-    async generateAudit() {
-      throw new Error('AI runtime provider is not configured')
-    },
-    async repairJson() {
-      throw new Error('AI runtime provider is not configured')
-    }
-  },
+  llmService = AI_RUNTIME_SERVICE,
   scoreSheetRepository = {
     async touch() {}
   },
@@ -409,7 +464,6 @@ export const createAiReviewService = ({
         code: criterion?.name?.replace(/\s+/g, '_').toUpperCase() || `QUALITATIVE_${index + 1}`,
         description: criterion?.description || null,
         maxScore: criterion?.maxScore || 0,
-        score: null,
         weight: criterion?.weight || 1,
         feedback: comment.comment || null,
         qualitativeLevel: comment.qualitativeLevel,
@@ -475,7 +529,10 @@ export const createAiReviewService = ({
 
       return {
         rawResponse: candidate,
-        normalizedOutput: value,
+        normalizedOutput: enrichCanonicalAggregateOutput({
+          reviewKind,
+          normalizedOutput: value
+        }),
         usedFallback: false
       }
     }
@@ -493,14 +550,36 @@ export const createAiReviewService = ({
       } catch {
         return {
           rawResponse,
-          normalizedOutput: buildFallbackOutput({
+          normalizedOutput: enrichCanonicalAggregateOutput({
             reviewKind,
-            impactDecision,
-            reason: `Fallback used because AI output was invalid: ${firstError.message}`
+            normalizedOutput: buildFallbackOutput({
+              reviewKind,
+              impactDecision,
+              reason: `Fallback used because AI output was invalid: ${firstError.message}`
+            })
           }),
           usedFallback: true
         }
       }
+    }
+  }
+
+  const buildGeneratedErrorFallback = ({ error }) => ({
+    rawResponse: '',
+    modelName: null,
+    tokenUsage: null,
+    provider: null,
+    errorMessage: error.message
+  })
+
+  const callAuditGenerator = async ({ reviewKind, promptInput }) => {
+    try {
+      return await llmService.generateAudit({
+        reviewKind,
+        promptInput
+      })
+    } catch (error) {
+      return buildGeneratedErrorFallback({ error })
     }
   }
 
@@ -709,21 +788,10 @@ export const createAiReviewService = ({
       requestedAt: new Date()
     })
 
-    let generated
-    try {
-      generated = await llmService.generateAudit({
-        reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
-        promptInput: evidence.promptInput
-      })
-    } catch (error) {
-      generated = {
-        rawResponse: '',
-        modelName: null,
-        tokenUsage: null,
-        provider: null,
-        errorMessage: error.message
-      }
-    }
+    const generated = await callAuditGenerator({
+      reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+      promptInput: evidence.promptInput
+    })
 
     const rawResponse = generated.rawResponse || ''
     const normalized = await validateAndNormalizeAiOutput({
@@ -788,21 +856,10 @@ export const createAiReviewService = ({
       requestedAt: new Date()
     })
 
-    let generated
-    try {
-      generated = await llmService.generateAudit({
-        reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
-        promptInput: evidence.promptInput
-      })
-    } catch (error) {
-      generated = {
-        rawResponse: '',
-        modelName: null,
-        tokenUsage: null,
-        provider: null,
-        errorMessage: error.message
-      }
-    }
+    const generated = await callAuditGenerator({
+      reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
+      promptInput: evidence.promptInput
+    })
 
     const normalized = await validateAndNormalizeAiOutput({
       rawResponse: generated.rawResponse || '',

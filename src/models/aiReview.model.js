@@ -39,7 +39,6 @@ const aiReviewSchema = new Schema(
     techStackDetected: { type: Schema.Types.Mixed, default: null },
     riskSummary: [{ type: Schema.Types.Mixed }],
     details: { type: Schema.Types.Mixed },
-    score: { type: Number },
     retryCount: { type: Number, default: 0 },
     lastError: { type: String },
     requestedBy: { type: Schema.Types.ObjectId, ref: 'User' },

@@ -1,0 +1,2800 @@
+tags:
+  - name: Runtime
+    description: |
+      Runtime and health-check endpoints.
+
+      FE notes:
+      - `/health` is only a liveness probe.
+      - `/ready` should be used by ops or deployment checks to confirm MongoDB and Redis are available.
+  - name: GitHub
+    description: |
+      GitHub integration and repository provisioning flow.
+
+      FE notes:
+      - Configure organization credentials first.
+      - Repository creation and webhook registration are separate concepts, even though creation tries to auto-register webhook.
+      - Collaborator access and repository webhook status should be surfaced in the admin UI.
+  - name: GitHub Webhooks
+    description: |
+      GitHub inbound webhook endpoint.
+
+      FE notes:
+      - This endpoint is for GitHub only, not for browser/frontend calls.
+      - Delivery is designed to return quickly and continue processing asynchronously through Redis + worker.
+  - name: Repositories
+    description: |
+      Internal repository tracking, commit evidence, static analysis, and impact scoring.
+
+      FE notes:
+      - List/detail endpoints are synchronous reads from MongoDB.
+      - Sync/analyze endpoints usually queue background work and return immediately.
+      - `webhookStatus` and `accessState` are key status fields for admin screens.
+  - name: AI Reviews
+    description: |
+      AI-assisted technical audit endpoints.
+
+      FE notes:
+      - Trigger endpoints are asynchronous and usually return queue acknowledgment first.
+      - Review data is advisory only and must not be treated as final judging scores.
+  - name: Participants
+    description: |
+      Participant registration, event presence, and GitHub-access lifecycle.
+  - name: Teams
+    description: |
+      Team lifecycle, invitations, placement, and capacity-related workflows.
+
+      FE notes:
+      - Invitation accept/decline endpoints are public token flows.
+      - Placement/status updates are usually coordinator-only actions.
+  - name: Submissions
+    description: |
+      Team submission records for demo, report, and presentation artifacts.
+  - name: Rubrics
+    description: |
+      Rubrics and criteria used for human judging and AI-aware audit guidance.
+
+      FE notes:
+      - `judgeOnly=true` means the criterion is visible to human judges but should not drive AI auditing logic directly.
+      - `aiInstruction` can be shown in admin tooling but usually does not belong in contestant-facing UI.
+  - name: Rounds
+    description: Competition round configuration and progression.
+  - name: Judging Boards
+    description: Judge-team grouping and board assignment endpoints.
+  - name: Score Sheets
+    description: Judge scoring data entry and submission flow.
+  - name: Rankings
+    description: Ranking generation based on judge score sheets only.
+  - name: Finalists
+    description: Finalist selection endpoints based on event competition configuration.
+  - name: Results
+    description: Official round result publication.
+  - name: Timelines
+    description: Event schedule and timeline management endpoints.
+  - name: Notifications
+    description: Notification inbox endpoints for authenticated users.
+  - name: Media
+    description: User-side media upload and retrieval endpoints.
+  - name: Admin Media
+    description: Admin-side media moderation and storage configuration endpoints.
+
+components:
+  schemas:
+    SuccessEnvelope:
+      type: object
+      description: Standard successful API envelope used by most backend endpoints.
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Get repositories successfully
+        data:
+          nullable: true
+        pagination:
+          nullable: true
+    PaginatedMeta:
+      type: object
+      properties:
+        currentPage:
+          type: integer
+          example: 1
+        totalPages:
+          type: integer
+          example: 4
+        pageSize:
+          type: integer
+          example: 10
+        totalItems:
+          type: integer
+          example: 37
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+    ReadyStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        checks:
+          type: object
+          properties:
+            mongodb:
+              type: string
+              example: ready
+            redis:
+              type: string
+              example: ready
+        redisError:
+          type: string
+          nullable: true
+    GitHubConfigRequest:
+      type: object
+      description: Save or update GitHub org-level configuration for a specific event.
+      required: [eventId, organizationName, ownerUsername, enabled]
+      properties:
+        eventId:
+          type: string
+          example: 68452b1c4f9a72f84d8a1c10
+        organizationName:
+          type: string
+          example: seal-org
+        ownerUsername:
+          type: string
+          example: seal-admin
+        githubToken:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+          example: true
+    GitHubRepositoryCreateRequest:
+      type: object
+      description: Create a real GitHub repository in the configured organization.
+      required: [eventId, repoName]
+      properties:
+        eventId:
+          type: string
+          example: 68452b1c4f9a72f84d8a1c10
+        repoName:
+          type: string
+          example: team-alpha-project
+        description:
+          type: string
+          nullable: true
+        private:
+          type: boolean
+          default: true
+        teamId:
+          type: string
+          nullable: true
+        roundId:
+          type: string
+          nullable: true
+    GitHubCollaboratorRequest:
+      type: object
+      required: [eventId]
+      properties:
+        eventId:
+          type: string
+        permission:
+          type: string
+          enum: [pull, triage, push, maintain, admin]
+          default: push
+    GitHubWebhookRegisterRequest:
+      type: object
+      required: [eventId]
+      properties:
+        eventId:
+          type: string
+    GitHubOrganizationInvitationRequest:
+      type: object
+      required: [eventId, email]
+      properties:
+        eventId:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [direct_member]
+          default: direct_member
+    GitHubRevokeMembersRequest:
+      type: object
+      required: [eventId, confirmationText]
+      properties:
+        eventId:
+          type: string
+        confirmationText:
+          type: string
+          enum: [REVOKE MEMBERS]
+    Repository:
+      type: object
+      description: Internal repository tracking record used by repository sync, webhook, and audit features.
+      properties:
+        id:
+          type: string
+        eventId:
+          type: string
+        teamId:
+          type: string
+        roundId:
+          type: string
+          nullable: true
+        githubOwner:
+          type: string
+        githubRepo:
+          type: string
+        repositoryFullName:
+          type: string
+        repositoryUrl:
+          type: string
+          format: uri
+        defaultBranch:
+          type: string
+        latestCommitSha:
+          type: string
+          nullable: true
+        lastProcessedCommitSha:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [PENDING, ACTIVE, ARCHIVED, DISCONNECTED]
+        accessState:
+          type: string
+          enum: [UNKNOWN, PENDING, GRANTED, REVOKED]
+        accessGrantedAt:
+          type: string
+          format: date-time
+          nullable: true
+        accessRevokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        webhookRegisteredAt:
+          type: string
+          format: date-time
+          nullable: true
+        webhookStatus:
+          type: string
+          enum: [NOT_CONFIGURED, PENDING, REGISTERED, FAILED]
+          description: Current webhook registration lifecycle state for the GitHub repository.
+        lastWebhookRegistrationError:
+          type: string
+          nullable: true
+    RepositoryCreateRequest:
+      type: object
+      required: [eventId, teamId, githubOwner, githubRepo, repositoryUrl]
+      properties:
+        eventId:
+          type: string
+        teamId:
+          type: string
+        roundId:
+          type: string
+          nullable: true
+        githubOwner:
+          type: string
+        githubRepo:
+          type: string
+        repositoryUrl:
+          type: string
+          format: uri
+        defaultBranch:
+          type: string
+          default: main
+        latestCommitSha:
+          type: string
+          nullable: true
+        lastProcessedCommitSha:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [PENDING, ACTIVE, ARCHIVED, DISCONNECTED]
+        accessState:
+          type: string
+          enum: [UNKNOWN, PENDING, GRANTED, REVOKED]
+    RepositoryUpdateRequest:
+      type: object
+      properties:
+        roundId:
+          type: string
+          nullable: true
+        defaultBranch:
+          type: string
+        latestCommitSha:
+          type: string
+          nullable: true
+        lastProcessedCommitSha:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [PENDING, ACTIVE, ARCHIVED, DISCONNECTED]
+        accessState:
+          type: string
+          enum: [UNKNOWN, PENDING, GRANTED, REVOKED]
+        repositoryUrl:
+          type: string
+          format: uri
+        githubOwner:
+          type: string
+        githubRepo:
+          type: string
+    ParticipantRequest:
+      type: object
+      description: Create or update a participant registration record for an event.
+      required: [eventId]
+      properties:
+        eventId:
+          type: string
+        userId:
+          type: string
+          nullable: true
+        teamId:
+          type: string
+          nullable: true
+        chapterName:
+          type: string
+          nullable: true
+        teamRole:
+          type: string
+          enum: [MEMBER, LEADER]
+        isGraduated:
+          type: boolean
+        consentMediaUse:
+          type: boolean
+        eligibilityStatus:
+          type: string
+          enum: [PENDING, ELIGIBLE, INELIGIBLE]
+        attendedActivities:
+          type: array
+          items:
+            type: string
+        checkInStatus:
+          type: string
+          enum: [NOT_CHECKED_IN, CHECKED_IN]
+        githubAccessStatus:
+          type: string
+          enum: [NOT_GRANTED, GRANTED, REVOKED]
+        status:
+          type: string
+          enum: [INVITED, REGISTERED, ACTIVE, WITHDRAWN]
+    TeamCreateRequest:
+      type: object
+      description: Create a team and optionally seed invitation emails in the same request.
+      required: [eventId, name]
+      properties:
+        eventId:
+          type: string
+        name:
+          type: string
+        trackId:
+          type: string
+          nullable: true
+        chapterName:
+          type: string
+          nullable: true
+        projectName:
+          type: string
+          nullable: true
+        invitedEmails:
+          type: array
+          items:
+            type: string
+            format: email
+        invitedMembers:
+          type: array
+          items:
+            type: object
+            properties:
+              fullName:
+                type: string
+              email:
+                type: string
+                format: email
+    TeamInviteMembersRequest:
+      type: object
+      properties:
+        emails:
+          type: array
+          items:
+            type: string
+            format: email
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              fullName:
+                type: string
+              email:
+                type: string
+                format: email
+    TeamStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [PENDING, WAITING_FOR_MEMBERS, WAITLISTED, CONFIRMED, REJECTED, ACTIVE, INACTIVE, DISQUALIFIED]
+        trackId:
+          type: string
+          nullable: true
+        rejectionReason:
+          type: string
+          nullable: true
+    TeamPlacementRequest:
+      type: object
+      properties:
+        trackId:
+          type: string
+          nullable: true
+        trackAssignmentMethod:
+          type: string
+          enum: [DRAW, MANUAL, SYSTEM]
+    SubmissionRequest:
+      type: object
+      description: Store or update a submission artifact set for a team in a round.
+      required: [eventId, roundId, teamId]
+      properties:
+        eventId:
+          type: string
+        roundId:
+          type: string
+        teamId:
+          type: string
+        repositoryId:
+          type: string
+          nullable: true
+        demoUrl:
+          type: string
+          format: uri
+          nullable: true
+        reportUrl:
+          type: string
+          format: uri
+          nullable: true
+        presentationUrl:
+          type: string
+          format: uri
+          nullable: true
+        status:
+          type: string
+          enum: [DRAFT, SUBMITTED, ACCEPTED, REJECTED]
+    RubricRequest:
+      type: object
+      description: Create a rubric that can later be linked to a round.
+      required: [eventId, title]
+      properties:
+        eventId:
+          type: string
+        roundId:
+          type: string
+          nullable: true
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        totalScore:
+          type: number
+        version:
+          type: integer
+        status:
+          type: string
+          enum: [DRAFT, ACTIVE, ARCHIVED]
+    CriterionRequest:
+      type: object
+      description: Add a criterion to a rubric, including AI-specific audit hints.
+      required: [name, maxScore]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        maxScore:
+          type: number
+        weight:
+          type: number
+        order:
+          type: integer
+        judgeOnly:
+          type: boolean
+        aiSupportForAudit:
+          type: boolean
+        aiInstruction:
+          type: string
+          nullable: true
+    RoundRequest:
+      type: object
+      required: [eventId, name]
+      properties:
+        eventId:
+          type: string
+        trackId:
+          type: string
+          nullable: true
+        name:
+          type: string
+        roundType:
+          type: string
+          enum: [PRELIMINARY, FINAL]
+        assignedTeamIds:
+          type: array
+          items:
+            type: string
+        promotedTeamIds:
+          type: array
+          items:
+            type: string
+        maxPromotedTeams:
+          type: integer
+          nullable: true
+        startTime:
+          type: string
+          format: date-time
+          nullable: true
+        endTime:
+          type: string
+          format: date-time
+          nullable: true
+        submissionDeadline:
+          type: string
+          format: date-time
+          nullable: true
+        publishTime:
+          type: string
+          format: date-time
+          nullable: true
+        assignedJudgeIds:
+          type: array
+          items:
+            type: string
+        rubricId:
+          type: string
+          nullable: true
+        promotionRule:
+          type: string
+          nullable: true
+        tieBreakRule:
+          type: string
+          nullable: true
+        tieBreakDurationMinutes:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          enum: [DRAFT, OPEN, CLOSED, SCORING, COMPLETED]
+    JudgingBoardRequest:
+      type: object
+      required: [eventId, roundId, name, boardNumber]
+      properties:
+        eventId:
+          type: string
+        roundId:
+          type: string
+        trackId:
+          type: string
+          nullable: true
+        name:
+          type: string
+        boardNumber:
+          type: integer
+        teamIds:
+          type: array
+          items:
+            type: string
+        judgeIds:
+          type: array
+          items:
+            type: string
+        maxTeams:
+          type: integer
+        status:
+          type: string
+          enum: [DRAFT, ASSIGNED, SCORING, COMPLETED]
+    AutoAssignBoardsRequest:
+      type: object
+      required: [eventId, roundId]
+      properties:
+        eventId:
+          type: string
+        roundId:
+          type: string
+    ScoreItem:
+      type: object
+      required: [criterionId, scoreValue]
+      properties:
+        criterionId:
+          type: string
+        scoreValue:
+          type: number
+        comment:
+          type: string
+          nullable: true
+    ScoreSheetRequest:
+      type: object
+      description: Create a judge score sheet for one team submission in one board/round.
+      required: [eventId, roundId, boardId, teamId, submissionId]
+      properties:
+        eventId:
+          type: string
+        roundId:
+          type: string
+        boardId:
+          type: string
+        teamId:
+          type: string
+        submissionId:
+          type: string
+        rubricId:
+          type: string
+          nullable: true
+        generalComment:
+          type: string
+          nullable: true
+        scores:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScoreItem'
+    ScoreSheetUpdateRequest:
+      type: object
+      properties:
+        generalComment:
+          type: string
+          nullable: true
+        scores:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScoreItem'
+    GenerateRankingsRequest:
+      type: object
+      required: [eventId, roundId]
+      properties:
+        eventId:
+          type: string
+        roundId:
+          type: string
+        rankingType:
+          type: string
+          enum: [TEAM]
+    SelectFinalistsRequest:
+      type: object
+      required: [eventId, roundId]
+      properties:
+        eventId:
+          type: string
+        roundId:
+          type: string
+    PublishResultsRequest:
+      type: object
+      required: [eventId, roundId]
+      properties:
+        eventId:
+          type: string
+        roundId:
+          type: string
+    TimelineRequest:
+      type: object
+      required: [eventId, title]
+      properties:
+        eventId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        startTime:
+          type: string
+          format: date-time
+          nullable: true
+        endTime:
+          type: string
+          format: date-time
+          nullable: true
+        eventType:
+          type: string
+          enum: [WORKSHOP, CHECK_IN, ROUND, RESULT_PUBLISHING, CEREMONY, OTHER]
+        status:
+          type: string
+          enum: [SCHEDULED, ONGOING, COMPLETED, CANCELLED]
+    MediaConfigRequest:
+      type: object
+      required: [supabaseUrl]
+      properties:
+        supabaseUrl:
+          type: string
+          format: uri
+        serviceRoleKey:
+          type: string
+          nullable: true
+        bucket:
+          type: string
+        visibility:
+          type: string
+          enum: [private]
+        maxImageSizeMb:
+          type: integer
+        maxVideoSizeMb:
+          type: integer
+        maxDocumentSizeMb:
+          type: integer
+        allowedImageTypes:
+          type: array
+          items:
+            type: string
+        allowedVideoTypes:
+          type: array
+          items:
+            type: string
+        allowedDocumentTypes:
+          type: array
+          items:
+            type: string
+    MediaRejectRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+
+paths:
+  /health:
+    get:
+      summary: Liveness probe
+      tags: [Runtime]
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+  /ready:
+    get:
+      summary: Readiness probe
+      tags: [Runtime]
+      responses:
+        '200':
+          description: Dependencies are ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyStatus'
+        '503':
+          description: One or more dependencies are not ready
+  /api/status:
+    get:
+      summary: API status endpoint
+      tags: [Runtime]
+      responses:
+        '200':
+          description: API status returned
+
+  /api/github/config:
+    get:
+      summary: Get GitHub integration config for an event
+      description: |
+        Load GitHub org configuration for a specific event.
+
+        FE notes:
+        - Use this to prefill admin settings screens.
+        - The backend never returns the raw GitHub token back to the client.
+      tags: [GitHub]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: GitHub config loaded
+    post:
+      summary: Save GitHub integration config
+      description: |
+        Save event-level GitHub organization settings.
+
+        FE notes:
+        - Token is stored encrypted on the backend.
+        - Sending an empty `githubToken` keeps the previously saved token.
+      tags: [GitHub]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitHubConfigRequest'
+            example:
+              eventId: 68452b1c4f9a72f84d8a1c10
+              organizationName: seal-org
+              ownerUsername: seal-admin
+              githubToken: github_pat_xxx
+              enabled: true
+      responses:
+        '200':
+          description: GitHub config saved
+  /api/github/config/test:
+    post:
+      summary: Test saved GitHub integration
+      description: |
+        Validate that the stored GitHub configuration can access the target organization.
+
+        FE notes:
+        - This is a good pre-flight action before enabling repository provisioning.
+      tags: [GitHub]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId]
+              properties:
+                eventId:
+                  type: string
+      responses:
+        '200':
+          description: Connection test completed
+  /api/github/repositories:
+    post:
+      summary: Create a GitHub repository in the configured organization
+      description: |
+        Create a real GitHub repository via GitHub API.
+
+        FE notes:
+        - This is different from `/api/repositories`, which creates only the internal link record.
+        - The backend also attempts webhook registration after repo creation.
+      tags: [GitHub]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitHubRepositoryCreateRequest'
+            example:
+              eventId: 68452b1c4f9a72f84d8a1c10
+              repoName: seal-runtime-verification
+              description: Runtime verification repo
+              private: true
+      responses:
+        '201':
+          description: Repository created and webhook registration attempted
+  /api/github/repositories/{repoName}/collaborators/{username}:
+    put:
+      summary: Grant collaborator access to a GitHub repository
+      description: |
+        Grant repository access to a GitHub username and update internal access lifecycle metadata.
+      tags: [GitHub]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: repoName
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: username
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitHubCollaboratorRequest'
+            example:
+              eventId: 68452b1c4f9a72f84d8a1c10
+              permission: push
+      responses:
+        '200':
+          description: Collaborator granted
+    delete:
+      summary: Revoke collaborator access from a GitHub repository
+      description: |
+        Remove repository collaborator access and mark internal repository access as revoked.
+      tags: [GitHub]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: repoName
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: username
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitHubWebhookRegisterRequest'
+      responses:
+        '200':
+          description: Collaborator revoked
+  /api/github/repositories/{repoName}/webhooks/register:
+    post:
+      summary: Register the platform webhook on a GitHub repository
+      description: |
+        Register the backend webhook callback URL on the real GitHub repository.
+
+        FE notes:
+        - Success here does not mean a push has been processed yet.
+        - Use repository detail/list to inspect `webhookStatus`.
+      tags: [GitHub]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: repoName
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitHubWebhookRegisterRequest'
+      responses:
+        '200':
+          description: Webhook registration attempted
+  /api/github/organization/invitations:
+    post:
+      summary: Invite a user to the configured GitHub organization
+      tags: [GitHub]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitHubOrganizationInvitationRequest'
+      responses:
+        '201':
+          description: Organization invitation created
+  /api/github/organization/revoke-members:
+    post:
+      summary: Revoke organization members in bulk
+      tags: [GitHub]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitHubRevokeMembersRequest'
+      responses:
+        '200':
+          description: Bulk revoke completed
+
+  /api/github/webhooks:
+    post:
+      summary: Receive GitHub webhook deliveries
+      description: |
+        Internal ingestion endpoint for GitHub webhook deliveries.
+
+        FE notes:
+        - This endpoint is not designed for frontend use.
+        - The response is intentionally fast because heavy processing continues in BullMQ worker jobs.
+        - Delivery statuses move through `RECEIVED -> QUEUED -> PROCESSING -> PROCESSED` or `FAILED`.
+      tags: [GitHub Webhooks]
+      parameters:
+        - in: header
+          name: X-GitHub-Delivery
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-GitHub-Event
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Hub-Signature-256
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Webhook accepted or safely ignored
+        '403':
+          description: Invalid signature
+
+  /api/repositories:
+    get:
+      summary: List linked repositories
+      description: |
+        List internal repository records used by the hackathon platform.
+
+        FE notes:
+        - This endpoint is appropriate for admin tables and repository dashboards.
+        - `webhookStatus` and `accessState` should be shown as status badges.
+      tags: [Repositories]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: limit
+          schema:
+            type: integer
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: teamId
+          schema:
+            type: string
+        - in: query
+          name: roundId
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: accessState
+          schema:
+            type: string
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Repository list returned
+    post:
+      summary: Create an internal repository link record
+      description: |
+        Create only the platform-side repository record.
+
+        FE notes:
+        - This does not create a real GitHub repository.
+        - Useful when a repo already exists and needs to be linked manually.
+      tags: [Repositories]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RepositoryCreateRequest'
+            example:
+              eventId: 68452b1c4f9a72f84d8a1c10
+              teamId: 68452c6f4f9a72f84d8a1d55
+              roundId: 68452d8a4f9a72f84d8a1f01
+              githubOwner: seal-org
+              githubRepo: team-alpha
+              repositoryUrl: https://github.com/seal-org/team-alpha
+              defaultBranch: main
+              status: ACTIVE
+              accessState: GRANTED
+      responses:
+        '201':
+          description: Repository linked
+  /api/repositories/{id}:
+    get:
+      summary: Get repository by id
+      description: |
+        Load one repository record with current lifecycle fields.
+
+        FE notes:
+        - This is the best source for repository-level badges such as webhook and access status.
+      tags: [Repositories]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Repository returned
+    patch:
+      summary: Update repository metadata
+      description: |
+        Update internal repository fields such as branch, sync pointers, access state, or manual linking metadata.
+      tags: [Repositories]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RepositoryUpdateRequest'
+            example:
+              defaultBranch: main
+              status: ACTIVE
+              accessState: REVOKED
+      responses:
+        '200':
+          description: Repository updated
+  /api/repositories/{id}/commits:
+    get:
+      summary: List repository commits
+      description: |
+        Read commit metadata already synchronized into MongoDB.
+
+        FE notes:
+        - This does not call GitHub live.
+        - Use together with commit diffs and impact decisions for repository detail pages.
+      tags: [Repositories]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Commits returned
+  /api/repositories/{id}/commit-diffs:
+    get:
+      summary: List repository commit diffs
+      description: |
+        Read normalized diff evidence captured from GitHub pushes or scheduled sync.
+
+        FE notes:
+        - Large/generated/binary files may be excluded from clean diff evidence.
+      tags: [Repositories]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Commit diffs returned
+  /api/repositories/{id}/static-analysis:
+    get:
+      summary: List static analysis results for a repository
+      description: |
+        Read static-analysis artifacts derived from repository evidence jobs.
+      tags: [Repositories]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Static analysis results returned
+  /api/repositories/{id}/impact-decisions:
+    get:
+      summary: List impact decisions for a repository
+      description: |
+        Read impact-scoring outcomes used to decide whether AI audit should run immediately, later, or be skipped.
+      tags: [Repositories]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Impact decisions returned
+  /api/repositories/{id}/ai-reviews:
+    get:
+      summary: List AI reviews for a repository
+      tags: [AI Reviews]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: AI reviews returned
+  /api/repositories/{id}/sync-commits:
+    post:
+      summary: Queue repository commit synchronization
+      description: |
+        Queue commit synchronization for one repository.
+
+        FE notes:
+        - This endpoint returns immediately after queueing.
+        - Refresh repository evidence screens after worker processing finishes.
+      tags: [Repositories]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Repository sync job queued
+  /api/repositories/{id}/analyze-commit:
+    post:
+      summary: Queue static analysis for a commit
+      description: |
+        Queue static-analysis processing for a commit already known to the platform.
+
+        FE notes:
+        - If `commitSha` is omitted, the backend uses the latest processed or latest known commit.
+      tags: [Repositories]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                commitSha:
+                  type: string
+                  nullable: true
+            example:
+              commitSha: 3d2f71fbf91b4fdb8a55f8cce21d0a0c213f1d19
+      responses:
+        '200':
+          description: Analysis job queued
+  /api/repositories/{id}/ai-reviews/per-push:
+    post:
+      summary: Queue a per-push AI technical audit
+      description: |
+        Queue a focused AI review for one commit/push.
+
+        FE notes:
+        - This is asynchronous.
+        - The review result is advisory and must not be shown as official score.
+      tags: [AI Reviews]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                commitSha:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Per-push AI audit queued
+  /api/repositories/{id}/ai-reviews/team-aggregate:
+    post:
+      summary: Queue a team aggregate AI technical audit
+      description: |
+        Queue a broader AI review across recent repository history for one team repository.
+      tags: [AI Reviews]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                batchId:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Team aggregate AI audit queued
+
+  /api/ai-reviews/{id}:
+    get:
+      summary: Get AI review detail by id
+      tags: [AI Reviews]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: AI review returned
+
+  /api/participants:
+    get:
+      summary: List participants
+      description: |
+        List participant records for event operations.
+
+        FE notes:
+        - Useful for check-in dashboards, eligibility review, and GitHub-access administration.
+      tags: [Participants]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: userId
+          schema:
+            type: string
+        - in: query
+          name: teamId
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: checkInStatus
+          schema:
+            type: string
+        - in: query
+          name: githubAccessStatus
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Participants returned
+    post:
+      summary: Register a participant
+      description: |
+        Create a participant record for an event.
+
+        FE notes:
+        - If `userId` is omitted, the backend registers the current authenticated user.
+      tags: [Participants]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParticipantRequest'
+            example:
+              eventId: 68452b1c4f9a72f84d8a1c10
+              chapterName: SE1701
+              teamRole: MEMBER
+              githubAccessStatus: NOT_GRANTED
+              status: REGISTERED
+      responses:
+        '201':
+          description: Participant created
+  /api/participants/{id}:
+    get:
+      summary: Get participant by id
+      tags: [Participants]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Participant returned
+    patch:
+      summary: Update participant
+      tags: [Participants]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParticipantRequest'
+      responses:
+        '200':
+          description: Participant updated
+  /api/participants/{id}/check-in:
+    patch:
+      summary: Update participant check-in status
+      tags: [Participants]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checkInStatus]
+              properties:
+                checkInStatus:
+                  type: string
+                  enum: [NOT_CHECKED_IN, CHECKED_IN]
+      responses:
+        '200':
+          description: Check-in status updated
+  /api/participants/{id}/attendance:
+    patch:
+      summary: Update participant attendance activities
+      tags: [Participants]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [attendedActivities]
+              properties:
+                attendedActivities:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Attendance updated
+  /api/participants/{id}/github-access:
+    patch:
+      summary: Update participant GitHub access lifecycle
+      tags: [Participants]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [githubAccessStatus]
+              properties:
+                githubAccessStatus:
+                  type: string
+                  enum: [NOT_GRANTED, GRANTED, REVOKED]
+      responses:
+        '200':
+          description: GitHub access updated
+
+  /api/teams/invitations/{token}/accept:
+    post:
+      summary: Accept a team invitation
+      tags: [Teams]
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation accepted or resolved
+  /api/teams/invitations/{token}/decline:
+    post:
+      summary: Decline a team invitation
+      tags: [Teams]
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation declined or resolved
+  /api/teams:
+    get:
+      summary: List teams
+      description: |
+        List teams with filterable status and track assignment context.
+      tags: [Teams]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: trackId
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Teams returned
+    post:
+      summary: Create a team and invitations
+      description: |
+        Create a new team and optionally issue member invitations in the same request.
+
+        FE notes:
+        - Team capacity, registration windows, and duplicate membership rules are enforced on the backend.
+      tags: [Teams]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamCreateRequest'
+            example:
+              eventId: 68452b1c4f9a72f84d8a1c10
+              name: Team Alpha
+              chapterName: SE1701
+              projectName: AI Auditor
+              invitedMembers:
+                - fullName: Nguyen Van B
+                  email: member1@example.com
+                - fullName: Tran Thi C
+                  email: member2@example.com
+      responses:
+        '201':
+          description: Team created
+  /api/teams/my:
+    get:
+      summary: Get my team for an event
+      description: |
+        Resolve the current user's team inside one event.
+      tags: [Teams]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Team returned
+  /api/teams/{id}:
+    get:
+      summary: Get team by id
+      tags: [Teams]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Team returned
+  /api/teams/{teamId}/ai-audit-summary:
+    get:
+      summary: Get AI audit summary for a team
+      tags: [AI Reviews]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: teamId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+        - in: query
+          name: reviewKind
+          schema:
+            type: string
+            enum: [PER_PUSH_TECHNICAL_AUDIT, TEAM_AGGREGATE_TECHNICAL_AUDIT]
+      responses:
+        '200':
+          description: Team AI summary returned
+  /api/teams/{id}/status:
+    patch:
+      summary: Update team status
+      description: |
+        Coordinator-side team lifecycle update.
+
+        FE notes:
+        - Confirming a team may also trigger placement logic.
+        - Rejecting a team should surface `rejectionReason` to admin UI.
+      tags: [Teams]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamStatusRequest'
+            example:
+              status: CONFIRMED
+              trackId: 68452e214f9a72f84d8a2057
+      responses:
+        '200':
+          description: Team status updated
+  /api/teams/{id}/placement:
+    patch:
+      summary: Update team placement and track assignment
+      description: |
+        Coordinator-side track placement update.
+
+        FE notes:
+        - This is useful when boards/tracks need manual balancing.
+      tags: [Teams]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamPlacementRequest'
+      responses:
+        '200':
+          description: Team placement updated
+  /api/teams/{id}/invitations:
+    post:
+      summary: Invite more members to a team
+      tags: [Teams]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamInviteMembersRequest'
+      responses:
+        '200':
+          description: Invitations created
+  /api/teams/{teamId}/invitations/{invitationId}/replace:
+    patch:
+      summary: Replace a declined invitation with a new email
+      tags: [Teams]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: teamId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: invitationId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Invitation replaced
+  /api/teams/{teamId}/invitations/{invitationId}:
+    delete:
+      summary: Cancel a pending invitation
+      tags: [Teams]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: teamId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: invitationId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation cancelled
+
+  /api/submissions:
+    get:
+      summary: List submissions
+      description: |
+        List submission records for a round/team/repository combination.
+      tags: [Submissions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: roundId
+          schema:
+            type: string
+        - in: query
+          name: teamId
+          schema:
+            type: string
+        - in: query
+          name: repositoryId
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Submissions returned
+    post:
+      summary: Create a submission
+      description: |
+        Create one submission record with optional demo, report, and presentation links.
+      tags: [Submissions]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionRequest'
+            example:
+              eventId: 68452b1c4f9a72f84d8a1c10
+              roundId: 68452d8a4f9a72f84d8a1f01
+              teamId: 68452c6f4f9a72f84d8a1d55
+              repositoryId: 6845309c4f9a72f84d8a2220
+              demoUrl: https://demo.example.com
+              reportUrl: https://docs.example.com/report.pdf
+              presentationUrl: https://slides.example.com
+              status: SUBMITTED
+      responses:
+        '201':
+          description: Submission created
+  /api/submissions/{id}:
+    get:
+      summary: Get submission by id
+      tags: [Submissions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Submission returned
+  /api/submissions/{id}/status:
+    patch:
+      summary: Update submission status
+      tags: [Submissions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [DRAFT, SUBMITTED, ACCEPTED, REJECTED]
+      responses:
+        '200':
+          description: Submission status updated
+
+  /api/rubrics:
+    get:
+      summary: List rubrics
+      tags: [Rubrics]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: roundId
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Rubrics returned
+    post:
+      summary: Create a rubric
+      tags: [Rubrics]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RubricRequest'
+      responses:
+        '201':
+          description: Rubric created
+  /api/rubrics/{id}:
+    get:
+      summary: Get rubric by id
+      tags: [Rubrics]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Rubric returned
+  /api/rubrics/{id}/criteria:
+    post:
+      summary: Add a criterion to a rubric
+      description: |
+        Add one rubric criterion.
+
+        FE notes:
+        - `judgeOnly`, `aiSupportForAudit`, and `aiInstruction` are especially important for coordinator/admin tooling.
+      tags: [Rubrics]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CriterionRequest'
+            example:
+              name: System architecture quality
+              description: Evaluate separation of concerns and maintainability.
+              maxScore: 10
+              weight: 1
+              judgeOnly: false
+              aiSupportForAudit: true
+              aiInstruction: Focus on evidence from repository structure and changed services.
+      responses:
+        '201':
+          description: Criterion added
+
+  /api/rounds:
+    get:
+      summary: List rounds
+      tags: [Rounds]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: trackId
+          schema:
+            type: string
+        - in: query
+          name: roundType
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Rounds returned
+    post:
+      summary: Create a round
+      tags: [Rounds]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoundRequest'
+      responses:
+        '201':
+          description: Round created
+  /api/rounds/{id}:
+    get:
+      summary: Get round by id
+      tags: [Rounds]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Round returned
+    patch:
+      summary: Update round
+      tags: [Rounds]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoundRequest'
+      responses:
+        '200':
+          description: Round updated
+    delete:
+      summary: Delete round
+      tags: [Rounds]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Round deleted
+
+  /api/judging-boards:
+    get:
+      summary: List judging boards
+      tags: [Judging Boards]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: roundId
+          schema:
+            type: string
+        - in: query
+          name: trackId
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Boards returned
+    post:
+      summary: Create a judging board
+      tags: [Judging Boards]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JudgingBoardRequest'
+      responses:
+        '201':
+          description: Board created
+  /api/judging-boards/auto-assign:
+    post:
+      summary: Auto assign boards from current team placements
+      tags: [Judging Boards]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutoAssignBoardsRequest'
+      responses:
+        '200':
+          description: Boards auto-assigned
+  /api/judging-boards/{id}:
+    get:
+      summary: Get judging board by id
+      tags: [Judging Boards]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Board returned
+    patch:
+      summary: Update judging board
+      tags: [Judging Boards]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JudgingBoardRequest'
+      responses:
+        '200':
+          description: Board updated
+    delete:
+      summary: Delete judging board
+      tags: [Judging Boards]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Board deleted
+
+  /api/score-sheets:
+    get:
+      summary: List score sheets
+      description: |
+        List judge score sheets.
+
+        FE notes:
+        - Official rankings use judge score sheets, not AI reviews.
+      tags: [Score Sheets]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: roundId
+          schema:
+            type: string
+        - in: query
+          name: teamId
+          schema:
+            type: string
+        - in: query
+          name: judgeId
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Score sheets returned
+    post:
+      summary: Create a score sheet
+      description: |
+        Create a draft score sheet for one judge/team/submission combination.
+      tags: [Score Sheets]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScoreSheetRequest'
+            example:
+              eventId: 68452b1c4f9a72f84d8a1c10
+              roundId: 68452d8a4f9a72f84d8a1f01
+              boardId: 684531f54f9a72f84d8a2389
+              teamId: 68452c6f4f9a72f84d8a1d55
+              submissionId: 684533134f9a72f84d8a24f0
+              rubricId: 6845349d4f9a72f84d8a2612
+              generalComment: Solid implementation with room for testing improvement.
+              scores:
+                - criterionId: 684535d44f9a72f84d8a2701
+                  scoreValue: 8
+                  comment: Architecture is clear and modular.
+      responses:
+        '201':
+          description: Score sheet created
+  /api/score-sheets/{id}:
+    get:
+      summary: Get score sheet by id
+      tags: [Score Sheets]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Score sheet returned
+    patch:
+      summary: Update a draft score sheet
+      tags: [Score Sheets]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScoreSheetUpdateRequest'
+      responses:
+        '200':
+          description: Score sheet updated
+  /api/score-sheets/{id}/submit:
+    post:
+      summary: Submit a score sheet for locking
+      description: |
+        Submit a score sheet after final review.
+
+        FE notes:
+        - Submitted score sheets are intended to become immutable in normal judge flow.
+      tags: [Score Sheets]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Score sheet submitted
+
+  /api/rankings:
+    get:
+      summary: List rankings
+      tags: [Rankings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: roundId
+          schema:
+            type: string
+        - in: query
+          name: trackId
+          schema:
+            type: string
+        - in: query
+          name: teamId
+          schema:
+            type: string
+        - in: query
+          name: rankingType
+          schema:
+            type: string
+            enum: [TEAM]
+      responses:
+        '200':
+          description: Rankings returned
+  /api/rankings/generate:
+    post:
+      summary: Generate rankings from submitted judge score sheets
+      description: |
+        Generate rankings from human judge scores.
+
+        FE notes:
+        - AI review outputs are excluded from official ranking math.
+      tags: [Rankings]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateRankingsRequest'
+      responses:
+        '200':
+          description: Rankings generated
+
+  /api/finalists:
+    get:
+      summary: List finalists
+      tags: [Finalists]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: roundId
+          schema:
+            type: string
+        - in: query
+          name: trackId
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Finalists returned
+  /api/finalists/select:
+    post:
+      summary: Select finalists from rankings and event competition rules
+      description: |
+        Select finalists according to the event competition configuration and ranking results.
+      tags: [Finalists]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectFinalistsRequest'
+      responses:
+        '200':
+          description: Finalists selected
+
+  /api/results/publish:
+    post:
+      summary: Publish official results for a round
+      description: |
+        Publish official result output for the given round.
+
+        FE notes:
+        - Treat this as a high-impact admin action and confirm with users before triggering.
+      tags: [Results]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishResultsRequest'
+      responses:
+        '200':
+          description: Results published
+
+  /api/timelines:
+    get:
+      summary: List timeline items
+      description: |
+        List event schedule items such as check-in, workshop, round, and ceremony milestones.
+      tags: [Timelines]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: eventType
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Timelines returned
+    post:
+      summary: Create a timeline item
+      description: |
+        Create a new schedule item for an event timeline.
+      tags: [Timelines]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimelineRequest'
+      responses:
+        '201':
+          description: Timeline item created
+  /api/timelines/{id}:
+    get:
+      summary: Get timeline item by id
+      tags: [Timelines]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Timeline item returned
+    patch:
+      summary: Update a timeline item
+      tags: [Timelines]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimelineRequest'
+      responses:
+        '200':
+          description: Timeline item updated
+    delete:
+      summary: Delete a timeline item
+      tags: [Timelines]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Timeline item deleted
+
+  /api/notifications:
+    get:
+      summary: List notifications for current user
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: limit
+          schema:
+            type: integer
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Notifications returned
+  /api/notifications/read-all:
+    patch:
+      summary: Mark all notifications as read
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Notifications marked as read
+  /api/notifications/{id}/read:
+    patch:
+      summary: Mark one notification as read
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Notification marked as read
+
+  /api/media/upload:
+    post:
+      summary: Upload event media
+      tags: [Media]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [eventId, file]
+              properties:
+                eventId:
+                  type: string
+                teamId:
+                  type: string
+                  nullable: true
+                title:
+                  type: string
+                  nullable: true
+                description:
+                  type: string
+                  nullable: true
+                tags:
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items:
+                        type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Media uploaded
+  /api/media/my-history:
+    get:
+      summary: List upload history for current user
+      tags: [Media]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: mediaType
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Media history returned
+  /api/media/{mediaId}/view-url:
+    get:
+      summary: Get signed view URL for a media item
+      tags: [Media]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Signed URL returned
+  /api/media/{mediaId}:
+    delete:
+      summary: Delete a media item
+      tags: [Media]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Media deleted
+
+  /api/admin/media/config:
+    get:
+      summary: Get media storage configuration
+      tags: [Admin Media]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Media storage config returned
+    put:
+      summary: Save media storage configuration
+      tags: [Admin Media]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaConfigRequest'
+      responses:
+        '200':
+          description: Media config updated
+  /api/admin/media/statistics:
+    get:
+      summary: Get media moderation statistics
+      tags: [Admin Media]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: fromDate
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: toDate
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Statistics returned
+  /api/admin/media:
+    get:
+      summary: List all media for moderation
+      tags: [Admin Media]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          schema:
+            type: string
+        - in: query
+          name: uploadedBy
+          schema:
+            type: string
+        - in: query
+          name: teamId
+          schema:
+            type: string
+        - in: query
+          name: mediaType
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Admin media list returned
+  /api/admin/media/{mediaId}/approve:
+    patch:
+      summary: Approve a media item
+      tags: [Admin Media]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Media approved
+  /api/admin/media/{mediaId}/reject:
+    patch:
+      summary: Reject a media item
+      tags: [Admin Media]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaRejectRequest'
+      responses:
+        '200':
+          description: Media rejected
+  /api/admin/media/{mediaId}:
+    delete:
+      summary: Delete media from moderation console
+      tags: [Admin Media]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Media deleted

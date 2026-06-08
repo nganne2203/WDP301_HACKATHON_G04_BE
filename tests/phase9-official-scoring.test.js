@@ -294,6 +294,8 @@ test('submitted score sheet is locked', async () => {
   const submitted = await service.submitScoreSheet(created.id, { id: ids.judge1 })
   assert.equal(submitted.status, 'LOCKED')
   assert.equal(stores.auditLogs.at(-1).action, 'SCORE_SHEET_SUBMITTED_AND_LOCKED')
+  assert.equal(Object.hasOwn(stores.scores.values().next().value, 'aiSuggestedScore'), false)
+  assert.equal(Object.hasOwn(stores.scores.values().next().value, 'aiReviewCriterionId'), false)
 
   await assert.rejects(
     () => service.updateScoreSheet(created.id, {

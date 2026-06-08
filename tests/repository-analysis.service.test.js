@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, rm } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import test from 'node:test'
 
+import { env } from '../src/configs/environment.js'
 import { JOB_TYPES } from '../src/constants/queue.js'
 import { createRepositoryAnalysisService } from '../src/modules/repositories/repository-analysis.service.js'
 
@@ -283,4 +287,92 @@ test('processComputeImpactScoreJob persists impact decisions', async () => {
 
   assert.equal(impactDecisions.size, 1)
   assert.equal(['MEDIUM', 'HIGH', 'CRITICAL'].includes(decision.impactLevel), true)
+})
+
+test('command hooks run against configured repositoryLocalPath instead of backend cwd', async () => {
+  const originalEslintCommand = env.analysis.eslintCommand
+  const tempRepositoryPath = await mkdtemp(path.join(os.tmpdir(), 'repo-analysis-'))
+
+  try {
+    env.analysis.eslintCommand = 'npm run lint'
+
+    const { repository, repositories, commitDiffs, staticResults } = createAnalysisRepository()
+    repositories.set('repo-1', {
+      _id: 'repo-1',
+      repositoryFullName: 'seal/repo',
+      latestCommitSha: 'commit-1',
+      repositoryLocalPath: tempRepositoryPath
+    })
+    commitDiffs.set('repo-1:commit-1', createCommitDiff([{
+      filePath: 'src/index.js',
+      cleanPatch: '+const value = 1;',
+      cleanPatchSize: 20,
+      isExcluded: false
+    }]))
+
+    const commandCalls = []
+    const service = createRepositoryAnalysisService({
+      repository,
+      commandRunner: async ({ executable, args, cwd }) => {
+        commandCalls.push({ executable, args, cwd })
+        return { stdout: 'ok', stderr: '' }
+      },
+      queueService: {
+        enqueueComputeImpactScore: async () => null
+      }
+    })
+
+    await service.processRunStaticAnalysisJob({
+      repositoryId: 'repo-1',
+      commitSha: 'commit-1'
+    })
+
+    const hookResult = [...staticResults.values()].find(result => result.source === 'COMMAND_HOOK_ESLINT')
+    assert.equal(commandCalls.length, 1)
+    assert.equal(commandCalls[0].cwd, tempRepositoryPath)
+    assert.equal(hookResult.status, 'COMPLETED')
+    assert.equal(hookResult.rawOutput.cwd, tempRepositoryPath)
+  } finally {
+    env.analysis.eslintCommand = originalEslintCommand
+    await rm(tempRepositoryPath, { recursive: true, force: true })
+  }
+})
+
+test('security-sensitive paths and high-risk dependencies increase impact scoring', async () => {
+  const service = createRepositoryAnalysisService({
+    repository: createAnalysisRepository().repository,
+    queueService: {
+      enqueueComputeImpactScore: async () => null
+    }
+  })
+
+  const decision = service.calculateImpactDecision({
+    commitDiff: createCommitDiff([{
+      filePath: 'src/modules/auth/token.service.js',
+      cleanPatch: '+auth',
+      cleanPatchSize: 5,
+      isExcluded: false
+    }]),
+    staticResults: [{
+      source: 'DEPENDENCY_SCAN',
+      errorCount: 0,
+      warningCount: 1,
+      rawOutput: {
+        addedDependencies: [{ name: 'jsonwebtoken', version: '^9.0.2' }]
+      },
+      findings: [{
+        severity: 'MEDIUM',
+        title: 'New dependencies added'
+      }]
+    }],
+    changedContexts: [{
+      filePath: 'src/modules/auth/token.service.js',
+      symbolName: 'issueToken',
+      symbolType: 'SERVICE_METHOD'
+    }]
+  })
+
+  assert.equal(['HIGH', 'CRITICAL'].includes(decision.impactLevel), true)
+  assert.equal(decision.reasons.some(reason => reason.includes('Security-sensitive path changed')), true)
+  assert.equal(decision.reasons.some(reason => reason.includes('High-risk dependency category introduced')), true)
 })

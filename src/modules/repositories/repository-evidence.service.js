@@ -13,11 +13,16 @@ import { QUEUE_SERVICE } from '#services/queue.service.js'
 
 const PATCH_LIMIT_PER_FILE = 4000
 const TOTAL_CLEAN_DIFF_LIMIT = 20000
+const MAX_INCLUDED_FILES_PER_AUDIT = 25
 const LARGE_LOCKFILE_PATCH_LIMIT = 3000
 const COMMIT_PAGE_SIZE = 10
 
 const GENERATED_PATH_SEGMENTS = ['node_modules/', 'dist/', 'build/', '.next/', 'coverage/', 'vendor/', 'generated/', '__generated__/']
 const LOCK_FILES = new Set(['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb'])
+const BINARY_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.pdf', '.zip', '.tar', '.gz', '.7z',
+  '.woff', '.woff2', '.ttf', '.eot', '.mp3', '.mp4', '.mov', '.avi', '.exe', '.dll', '.so', '.dylib'
+])
 
 const LANGUAGE_BY_EXTENSION = {
   '.js': 'JavaScript',
@@ -64,6 +69,7 @@ const normalizeRepository = (repository) => {
     githubOwner: plain.githubOwner || plain.githubOrg,
     githubRepo: plain.githubRepo || plain.repoName,
     defaultBranch: plain.defaultBranch,
+    repositoryLocalPath: plain.repositoryLocalPath || null,
     latestCommitSha: plain.latestCommitSha || null,
     lastProcessedCommitSha: plain.lastProcessedCommitSha || null,
     eventId: plain.eventId?._id?.toString?.() || plain.eventId?.toString?.() || plain.eventId
@@ -111,6 +117,7 @@ const normalizeCommitDiff = (commitDiff) => {
     includedFiles: plain?.includedFiles || 0,
     excludedFiles: plain?.excludedFiles || 0,
     totalCleanPatchSize: plain?.totalCleanPatchSize || 0,
+    cleanDiffSummary: plain?.cleanDiffSummary || null,
     fetchedAt: plain?.fetchedAt || null,
     patchSummary: `${plain?.includedFiles || 0} included / ${plain?.excludedFiles || 0} excluded files`,
     files: (plain?.files || []).map(file => ({
@@ -170,6 +177,9 @@ const redactSecrets = (text = '') => {
     .replace(/(gh[pousr]_[A-Za-z0-9_]+)/g, '[REDACTED_GITHUB_TOKEN]')
     .replace(/(sk-[A-Za-z0-9_-]{12,})/g, '[REDACTED_OPENAI_KEY]')
     .replace(/(AIza[0-9A-Za-z\-_]{20,})/g, '[REDACTED_GOOGLE_KEY]')
+    .replace(/(xox[baprs]-[A-Za-z0-9-]{10,})/g, '[REDACTED_SLACK_TOKEN]')
+    .replace(/-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY_BLOCK]')
+    .replace(/(Bearer\s+)[A-Za-z0-9\-._~+/]+=*/gi, '$1[REDACTED]')
     .replace(/((?:api[_-]?key|secret|token|password)\s*[:=]\s*['"]?)([^'"\r\n;]+)/gi, '$1[REDACTED]')
 }
 
@@ -177,8 +187,9 @@ const isMinifiedFile = (filePath = '') => /\.min\.(js|css)$/i.test(filePath)
 const isGeneratedFile = (filePath = '') => /\.(generated|min)\./i.test(filePath) || filePath.includes('__generated__') || filePath.includes('/generated/')
 const isBuildArtifact = (filePath = '') => GENERATED_PATH_SEGMENTS.some(segment => filePath.includes(segment))
 const isLockFile = (filePath = '') => LOCK_FILES.has(path.basename(filePath))
+const isBinaryFileByExtension = (filePath = '') => BINARY_EXTENSIONS.has(path.extname(filePath).toLowerCase())
 
-const getExcludedReason = ({ filePath, patch, additions = 0, deletions = 0, isBinary }) => {
+const getExcludedReason = ({ filePath, patch, additions = 0, deletions = 0, isBinary, includedFiles }) => {
   if (isBinary || !patch) return 'BINARY_OR_NO_PATCH'
   if (filePath.includes('node_modules/')) return 'NODE_MODULES'
   if (isBuildArtifact(filePath)) return 'BUILD_ARTIFACT'
@@ -186,6 +197,7 @@ const getExcludedReason = ({ filePath, patch, additions = 0, deletions = 0, isBi
   if (isGeneratedFile(filePath)) return 'GENERATED_FILE'
   if (isLockFile(filePath) && patch.length > LARGE_LOCKFILE_PATCH_LIMIT) return 'LARGE_LOCK_FILE'
   if ((additions + deletions) > 2000) return 'FILE_TOO_LARGE'
+  if (includedFiles >= MAX_INCLUDED_FILES_PER_AUDIT) return 'MAX_INCLUDED_FILES_BUDGET'
   return null
 }
 
@@ -207,6 +219,7 @@ const preprocessFiles = (files = []) => {
   let excludedFiles = 0
   let totalRawPatchSize = 0
   let totalCleanPatchSize = 0
+  let truncatedFileCount = 0
 
   const normalizedFiles = files.map((file) => {
     const patch = file.patch || ''
@@ -214,13 +227,14 @@ const preprocessFiles = (files = []) => {
     totalRawPatchSize += rawPatchSize
 
     const language = detectLanguage(file.filename || file.filePath || '')
-    const binary = !file.patch
+    const binary = !file.patch || isBinaryFileByExtension(file.filename || file.filePath || '')
     const excludedReason = getExcludedReason({
       filePath: file.filename || file.filePath || '',
       patch,
       additions: file.additions || 0,
       deletions: file.deletions || 0,
-      isBinary: binary
+      isBinary: binary,
+      includedFiles
     })
 
     const stats = parsePatchStats(patch)
@@ -244,6 +258,7 @@ const preprocessFiles = (files = []) => {
     const isExcluded = Boolean(excludedReason)
     if (isExcluded) excludedFiles += 1
     else includedFiles += 1
+    if (isTruncated) truncatedFileCount += 1
 
     return {
       filePath: file.filename || file.filePath || '',
@@ -280,9 +295,28 @@ const preprocessFiles = (files = []) => {
     .map(file => `### ${file.filePath}\n${file.cleanPatch}`)
     .join('\n\n')
 
+  const cleanDiffSummary = {
+    maxIncludedFilesBudget: MAX_INCLUDED_FILES_PER_AUDIT,
+    totalFiles: normalizedFiles.length,
+    includedFiles,
+    excludedFiles,
+    totalRawPatchSize,
+    totalCleanPatchSize,
+    truncatedFileCount,
+    includedFilePaths: normalizedFiles.filter(file => !file.isExcluded).map(file => file.filePath),
+    excludedFileSummaries: normalizedFiles
+      .filter(file => file.isExcluded)
+      .map(file => ({
+        filePath: file.filePath,
+        reason: file.excludedReason
+      }))
+      .slice(0, 50)
+  }
+
   return {
     files: normalizedFiles,
     cleanDiffText,
+    cleanDiffSummary,
     totalRawPatchSize,
     totalCleanPatchSize,
     totalFiles: normalizedFiles.length,
@@ -435,6 +469,7 @@ export const createRepositoryEvidenceService = ({
         patch: file.patch || null
       }))),
       cleanDiffText: normalized.cleanDiffText,
+      cleanDiffSummary: normalized.cleanDiffSummary,
       totalRawPatchSize: normalized.totalRawPatchSize,
       totalCleanPatchSize: normalized.totalCleanPatchSize,
       totalFiles: normalized.totalFiles,

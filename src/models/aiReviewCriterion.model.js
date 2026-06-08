@@ -9,7 +9,6 @@ const aiReviewCriterionSchema = new Schema(
     code: { type: String, trim: true },
     description: { type: String },
     maxScore: { type: Number, default: 0 },
-    score: { type: Number },
     weight: { type: Number, default: 1 },
     feedback: { type: String },
     qualitativeLevel: {

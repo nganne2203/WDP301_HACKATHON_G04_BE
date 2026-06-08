@@ -11,6 +11,7 @@ const repositorySchema = new Schema(
     githubRepo: { type: String, trim: true },
     repositoryFullName: { type: String, trim: true },
     repositoryUrl: { type: String, trim: true },
+    repositoryLocalPath: { type: String, trim: true },
     githubOrg: { type: String },
     repoName: { type: String },
     repoUrl: { type: String, required: true },

@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { access } from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
 
@@ -14,6 +15,8 @@ const execFileAsync = promisify(execFile)
 const SAFE_COMMANDS = new Set(['npm', 'npm.cmd', 'npx', 'npx.cmd', 'pnpm', 'pnpm.cmd'])
 const READ_ONLY_PATH_PATTERNS = ['README', '.md', 'docs/', '.txt']
 const SERVICE_PATH_PATTERNS = ['src/modules/', 'src/services/', 'src/controllers/', 'src/routes/', 'src/models/', 'src/middlewares/', 'src/configs/']
+const SECURITY_SENSITIVE_PATH_PATTERNS = ['auth', 'permission', 'role', 'token', 'secret', 'password', '.env', 'security', 'middleware']
+const HIGH_RISK_DEPENDENCY_PATTERNS = ['auth', 'security', 'crypto', 'payment', 'openid', 'oauth', 'jwt', 'jsonwebtoken', 'openai', 'langchain']
 
 const normalizeRepository = (repository) => {
   if (!repository) return null
@@ -25,6 +28,7 @@ const normalizeRepository = (repository) => {
     id: plain._id?.toString() || plain.id,
     repositoryFullName: plain.repositoryFullName,
     defaultBranch: plain.defaultBranch,
+    repositoryLocalPath: plain.repositoryLocalPath || null,
     latestCommitSha: plain.latestCommitSha || null,
     lastProcessedCommitSha: plain.lastProcessedCommitSha || null
   }
@@ -270,6 +274,11 @@ const calculateImpactDecision = ({ commitDiff, staticResults = [], changedContex
       score += 12
       reasons.push('Dependency manifest changed')
     }
+
+    if (SECURITY_SENSITIVE_PATH_PATTERNS.some(pattern => file.filePath.toLowerCase().includes(pattern))) {
+      score += 18
+      reasons.push(`Security-sensitive path changed: ${file.filePath}`)
+    }
   }
 
   if (changedContexts.some(context => ['SERVICE_METHOD', 'ROUTE', 'CONTROLLER_METHOD', 'CLASS'].includes(context.symbolType))) {
@@ -278,6 +287,19 @@ const calculateImpactDecision = ({ commitDiff, staticResults = [], changedContex
   }
 
   for (const result of staticResults) {
+    if (result.source === 'DEPENDENCY_SCAN') {
+      const addedDependencies = result.rawOutput?.addedDependencies || []
+      if (addedDependencies.length > 0) {
+        score += Math.min(16, addedDependencies.length * 4)
+        reasons.push(`Dependency risk surface changed: ${addedDependencies.length} added dependencies`)
+      }
+
+      if (addedDependencies.some(dep => HIGH_RISK_DEPENDENCY_PATTERNS.some(pattern => dep.name?.toLowerCase?.().includes(pattern)))) {
+        score += 15
+        reasons.push('High-risk dependency category introduced')
+      }
+    }
+
     score += (result.errorCount || 0) * 10
     score += (result.warningCount || 0) * 3
 
@@ -340,8 +362,8 @@ const calculateImpactDecision = ({ commitDiff, staticResults = [], changedContex
 export const createRepositoryAnalysisService = ({
   repository = REPOSITORY_EVIDENCE_REPOSITORY,
   queueService = QUEUE_SERVICE,
-  commandRunner = async ({ executable, args }) => {
-    return await execFileAsync(executable, args, { cwd: process.cwd(), timeout: 20000 })
+  commandRunner = async ({ executable, args, cwd }) => {
+    return await execFileAsync(executable, args, { cwd, timeout: 20000 })
   },
   llmService = null
 } = {}) => {
@@ -356,6 +378,45 @@ export const createRepositoryAnalysisService = ({
         ...config,
         parsed: splitConfiguredCommand(config.command)
       }))
+  }
+
+  const pathExists = async (targetPath) => {
+    try {
+      await access(targetPath)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const resolveAnalysisWorkspace = async ({ repositoryRecord, commitDiff }) => {
+    const candidate = commitDiff?.snapshotPath || repositoryRecord?.repositoryLocalPath || null
+    if (!candidate) {
+      return {
+        cwd: null,
+        reason: 'No repositoryLocalPath or snapshotPath configured for target repository'
+      }
+    }
+
+    const resolved = path.resolve(candidate)
+    if (!(await pathExists(resolved))) {
+      return {
+        cwd: null,
+        reason: `Configured analysis workspace does not exist: ${resolved}`
+      }
+    }
+
+    if (resolved === process.cwd()) {
+      return {
+        cwd: null,
+        reason: 'Configured analysis workspace points to the backend runtime itself'
+      }
+    }
+
+    return {
+      cwd: resolved,
+      reason: null
+    }
   }
 
   const ensureRepositoryAndCommitDiff = async ({ repositoryId, commitSha }) => {
@@ -511,8 +572,9 @@ export const createRepositoryAnalysisService = ({
     }
   }
 
-  const runCommandHooks = async ({ repositoryId, commitSha }) => {
+  const runCommandHooks = async ({ repositoryId, commitSha, repositoryRecord, commitDiff }) => {
     const results = []
+    const workspace = await resolveAnalysisWorkspace({ repositoryRecord, commitDiff })
     for (const hook of buildCommandHookConfigs()) {
       if (!hook.command) {
         results.push({
@@ -546,8 +608,27 @@ export const createRepositoryAnalysisService = ({
         continue
       }
 
+      if (!workspace.cwd) {
+        results.push({
+          repositoryId,
+          commitSha,
+          source: hook.source,
+          status: 'SKIPPED',
+          errorCount: 0,
+          warningCount: 0,
+          findings: [],
+          rawOutput: {
+            reason: workspace.reason
+          }
+        })
+        continue
+      }
+
       try {
-        const output = await commandRunner(hook.parsed)
+        const output = await commandRunner({
+          ...hook.parsed,
+          cwd: workspace.cwd
+        })
         results.push({
           repositoryId,
           commitSha,
@@ -557,6 +638,7 @@ export const createRepositoryAnalysisService = ({
           warningCount: 0,
           findings: [],
           rawOutput: {
+            cwd: workspace.cwd,
             stdout: output.stdout,
             stderr: output.stderr
           }
@@ -578,6 +660,7 @@ export const createRepositoryAnalysisService = ({
             evidence: []
           }],
           rawOutput: {
+            cwd: workspace.cwd,
             stdout: error.stdout,
             stderr: error.stderr
           }
@@ -589,10 +672,15 @@ export const createRepositoryAnalysisService = ({
   }
 
   const processRunStaticAnalysisJob = async ({ repositoryId, commitSha }) => {
-    const { commitDiff } = await ensureRepositoryAndCommitDiff({ repositoryId, commitSha })
+    const { existingRepository, commitDiff } = await ensureRepositoryAndCommitDiff({ repositoryId, commitSha })
     const secretScanResult = runSecretScan({ repositoryId, commitSha, commitDiff })
     const dependencyScanResult = runDependencyScan({ repositoryId, commitSha, commitDiff })
-    const commandHookResults = await runCommandHooks({ repositoryId, commitSha })
+    const commandHookResults = await runCommandHooks({
+      repositoryId,
+      commitSha,
+      repositoryRecord: existingRepository,
+      commitDiff
+    })
     const contexts = extractChangedCodeContexts({ repositoryId, commitSha, commitDiff })
 
     const persistedResults = await Promise.all([

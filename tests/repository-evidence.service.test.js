@@ -149,6 +149,8 @@ test('processFetchCommitDiffJob fetches and persists commit metadata and normali
   assert.equal(persistedDiff.files[0].cleanPatch.includes('[REDACTED]'), true)
   assert.equal(persistedDiff.cleanDiffText.includes('supersecret'), false)
   assert.equal(persistedDiff.cleanDiffText.includes('ghp_secretsecretsecret'), false)
+  assert.equal(persistedDiff.cleanDiffSummary.includedFiles, 1)
+  assert.equal(persistedDiff.cleanDiffSummary.truncatedFileCount, 0)
 })
 
 test('preprocessFiles filters generated binary and large lock files', async () => {
@@ -204,6 +206,33 @@ test('preprocessFiles truncates oversized patches under file and total budget li
 
   assert.equal(result.files.some(file => file.isTruncated), true)
   assert.equal(result.totalCleanPatchSize <= 20000, true)
+})
+
+test('preprocessFiles caps included files and records summary for overflow files', async () => {
+  const service = createRepositoryEvidenceService({
+    repository: createEvidenceRepository().repository,
+    encryption: { decrypt: () => 'plain-token' },
+    octokitFactory: createOctokitFactory({ compare: { commits: [], files: [] }, commits: {}, listCommits: [] }),
+    queueService: {
+      enqueueHourlyRepositoryScan: async () => null,
+      enqueueFetchCommitDiff: async () => null,
+      enqueueRunStaticAnalysis: async () => null
+    }
+  })
+
+  const result = service.preprocessFiles(
+    Array.from({ length: 30 }, (_, index) => ({
+      filename: `src/file-${index + 1}.js`,
+      patch: '@@ -1 +1 @@\n-console.log(1)\n+console.log(2)',
+      additions: 1,
+      deletions: 1
+    }))
+  )
+
+  assert.equal(result.includedFiles, 25)
+  assert.equal(result.excludedFiles, 5)
+  assert.equal(result.cleanDiffSummary.maxIncludedFilesBudget, 25)
+  assert.equal(result.files.filter(file => file.excludedReason === 'MAX_INCLUDED_FILES_BUDGET').length, 5)
 })
 
 test('processHourlyRepositoryScanJob detects new commits and enqueues fetch jobs', async () => {

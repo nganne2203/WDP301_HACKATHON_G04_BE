@@ -17,6 +17,20 @@ const commitDiffSchema = new Schema(
     diffHash: { type: String, trim: true },
     diffText: { type: String },
     cleanDiffText: { type: String },
+    cleanDiffSummary: {
+      maxIncludedFilesBudget: { type: Number, default: 0 },
+      totalFiles: { type: Number, default: 0 },
+      includedFiles: { type: Number, default: 0 },
+      excludedFiles: { type: Number, default: 0 },
+      totalRawPatchSize: { type: Number, default: 0 },
+      totalCleanPatchSize: { type: Number, default: 0 },
+      truncatedFileCount: { type: Number, default: 0 },
+      includedFilePaths: [{ type: String }],
+      excludedFileSummaries: [{
+        filePath: { type: String },
+        reason: { type: String }
+      }]
+    },
     totalRawPatchSize: { type: Number, default: 0 },
     totalCleanPatchSize: { type: Number, default: 0 },
     totalFiles: { type: Number, default: 0 },
