@@ -707,11 +707,11 @@ AI review results may include:
 - maintainability comments,
 - issue detection,
 - improvement suggestions,
-- optional AI score.
+- qualitative rubric-aware comments for judges.
 
 ### FR-AI-06
 
-The system stores AI review criterion details in `AIReviewCriterion`, including linked rubric criterion, criterion name, max score, AI score, feedback, evidence, strengths, weaknesses, and suggestions.
+The system stores AI review criterion details in `AIReviewCriterion`, including linked rubric criterion, criterion name, qualitative level, feedback, evidence, strengths, weaknesses, risks, and suggestions.
 
 ### FR-AI-07
 
@@ -752,7 +752,7 @@ Judges can score submissions using criteria-based rubrics.
 
 Judges can submit comments.
 
-Judge score rows can store an AI-suggested score and the linked `AIReviewCriterion`. If a judge changes the score from the AI suggestion, the row stores override status and the reason.
+Judge score rows store only official judge-entered rubric scores. AI review remains a separate advisory artifact and does not prefill or override official criterion scores.
 
 ### FR-SCORE-04
 
@@ -1274,8 +1274,8 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 
 **Score**
 - Stores one criterion-level score line.
-- Key fields: `submissionId`, `scoreSheetId`, `judgeId`, `criterionId`, `aiReviewCriterionId`, `aiSuggestedScore`, `scoreValue`, `isOverridden`, `overrideReason`, `comment`.
-- AI fields: `aiSuggestedScore` and `aiReviewCriterionId` preserve the AI suggestion reviewed by the judge; `isOverridden` and `overrideReason` record judge changes.
+- Key fields: `submissionId`, `scoreSheetId`, `judgeId`, `criterionId`, `scoreValue`, `isOverridden`, `overrideReason`, `comment`.
+- Note: official criterion score rows do not store AI-suggested values.
 - Constraints: one score per `submissionId`, `judgeId`, and `criterionId`.
 
 **Ranking**
@@ -1289,13 +1289,13 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 
 **AIReview**
 - Stores one AI review request/result for a repository commit.
-- Key fields: `repositoryId`, `commitId`, `commitDiffId`, `provider`, `model`, `status`, `summary`, `details`, `score`, `retryCount`, `lastError`, `requestedBy`, `requestedAt`, `completedAt`.
+- Key fields: `repositoryId`, `commitId`, `commitDiffId`, `provider`, `model`, `status`, `summary`, `details`, `retryCount`, `lastError`, `requestedBy`, `requestedAt`, `completedAt`.
 - Purpose: stores top-level AI review summary and retry state. It references `CommitDiff` so retries can reuse cached diff content.
 
 **AIReviewCriterion**
 - Stores criterion-level AI evaluation details.
-- Key fields: `aiReviewId`, `criterionId`, `name`, `code`, `description`, `maxScore`, `score`, `weight`, `feedback`, `strengths`, `weaknesses`, `suggestions`, `evidence`, `order`.
-- Purpose: provides detailed AI feedback per criterion, similar to research-project evaluation forms.
+- Key fields: `aiReviewId`, `criterionId`, `name`, `code`, `description`, `maxScore`, `weight`, `qualitativeLevel`, `feedback`, `strengths`, `weaknesses`, `suggestions`, `evidence`, `risks`, `order`.
+- Purpose: provides detailed qualitative AI feedback per criterion, similar to research-project evaluation forms.
 
 ### Result, Media, Notification, and Audit
 
@@ -1329,7 +1329,7 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 - `Repository` has many `Commit` records.
 - `CommitDiff` caches the diff for a commit or commit range.
 - `AIReview` references `Repository`, `Commit`, and `CommitDiff`.
-- `AIReviewCriterion` stores detailed AI scoring and feedback for each `AIReview`.
+- `AIReviewCriterion` stores detailed qualitative AI feedback for each `AIReview`.
 - If the AI provider fails, the retry increases `retryCount` and reuses the existing `CommitDiff`.
 
 **Judging flow**

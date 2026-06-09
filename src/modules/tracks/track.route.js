@@ -31,11 +31,19 @@ const router = Router()
  *           example: A
  *         name:
  *           type: string
- *           example: Bảng A
+ *           example: Bang A
  *         description:
  *           type: string
  *           nullable: true
- *           example: AI cho Thu thập Yêu cầu & Thiết kế
+ *           example: AI for requirements and design
+ *         topic:
+ *           type: string
+ *           nullable: true
+ *           example: AI-Powered Requirements Engineering
+ *         problemStatement:
+ *           type: string
+ *           nullable: true
+ *           example: Build tools that improve requirement elicitation and design quality.
  *         type:
  *           type: string
  *           example: PRELIMINARY_GROUP
@@ -69,8 +77,14 @@ const router = Router()
  *           type: string
  *           minLength: 2
  *           maxLength: 120
- *           example: Bảng A
+ *           example: Bang A
  *         description:
+ *           type: string
+ *           nullable: true
+ *         topic:
+ *           type: string
+ *           nullable: true
+ *         problemStatement:
  *           type: string
  *           nullable: true
  *         type:

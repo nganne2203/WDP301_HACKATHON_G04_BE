@@ -94,6 +94,44 @@ const upsertOne = async (Model, filter, data) => {
 
 const buildDate = (value) => new Date(value)
 
+const toQualitativeLevel = (score, totalScore) => {
+  const ratio = totalScore > 0 ? Number(score || 0) / Number(totalScore) : 0
+  if (ratio >= 0.9) return 'EXCELLENT'
+  if (ratio >= 0.75) return 'GOOD'
+  if (ratio >= 0.6) return 'FAIR'
+  if (ratio >= 0.45) return 'AVERAGE'
+  return 'WEAK'
+}
+
+const FALL_2025_SAMPLE_CONFIG = {
+  boardCount: 2,
+  trackCount: 2,
+  maxTeamsPerBoard: 20,
+  finalistCount: 10,
+  finalistsPerBoard: 5,
+  finalistSelectionMode: 'FIXED_PER_BOARD',
+  fillRemainingFinalistsByOverallScore: false,
+  rankingScopes: ['TEAM', 'CHAPTER', 'INDIVIDUAL'],
+  tieBreakRule: 'Judges resolve ties using rubric-level discussion and final deliberation.'
+}
+
+const FALL_2025_TRACK_SEEDS = [
+  {
+    code: 'A',
+    name: 'Bang A',
+    description: 'AI for Requirements and Design',
+    type: 'PRELIMINARY_GROUP',
+    maxTeams: FALL_2025_SAMPLE_CONFIG.maxTeamsPerBoard
+  },
+  {
+    code: 'B',
+    name: 'Bang B',
+    description: 'AI for Development, Testing, and Operations',
+    type: 'PRELIMINARY_GROUP',
+    maxTeams: FALL_2025_SAMPLE_CONFIG.maxTeamsPerBoard
+  }
+]
+
 const buildPermissionDescription = (code) => {
   return code
     .toLowerCase()
@@ -279,8 +317,9 @@ const seedSampleData = async () => {
     maxTeams: 30,
     minTeamMembers: 3,
     maxTeamMembers: 5,
-    finalistSlotsPerTrack: 5,
-    totalFinalistSlots: 10,
+    competitionConfig: FALL_2025_SAMPLE_CONFIG,
+    finalistSlotsPerTrack: FALL_2025_SAMPLE_CONFIG.finalistsPerBoard,
+    totalFinalistSlots: FALL_2025_SAMPLE_CONFIG.finalistCount,
     status: 'COMPLETED',
     createdBy: coordinatorUser._id
   })
@@ -346,6 +385,14 @@ const seedSampleData = async () => {
     maxTeams: 20,
     status: 'LOCKED'
   })
+
+  await Promise.all(FALL_2025_TRACK_SEEDS.map((trackSeed) => {
+    return upsertOne(Track, { eventId: event._id, code: trackSeed.code }, {
+      eventId: event._id,
+      ...trackSeed,
+      status: 'LOCKED'
+    })
+  }))
 
   const teamDefinitions = [
     ['Agent Pioneers', 'SE', trackA, 'Requirements Copilot', 92, 1, true],
@@ -487,7 +534,7 @@ const seedSampleData = async () => {
     roundType: 'PRELIMINARY',
     assignedTeamIds: trackATeams,
     promotedTeamIds: finalistRecords.filter(({ track }) => track._id.equals(trackA._id)).map(({ team }) => team._id),
-    maxPromotedTeams: 5,
+    maxPromotedTeams: FALL_2025_SAMPLE_CONFIG.finalistsPerBoard,
     startTime: buildDate('2025-11-02T06:00:00+07:00'),
     endTime: buildDate('2025-11-02T17:00:00+07:00'),
     submissionDeadline: buildDate('2025-11-02T14:00:00+07:00'),
@@ -505,7 +552,7 @@ const seedSampleData = async () => {
     roundType: 'PRELIMINARY',
     assignedTeamIds: trackBTeams,
     promotedTeamIds: finalistRecords.filter(({ track }) => track._id.equals(trackB._id)).map(({ team }) => team._id),
-    maxPromotedTeams: 5,
+    maxPromotedTeams: FALL_2025_SAMPLE_CONFIG.finalistsPerBoard,
     startTime: buildDate('2025-11-02T06:00:00+07:00'),
     endTime: buildDate('2025-11-02T17:00:00+07:00'),
     submissionDeadline: buildDate('2025-11-02T14:00:00+07:00'),
@@ -639,11 +686,13 @@ const seedSampleData = async () => {
       repositoryId: repository._id,
       commitId: commit._id,
       commitDiffId: commitDiff._id,
+      reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
       provider: 'SampleAI',
       model: 'fall-2025-evaluator',
       status: 'COMPLETED',
-      summary: 'Seeded AI review result for hackathon repository.',
-      score: record.preliminaryScore,
+      summary: 'Seeded AI technical audit result for hackathon repository.',
+      isScoreBased: false,
+      isFinalDecision: false,
       requestedBy: coordinatorUser._id,
       requestedAt: buildDate('2025-11-02T14:30:00+07:00'),
       completedAt: buildDate('2025-11-02T14:35:00+07:00')
@@ -651,8 +700,6 @@ const seedSampleData = async () => {
     aiReviewByTeamId.set(record.team._id.toString(), aiReview)
 
     const preliminaryAiCriteria = await Promise.all(preliminaryCriteria.map((criterion, order) => {
-      const aiSuggestedScore = Math.min(criterion.maxScore, Math.round(record.preliminaryScore * (criterion.maxScore / preliminaryRubric.totalScore)))
-
       return upsertOne(AiReviewCriterion, { aiReviewId: aiReview._id, code: `PRELIMINARY_${order + 1}` }, {
         aiReviewId: aiReview._id,
         criterionId: criterion._id,
@@ -660,15 +707,18 @@ const seedSampleData = async () => {
         name: criterion.name,
         description: criterion.description,
         maxScore: criterion.maxScore,
-        score: aiSuggestedScore,
         weight: criterion.weight,
+        qualitativeLevel: toQualitativeLevel(record.preliminaryScore, preliminaryRubric.totalScore),
         feedback: 'Seeded AI criterion feedback aligned with the preliminary rubric.',
-        suggestions: ['Judges should review AI suggestions before submitting final scores.'],
+        strengths: ['Highlights technical areas worth discussing with judges.'],
+        weaknesses: ['This seeded data is qualitative only and does not influence official judging.'],
+        suggestions: ['Judges should review AI findings as advisory context before finalizing official scores.'],
         evidence: [`Commit diff cache ${commitDiff.diffHash}`],
+        risks: ['AI review is advisory and must not replace judge-entered scores.'],
         order: order + 1
       })
     }))
-    const preliminaryAiCriterionByCriterionId = new Map(preliminaryAiCriteria.map((aiCriterion) => [aiCriterion.criterionId.toString(), aiCriterion]))
+    void preliminaryAiCriteria
 
     const preliminaryScoreSheet = await upsertOne(ScoreSheet, { roundId: round._id, teamId: record.team._id, judgeId }, {
       eventId: event._id,
@@ -688,19 +738,15 @@ const seedSampleData = async () => {
 
     const preliminaryScoreLines = await Promise.all(preliminaryCriteria.map((criterion) => {
       const scoreValue = Math.min(criterion.maxScore, Math.round(record.preliminaryScore * (criterion.maxScore / preliminaryRubric.totalScore)))
-      const aiReviewCriterion = preliminaryAiCriterionByCriterionId.get(criterion._id.toString())
-      const isOverridden = Boolean(aiReviewCriterion && aiReviewCriterion.score !== scoreValue)
 
       return upsertOne(Score, { submissionId: preliminarySubmission._id, judgeId, criterionId: criterion._id }, {
         submissionId: preliminarySubmission._id,
         scoreSheetId: preliminaryScoreSheet._id,
         judgeId,
         criterionId: criterion._id,
-        aiReviewCriterionId: aiReviewCriterion?._id,
-        aiSuggestedScore: aiReviewCriterion?.score,
         scoreValue,
-        isOverridden,
-        overrideReason: isOverridden ? 'Judge adjusted the AI-suggested score after review.' : null,
+        isOverridden: false,
+        overrideReason: null,
         comment: 'Seeded preliminary criterion score'
       })
     }))
@@ -744,8 +790,6 @@ const seedSampleData = async () => {
 
     const aiReview = aiReviewByTeamId.get(record.team._id.toString())
     const finalAiCriteria = await Promise.all(finalCriteria.map((criterion, order) => {
-      const aiSuggestedScore = Math.min(criterion.maxScore, Math.round(finalScores[index] * (criterion.maxScore / finalRubric.totalScore)))
-
       return upsertOne(AiReviewCriterion, { aiReviewId: aiReview._id, code: `FINAL_${order + 1}` }, {
         aiReviewId: aiReview._id,
         criterionId: criterion._id,
@@ -753,15 +797,18 @@ const seedSampleData = async () => {
         name: criterion.name,
         description: criterion.description,
         maxScore: criterion.maxScore,
-        score: aiSuggestedScore,
         weight: criterion.weight,
+        qualitativeLevel: toQualitativeLevel(finalScores[index], finalRubric.totalScore),
         feedback: 'Seeded AI criterion feedback aligned with the final rubric.',
-        suggestions: ['Judges should review AI suggestions before submitting final scores.'],
+        strengths: ['Summarizes technical talking points for judges and coordinators.'],
+        weaknesses: ['Does not generate or store any official criterion score.'],
+        suggestions: ['Judges should review AI findings as advisory context before finalizing official scores.'],
         evidence: [`Repository ${repository.repoName}`],
+        risks: ['Official ranking must remain judge-driven even when AI commentary exists.'],
         order: preliminaryCriteria.length + order + 1
       })
     }))
-    const finalAiCriterionByCriterionId = new Map(finalAiCriteria.map((aiCriterion) => [aiCriterion.criterionId.toString(), aiCriterion]))
+    void finalAiCriteria
 
     for (const judge of [judgeUserA, judgeUserB]) {
       const finalScoreSheet = await upsertOne(ScoreSheet, { roundId: finalRound._id, teamId: record.team._id, judgeId: judge._id }, {
@@ -782,19 +829,15 @@ const seedSampleData = async () => {
 
       const finalScoreLines = await Promise.all(finalCriteria.map((criterion) => {
         const scoreValue = Math.min(criterion.maxScore, Math.round(finalScores[index] * (criterion.maxScore / finalRubric.totalScore)))
-        const aiReviewCriterion = finalAiCriterionByCriterionId.get(criterion._id.toString())
-        const isOverridden = Boolean(aiReviewCriterion && aiReviewCriterion.score !== scoreValue)
 
         return upsertOne(Score, { submissionId: finalSubmission._id, judgeId: judge._id, criterionId: criterion._id }, {
           submissionId: finalSubmission._id,
           scoreSheetId: finalScoreSheet._id,
           judgeId: judge._id,
           criterionId: criterion._id,
-          aiReviewCriterionId: aiReviewCriterion?._id,
-          aiSuggestedScore: aiReviewCriterion?.score,
           scoreValue,
-          isOverridden,
-          overrideReason: isOverridden ? 'Judge adjusted the AI-suggested score after review.' : null,
+          isOverridden: false,
+          overrideReason: null,
           comment: 'Seeded final criterion score'
         })
       }))
@@ -967,8 +1010,9 @@ const seedSampleData = async () => {
       minTeamMembers: 3,
       maxTeamMembers: 5,
       preliminaryTracks: ['A', 'B'],
-      finalistSlotsPerTrack: 5,
-      totalFinalistSlots: 10,
+      competitionConfig: FALL_2025_SAMPLE_CONFIG,
+      finalistSlotsPerTrack: FALL_2025_SAMPLE_CONFIG.finalistsPerBoard,
+      totalFinalistSlots: FALL_2025_SAMPLE_CONFIG.finalistCount,
       prizeSlots: 6
     },
     isEncrypted: false,

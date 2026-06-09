@@ -26,7 +26,9 @@ export const env = {
   server: {
     port: process.env.PORT || 3000,
     hostname: process.env.HOSTNAME,
-    nodeEnv
+    nodeEnv,
+    publicUrl: process.env.APP_BASE_URL || process.env.SERVER_PUBLIC_URL,
+    readinessRequiresRedis: parseBoolean(process.env.READINESS_REQUIRES_REDIS, true)
   },
   db: {
     uri: process.env.MONGODB_URI
@@ -68,6 +70,33 @@ export const env = {
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     authCallbackUrl: process.env.GOOGLE_AUTH_CALLBACK_URL,
     connectCallbackUrl: process.env.GOOGLE_CONNECT_CALLBACK_URL
+  },
+  analysis: {
+    eslintCommand: process.env.STATIC_ANALYSIS_ESLINT_COMMAND,
+    tscCommand: process.env.STATIC_ANALYSIS_TSC_COMMAND
+  },
+  ai: {
+    provider: process.env.AI_PROVIDER || null,
+    baseUrl: process.env.AI_BASE_URL || 'https://api.openai.com/v1',
+    apiKey: process.env.AI_API_KEY || process.env.OPENAI_API_KEY,
+    model: process.env.AI_MODEL || 'gpt-4o-mini',
+    repairModel: process.env.AI_REPAIR_MODEL || process.env.AI_MODEL || 'gpt-4o-mini',
+    timeoutMs: parseNumber(process.env.AI_TIMEOUT_MS) || 45000,
+    maxRetries: parseNumber(process.env.AI_MAX_RETRIES) ?? 2
+  },
+  github: {
+    webhookSecret: process.env.GITHUB_WEBHOOK_SECRET,
+    webhookCallbackUrl: process.env.GITHUB_WEBHOOK_CALLBACK_URL,
+    webhookEvents: process.env.GITHUB_WEBHOOK_EVENTS?.split(',').map(value => value.trim()).filter(Boolean) || ['push']
+  },
+  redis: {
+    url: process.env.REDIS_URL || 'redis://127.0.0.1:6379'
+  },
+  worker: {
+    concurrency: parseNumber(process.env.WORKER_CONCURRENCY) || 3,
+    enableScheduler: parseBoolean(process.env.WORKER_ENABLE_SCHEDULER, false),
+    schedulerIntervalMs: parseNumber(process.env.WORKER_SCHEDULER_INTERVAL_MS) || 60 * 60 * 1000,
+    schedulerRunOnStart: parseBoolean(process.env.WORKER_SCHEDULER_RUN_ON_START, false)
   },
   security: {
     tokenEncryptionSecret: process.env.TOKEN_ENCRYPTION_SECRET

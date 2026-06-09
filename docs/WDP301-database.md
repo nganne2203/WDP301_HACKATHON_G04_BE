@@ -451,8 +451,6 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `scoreSheetId` (ObjectId, ref: scoreSheets)
 - `judgeId` (ObjectId, ref: users, required)
 - `criterionId` (ObjectId, ref: criteria)
-- `aiReviewCriterionId` (ObjectId, ref: aiReviewCriteria)
-- `aiSuggestedScore` (number)
 - `scoreValue` (number, required)
 - `isOverridden` (boolean, default: false)
 - `overrideReason` (string)
@@ -463,7 +461,6 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `submissionId, judgeId, criterionId` unique
 - `scoreSheetId`
 - `judgeId`
-- `aiReviewCriterionId`
 
 ---
 
@@ -537,7 +534,6 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `status` (string, enum: PENDING, COMPLETED, FAILED)
 - `summary` (string)
 - `details` (object)
-- `score` (number)
 - `requestedBy` (ObjectId, ref: users)
 - `requestedAt` (date)
 - `completedAt` (date)
@@ -561,13 +557,14 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `code` (string)
 - `description` (string)
 - `maxScore` (number, required)
-- `score` (number)
 - `weight` (number, default: 1)
+- `qualitativeLevel` (string, enum: EXCELLENT, GOOD, FAIR, AVERAGE, WEAK, NOT_ENOUGH_EVIDENCE)
 - `feedback` (string)
 - `strengths` (string[])
 - `weaknesses` (string[])
 - `suggestions` (string[])
 - `evidence` (string[])
+- `risks` (string[])
 - `order` (number, default: 0)
 - `createdAt`, `updatedAt`
 
