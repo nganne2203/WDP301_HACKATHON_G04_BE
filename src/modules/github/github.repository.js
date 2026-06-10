@@ -28,7 +28,22 @@ const upsertConfig = async ({ key, value, isEncrypted, updatedBy }) => {
 const createRepositoryRecord = async (data) => {
   return await Repository.findOneAndUpdate(
     { teamId: data.teamId },
-    { $set: data },
+    {
+      $set: {
+        ...data,
+        githubOwner: data.githubOwner || data.githubOrg,
+        githubRepo: data.githubRepo || data.repoName,
+        repositoryFullName: data.repositoryFullName || `${data.githubOwner || data.githubOrg}/${data.githubRepo || data.repoName}`,
+        repositoryUrl: data.repositoryUrl || data.repoUrl,
+        status: data.status || 'ACTIVE',
+        accessState: data.accessState || 'PENDING',
+        accessGrantedAt: data.accessGrantedAt,
+        accessRevokedAt: data.accessRevokedAt,
+        webhookRegisteredAt: data.webhookRegisteredAt,
+        webhookStatus: data.webhookStatus || 'NOT_CONFIGURED',
+        lastWebhookRegistrationError: data.lastWebhookRegistrationError || null
+      }
+    },
     {
       new: true,
       upsert: true,
@@ -36,6 +51,27 @@ const createRepositoryRecord = async (data) => {
       runValidators: true
     }
   )
+}
+
+const findRepositoryByEventAndRepoName = async ({ eventId, repoName, githubOwner }) => {
+  const ownerFilter = githubOwner
+    ? [{ githubOwner }, { githubOrg: githubOwner }]
+    : [{}]
+
+  return await Repository.findOne({
+    eventId,
+    $or: ownerFilter.flatMap((ownerClause) => ([
+      { ...ownerClause, repoName },
+      { ...ownerClause, githubRepo: repoName }
+    ]))
+  })
+}
+
+const updateRepositoryById = async (id, data) => {
+  return await Repository.findByIdAndUpdate(id, data, {
+    new: true,
+    runValidators: true
+  })
 }
 
 const createAuditLog = async ({ userId, action, resourceType, resourceId, metadata }) => {
@@ -52,5 +88,7 @@ export const GITHUB_REPOSITORY = {
   findConfigByKey,
   upsertConfig,
   createRepositoryRecord,
+  findRepositoryByEventAndRepoName,
+  updateRepositoryById,
   createAuditLog
 }

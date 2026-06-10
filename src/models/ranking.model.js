@@ -27,10 +27,18 @@ const rankingSchema = new Schema(
     miniTestScore: { type: Number, default: 0 },
     rankSortScore: { type: Number },
     rank: { type: Number, required: true },
+    calculationSource: {
+      type: String,
+      enum: ['OFFICIAL_JUDGE_SCORES_ONLY'],
+      default: 'OFFICIAL_JUDGE_SCORES_ONLY'
+    },
+    calculationSummary: { type: Schema.Types.Mixed },
+    calculatedAt: { type: Date },
     isSelectedForFinal: { type: Boolean, default: false },
     selectionReason: { type: String },
     note: { type: String },
-    publishedAt: { type: Date }
+    publishedAt: { type: Date },
+    publishedBy: { type: Schema.Types.ObjectId, ref: 'User' }
   },
   { timestamps: true }
 )

@@ -27,7 +27,13 @@ const options = {
     info: {
       title: 'SEAL API',
       version: '1.0.0',
-      description: 'API documentation for SEAL - Hackathon Management Platform with AI-assisted Repository Evaluation'
+      description: `API documentation for SEAL - Hackathon Management Platform with AI-assisted Repository Evaluation.
+
+Common FE integration notes:
+- Most successful responses follow the envelope: { success, message, data, pagination }.
+- Endpoints that "queue" work usually return success immediately while background processing continues in worker services.
+- AI review endpoints are advisory and must not be treated as official judging results.
+- GitHub webhook endpoints are system-to-system integration endpoints, not browser-facing APIs.`
     },
     servers: [],
     components: {
@@ -40,7 +46,7 @@ const options = {
       }
     }
   },
-  apis: ['./src/routes/**/*.js', './src/modules/**/*.js', './src/models/**/*.js']
+  apis: ['./src/routes/**/*.js', './src/modules/**/*.js', './src/models/**/*.js', './src/docs/**/*.yaml']
 }
 
 export const swaggerSpec = buildSwaggerSpec(options)
