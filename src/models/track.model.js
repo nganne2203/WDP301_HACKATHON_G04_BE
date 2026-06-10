@@ -8,6 +8,8 @@ const trackSchema = new Schema(
     code: { type: String, trim: true, uppercase: true },
     name: { type: String, required: true, trim: true },
     description: { type: String },
+    topic: { type: String, trim: true },
+    problemStatement: { type: String },
     type: {
       type: String,
       enum: ['PRELIMINARY_GROUP', 'FINAL_POOL', 'GENERAL'],

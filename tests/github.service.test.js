@@ -1,22 +1,40 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { env } from '../src/configs/environment.js'
 import { createGithubService } from '../src/modules/github/github.service.js'
 
 const createRepository = () => {
   const configs = new Map()
   const auditLogs = []
+  const repositories = new Map()
 
   return {
     configs,
     auditLogs,
+    repositories,
     findConfigByKey: async (key) => configs.get(key) || null,
     upsertConfig: async ({ key, value, isEncrypted, updatedBy }) => {
       const record = { key, value, isEncrypted, updatedBy }
       configs.set(key, record)
       return record
     },
-    createRepositoryRecord: async (payload) => payload,
+    createRepositoryRecord: async (payload) => {
+      const record = { _id: payload.repoName || payload.githubRepo, ...payload }
+      repositories.set(`${payload.eventId}:${payload.githubOwner || payload.githubOrg}:${payload.repoName || payload.githubRepo}`, record)
+      return record
+    },
+    findRepositoryByEventAndRepoName: async ({ eventId, repoName, githubOwner }) => {
+      return repositories.get(`${eventId}:${githubOwner}:${repoName}`) || null
+    },
+    updateRepositoryById: async (id, updates) => {
+      const entry = [...repositories.entries()].find(([, value]) => value._id === id)
+      if (!entry) return null
+      const [key, value] = entry
+      const updated = { ...value, ...updates }
+      repositories.set(key, updated)
+      return updated
+    },
     createAuditLog: async (payload) => {
       auditLogs.push(payload)
       return payload
@@ -132,16 +150,122 @@ test('createRepository calls GitHub org repos API with auto_init', async () => {
     private: true
   }, { id: 'coordinator-1' })
 
-  assert.equal(calls[0].method, 'POST')
-  assert.equal(calls[0].path, '/orgs/seal-org/repos')
-  assert.deepEqual(calls[0].body, {
+  const createRepoCall = calls.find(call => call.path === '/orgs/seal-org/repos')
+  assert.equal(createRepoCall.method, 'POST')
+  assert.equal(createRepoCall.path, '/orgs/seal-org/repos')
+  assert.deepEqual(createRepoCall.body, {
     name: 'team-alpha-project',
     description: 'Repository for Team Alpha',
     private: true,
     auto_init: true
   })
-  assert.equal(calls[0].token, 'token')
+  assert.equal(createRepoCall.token, 'token')
   assert.equal(result.htmlUrl, 'https://github.com/seal-org/team-alpha-project')
+})
+
+test('registerRepositoryWebhook stores repository webhook status when callback URL and secret are configured', async () => {
+  const repository = createRepository()
+  await repository.upsertConfig({
+    key: eventConfigKey,
+    value: {
+      eventId: EVENT_ID,
+      organizationName: 'seal-org',
+      ownerUsername: 'owner-user',
+      enabled: true,
+      tokenEncrypted: 'encrypted:token'
+    },
+    isEncrypted: true
+  })
+
+  await repository.createRepositoryRecord({
+    eventId: EVENT_ID,
+    githubOwner: 'seal-org',
+    githubRepo: 'team-alpha',
+    repoName: 'team-alpha',
+    accessState: 'PENDING',
+    webhookStatus: 'PENDING'
+  })
+
+  const originalPublicUrl = env.server.publicUrl
+  const originalWebhookSecret = env.github.webhookSecret
+  env.server.publicUrl = 'https://seal.example.com'
+  env.github.webhookSecret = 'webhook-secret'
+
+  const calls = []
+  const service = createGithubService({
+    repository,
+    encryption: createEncryption(),
+    githubClient: async (payload) => {
+      calls.push(payload)
+      return {
+        status: 201,
+        data: {
+          id: 99,
+          active: true
+        }
+      }
+    },
+    logger: createLogger()
+  })
+
+  try {
+    const result = await service.registerRepositoryWebhook({
+      eventId: EVENT_ID,
+      repoName: 'team-alpha'
+    }, { id: 'coordinator-1' })
+
+    assert.equal(calls[0].path, '/repos/seal-org/team-alpha/hooks')
+    assert.equal(calls[0].body.config.url, 'https://seal.example.com/api/github/webhooks')
+    assert.equal(result.hookId, 99)
+    assert.equal(repository.repositories.get(`${EVENT_ID}:seal-org:team-alpha`).webhookStatus, 'REGISTERED')
+  } finally {
+    env.server.publicUrl = originalPublicUrl
+    env.github.webhookSecret = originalWebhookSecret
+  }
+})
+
+test('revokeCollaborator removes collaborator and marks linked repository as revoked', async () => {
+  const repository = createRepository()
+  await repository.upsertConfig({
+    key: eventConfigKey,
+    value: {
+      eventId: EVENT_ID,
+      organizationName: 'seal-org',
+      ownerUsername: 'owner-user',
+      enabled: true,
+      tokenEncrypted: 'encrypted:token'
+    },
+    isEncrypted: true
+  })
+  await repository.createRepositoryRecord({
+    eventId: EVENT_ID,
+    githubOwner: 'seal-org',
+    githubRepo: 'team-alpha',
+    repoName: 'team-alpha',
+    accessState: 'GRANTED'
+  })
+
+  const calls = []
+  const service = createGithubService({
+    repository,
+    encryption: createEncryption(),
+    githubClient: async (payload) => {
+      calls.push(payload)
+      return { status: 204, data: null }
+    },
+    logger: createLogger()
+  })
+
+  const result = await service.revokeCollaborator({
+    eventId: EVENT_ID,
+    repoName: 'team-alpha',
+    username: 'dev-user'
+  }, { id: 'admin-1' })
+
+  assert.equal(calls[0].method, 'DELETE')
+  assert.equal(calls[0].path, '/repos/seal-org/team-alpha/collaborators/dev-user')
+  assert.equal(result.status, 'revoked')
+  assert.equal(repository.repositories.get(`${EVENT_ID}:seal-org:team-alpha`).accessState, 'REVOKED')
 })
 
 test('revokeMembers paginates and continues when one removal fails', async () => {

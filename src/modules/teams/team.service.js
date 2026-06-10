@@ -15,6 +15,7 @@ import { normalizePaginationQuery } from '#utils/pagination.js'
 export const TEAM_STATUSES = {
   PENDING: 'PENDING',
   WAITING_FOR_MEMBERS: 'WAITING_FOR_MEMBERS',
+  WAITLISTED: 'WAITLISTED',
   CONFIRMED: 'CONFIRMED',
   REJECTED: 'REJECTED',
   ACTIVE: 'ACTIVE',
@@ -31,7 +32,7 @@ export const INVITATION_STATUSES = {
 }
 
 const CONFIRMED_TEAM_STATUSES = [TEAM_STATUSES.CONFIRMED, TEAM_STATUSES.ACTIVE]
-const OPEN_TEAM_STATUSES = [TEAM_STATUSES.PENDING, TEAM_STATUSES.WAITING_FOR_MEMBERS]
+const OPEN_TEAM_STATUSES = [TEAM_STATUSES.PENDING, TEAM_STATUSES.WAITING_FOR_MEMBERS, TEAM_STATUSES.WAITLISTED]
 const ACTIVE_PARTICIPANT_STATUSES = ['INVITED', 'REGISTERED', 'ACTIVE']
 const COORDINATOR_ROLES = ['ADMIN', 'COORDINATOR', 'EVENT_COORDINATOR']
 
@@ -176,7 +177,8 @@ const normalizeEventSummary = (event) => {
     registrationEnd: plainEvent.registrationEnd,
     minTeamMembers: plainEvent.minTeamMembers,
     maxTeamMembers: plainEvent.maxTeamMembers,
-    maxTeams: getMaxTeams(plainEvent)
+    maxTeams: getMaxTeams(plainEvent),
+    competitionConfig: plainEvent.competitionConfig || null
   }
 }
 
@@ -190,7 +192,9 @@ const normalizeTrackSummary = (track) => {
     id: getId(track._id) || track.id,
     code: track.code,
     name: track.name,
-    type: track.type
+    type: track.type,
+    maxTeams: track.maxTeams,
+    status: track.status
   }
 }
 
@@ -256,6 +260,11 @@ const normalizeTeam = ({ team, participants = [], invitations = [] } = {}) => {
     name: plainTeam.name,
     chapterName: plainTeam.chapterName,
     projectName: plainTeam.projectName,
+    boardNumber: plainTeam.boardNumber,
+    placementSlot: plainTeam.placementSlot,
+    waitlistPosition: plainTeam.waitlistPosition,
+    trackAssignmentMethod: plainTeam.trackAssignmentMethod,
+    trackAssignedAt: plainTeam.trackAssignedAt,
     status: plainTeam.status,
     qualificationStatus: plainTeam.qualificationStatus,
     confirmedAt: plainTeam.confirmedAt,
@@ -270,6 +279,12 @@ const normalizeTeam = ({ team, participants = [], invitations = [] } = {}) => {
 
 const hasCoordinatorRole = (actor = {}) => {
   return (actor.roles || []).some(role => COORDINATOR_ROLES.includes(String(role).toUpperCase()))
+}
+
+const ensureCoordinator = (actor = {}) => {
+  if (!hasCoordinatorRole(actor)) {
+    throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only coordinators can perform this action'])
+  }
 }
 
 const ensureObjectId = (id, fieldName = 'id') => {
@@ -296,6 +311,17 @@ const ensureTeamLeader = (team, actor) => {
   }
 }
 
+const ensureTeamSizeWithinEventRules = (team, event) => {
+  const memberCount = (team.memberIds || []).length
+  if (memberCount < (event.minTeamMembers || 1)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not meet the minimum member requirement for this event'])
+  }
+
+  if (memberCount > (event.maxTeamMembers || 5)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team exceeds the maximum member limit for this event'])
+  }
+}
+
 const ensureTeamReadable = (team, actor) => {
   const memberIds = (team.memberIds || []).map(getId)
   const actorId = actor.id
@@ -316,6 +342,210 @@ const ensureConfirmedSlotsNotFull = async ({ event, repository, session }) => {
   if (confirmedCount >= getMaxTeams(event)) {
     throw new ApiError(ERROR_CODES.CONFLICT, ['The required number of confirmed teams has already been reached'])
   }
+}
+
+const getCompetitionConfig = (event = {}) => {
+  return event?.competitionConfig || {}
+}
+
+const getTrackCapacity = ({ event, track }) => {
+  return track?.maxTeams || getCompetitionConfig(event).maxTeamsPerBoard || null
+}
+
+const buildBoardInfoByTrack = (tracks = []) => {
+  const sortedTracks = [...tracks].sort((left, right) => {
+    const leftKey = `${left.code || ''}:${left.name || ''}:${getId(left) || ''}`
+    const rightKey = `${right.code || ''}:${right.name || ''}:${getId(right) || ''}`
+    return leftKey.localeCompare(rightKey)
+  })
+
+  return new Map(sortedTracks.map((track, index) => [getId(track), index + 1]))
+}
+
+const ensureTrackBelongsToEvent = async ({ repository, eventId, trackId, session }) => {
+  if (!trackId) return null
+
+  ensureObjectId(trackId, 'track id')
+  const track = await repository.findTrackById(trackId, { session })
+  if (!track) {
+    throw new ApiError(ERROR_CODES.NOT_FOUND, ['Track not found'])
+  }
+
+  if (!isSameId(track.eventId, eventId)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Track does not belong to this event'])
+  }
+
+  return track
+}
+
+const getTrackOccupancy = async ({ repository, eventId, trackId, excludeTeamId = null, session }) => {
+  const filter = {
+    eventId,
+    trackId,
+    status: { $in: CONFIRMED_TEAM_STATUSES }
+  }
+
+  if (excludeTeamId) {
+    filter._id = { $ne: excludeTeamId }
+  }
+
+  return await repository.countTeams(filter, { session })
+}
+
+const getWaitlistPosition = async ({ repository, eventId, trackId = null, excludeTeamId = null, session }) => {
+  const filter = {
+    eventId,
+    status: TEAM_STATUSES.WAITLISTED
+  }
+
+  if (trackId) {
+    filter.trackId = trackId
+  }
+
+  if (excludeTeamId) {
+    filter._id = { $ne: excludeTeamId }
+  }
+
+  const count = await repository.countTeams(filter, { session })
+  return count + 1
+}
+
+const buildCapacitySummary = async ({ repository, event, session }) => {
+  const eventId = getId(event)
+  const tracks = await repository.findTracksByEvent(eventId, { session })
+  const boardNumberByTrackId = buildBoardInfoByTrack(tracks)
+  const fallbackTrackCapacity = getCompetitionConfig(event).maxTeamsPerBoard || null
+
+  const trackSummaries = []
+  let totalOccupiedSlots = 0
+  let totalCapacity = 0
+
+  for (const track of tracks) {
+    const occupiedSlots = await getTrackOccupancy({
+      repository,
+      eventId,
+      trackId: getId(track),
+      session
+    })
+    const capacity = getTrackCapacity({ event, track }) || fallbackTrackCapacity
+    totalOccupiedSlots += occupiedSlots
+    if (capacity) totalCapacity += capacity
+
+    trackSummaries.push({
+      track: normalizeTrackSummary(track),
+      trackId: getId(track),
+      boardNumber: boardNumberByTrackId.get(getId(track)) || null,
+      capacity,
+      occupiedSlots,
+      availableSlots: capacity === null ? null : Math.max(capacity - occupiedSlots, 0),
+      isFull: capacity === null ? false : occupiedSlots >= capacity
+    })
+  }
+
+  return {
+    event: normalizeEventSummary(event),
+    eventId,
+    boardCount: getCompetitionConfig(event).boardCount || tracks.length || null,
+    trackCount: getCompetitionConfig(event).trackCount || tracks.length || null,
+    maxTeamsPerBoard: getCompetitionConfig(event).maxTeamsPerBoard || null,
+    totalCapacity: totalCapacity || null,
+    totalOccupiedSlots,
+    availableSlots: totalCapacity ? Math.max(totalCapacity - totalOccupiedSlots, 0) : null,
+    tracks: trackSummaries
+  }
+}
+
+const assignTeamPlacement = async ({
+  repository,
+  event,
+  team,
+  preferredTrackId = null,
+  trackAssignmentMethod = 'SYSTEM',
+  session,
+  allowWaitlist = true
+}) => {
+  const eventId = getId(event)
+  const tracks = await repository.findTracksByEvent(eventId, { session })
+  if (tracks.length === 0) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['No tracks are configured for this event'])
+  }
+
+  const boardNumberByTrackId = buildBoardInfoByTrack(tracks)
+  const selectedTrackId = preferredTrackId || getId(team.trackId)
+
+  let candidateTracks = tracks
+  if (selectedTrackId) {
+    const selectedTrack = tracks.find(track => isSameId(track, selectedTrackId))
+    if (!selectedTrack) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Track does not belong to this event'])
+    }
+    candidateTracks = [selectedTrack]
+  }
+
+  let selectedPlacement = null
+  const candidateSummaries = []
+  for (const track of candidateTracks) {
+    const occupiedSlots = await getTrackOccupancy({
+      repository,
+      eventId,
+      trackId: getId(track),
+      excludeTeamId: getId(team),
+      session
+    })
+    const capacity = getTrackCapacity({ event, track })
+
+    candidateSummaries.push({
+      track,
+      occupiedSlots,
+      capacity,
+      hasCapacity: capacity === null || occupiedSlots < capacity
+    })
+  }
+
+  selectedPlacement = candidateSummaries
+    .filter(candidate => candidate.hasCapacity)
+    .sort((left, right) => left.occupiedSlots - right.occupiedSlots)[0]
+
+  if (selectedPlacement) {
+    selectedPlacement = {
+      track: selectedPlacement.track,
+      boardNumber: boardNumberByTrackId.get(getId(selectedPlacement.track)) || null,
+      placementSlot: selectedPlacement.occupiedSlots + 1
+    }
+  }
+
+  if (!selectedPlacement) {
+    if (!allowWaitlist) {
+      throw new ApiError(ERROR_CODES.CONFLICT, ['Selected track is full'])
+    }
+
+    const waitlistTrackId = selectedTrackId || getId(candidateTracks[0])
+    return await repository.updateTeamById(getId(team), {
+      trackId: waitlistTrackId,
+      boardNumber: waitlistTrackId ? boardNumberByTrackId.get(waitlistTrackId) || null : null,
+      placementSlot: null,
+      waitlistPosition: await getWaitlistPosition({
+        repository,
+        eventId,
+        trackId: waitlistTrackId,
+        excludeTeamId: getId(team),
+        session
+      }),
+      trackAssignmentMethod,
+      trackAssignedAt: new Date(),
+      status: TEAM_STATUSES.WAITLISTED
+    }, { session })
+  }
+
+  return await repository.updateTeamById(getId(team), {
+    trackId: getId(selectedPlacement.track),
+    boardNumber: selectedPlacement.boardNumber,
+    placementSlot: selectedPlacement.placementSlot,
+    waitlistPosition: null,
+    status: team.status === TEAM_STATUSES.WAITLISTED ? TEAM_STATUSES.CONFIRMED : team.status,
+    trackAssignmentMethod,
+    trackAssignedAt: new Date()
+  }, { session })
 }
 
 const ensureParticipantCanJoinEvent = async ({
@@ -617,6 +847,10 @@ export const createTeamService = ({
       ensureObjectId(query.eventId, 'event id')
       filter.eventId = query.eventId
     }
+    if (query.trackId) {
+      ensureObjectId(query.trackId, 'track id')
+      filter.trackId = query.trackId
+    }
     if (query.status) filter.status = query.status
 
     const skip = (page - 1) * limit
@@ -668,6 +902,12 @@ export const createTeamService = ({
         if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
         ensureEventOpen(event)
         await ensureConfirmedSlotsNotFull({ event, repository, session })
+        await ensureTrackBelongsToEvent({
+          repository,
+          eventId: getId(event),
+          trackId: payload.trackId,
+          session
+        })
 
         const leader = await repository.findUserById(actor.id, { session })
         if (!leader || leader.status !== 'APPROVED') {
@@ -706,6 +946,7 @@ export const createTeamService = ({
           name: payload.name,
           chapterName: payload.chapterName,
           projectName: payload.projectName,
+          trackAssignmentMethod: payload.trackId ? 'MANUAL' : 'SYSTEM',
           status: TEAM_STATUSES.WAITING_FOR_MEMBERS
         }, { session })
 
@@ -734,10 +975,22 @@ export const createTeamService = ({
         }
 
         if ((event.minTeamMembers || 1) <= 1) {
-          await repository.updateTeamById(getId(team), {
+          const confirmedTeam = await repository.updateTeamById(getId(team), {
             status: TEAM_STATUSES.CONFIRMED,
             confirmedAt: new Date()
           }, { session })
+
+          await assignTeamPlacement({
+            repository,
+            event,
+            team: confirmedTeam,
+            preferredTrackId: payload.trackId,
+            trackAssignmentMethod: payload.trackId ? 'MANUAL' : 'SYSTEM',
+            session,
+            allowWaitlist: true
+          })
+
+          // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
         }
 
         const createdTeam = await repository.findTeamById(getId(team), { session })
@@ -949,7 +1202,19 @@ export const createTeamService = ({
               confirmedAt: new Date()
             }, { session })
 
-            if (confirmedCountBeforeUpdate + 1 >= getMaxTeams(event)) {
+            updatedTeam = await assignTeamPlacement({
+              repository,
+              event,
+              team: updatedTeam,
+              preferredTrackId: getId(updatedTeam.trackId),
+              trackAssignmentMethod: getId(updatedTeam.trackId) ? 'MANUAL' : 'SYSTEM',
+              session,
+              allowWaitlist: true
+            })
+
+            // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
+
+            if (CONFIRMED_TEAM_STATUSES.includes(updatedTeam.status) && confirmedCountBeforeUpdate + 1 >= getMaxTeams(event)) {
               await rejectOpenTeams({
                 repository,
                 event,
@@ -1144,6 +1409,111 @@ export const createTeamService = ({
     return normalizeInvitation(updatedInvitation)
   }
 
+  const updateTeamStatus = async (teamId, payload = {}, actor = {}) => {
+    ensureCoordinator(actor)
+
+    return await runWithOptionalTransaction({
+      repository,
+      logger,
+      work: async (session) => {
+        const team = await repository.findTeamById(teamId, { session })
+        if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
+
+        const event = await repository.findEventById(getId(team.eventId), { session })
+        if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+
+        let updatedTeam = team
+        const nextStatus = payload.status
+
+        if (nextStatus === TEAM_STATUSES.CONFIRMED) {
+          if (!CONFIRMED_TEAM_STATUSES.includes(team.status)) {
+            await ensureConfirmedSlotsNotFull({ event, repository, session })
+          }
+
+          ensureTeamSizeWithinEventRules(team, event)
+
+          updatedTeam = await repository.updateTeamById(getId(team), {
+            status: TEAM_STATUSES.CONFIRMED,
+            confirmedAt: new Date(),
+            rejectedAt: null,
+            rejectionReason: null
+          }, { session })
+
+          updatedTeam = await assignTeamPlacement({
+            repository,
+            event,
+            team: updatedTeam,
+            preferredTrackId: payload.trackId || getId(updatedTeam.trackId),
+            trackAssignmentMethod: payload.trackId || getId(updatedTeam.trackId) ? 'MANUAL' : 'SYSTEM',
+            session,
+            allowWaitlist: true
+          })
+
+          // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
+        } else if (nextStatus === TEAM_STATUSES.REJECTED) {
+          updatedTeam = await repository.updateTeamById(getId(team), {
+            status: TEAM_STATUSES.REJECTED,
+            rejectedAt: new Date(),
+            rejectionReason: payload.rejectionReason || 'Rejected by coordinator'
+          }, { session })
+        } else {
+          updatedTeam = await repository.updateTeamById(getId(team), {
+            status: nextStatus
+          }, { session })
+        }
+
+        return await loadTeamDetail({ repository, team: updatedTeam, session })
+      }
+    })
+  }
+
+  const updateTeamPlacement = async (teamId, payload = {}, actor = {}) => {
+    ensureCoordinator(actor)
+
+    return await runWithOptionalTransaction({
+      repository,
+      logger,
+      work: async (session) => {
+        const team = await repository.findTeamById(teamId, { session })
+        if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
+
+        const event = await repository.findEventById(getId(team.eventId), { session })
+        if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+
+        if (payload.trackId) {
+          await ensureTrackBelongsToEvent({
+            repository,
+            eventId: getId(event),
+            trackId: payload.trackId,
+            session
+          })
+        }
+
+        const updatedTeam = await assignTeamPlacement({
+          repository,
+          event,
+          team,
+          preferredTrackId: payload.trackId,
+          trackAssignmentMethod: payload.trackAssignmentMethod || (payload.trackId ? 'MANUAL' : 'SYSTEM'),
+          session,
+          allowWaitlist: false
+        })
+
+        return await loadTeamDetail({ repository, team: updatedTeam, session })
+      }
+    })
+  }
+
+  const getEventTeamCapacity = async (eventId, actor = {}) => {
+    ensureCoordinator(actor)
+    ensureObjectId(eventId, 'event id')
+
+    const event = await repository.findEventById(eventId)
+    if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+
+    return await buildCapacitySummary({ repository, event })
+  }
+
   return {
     listTeams,
     getTeamById,
@@ -1154,6 +1524,9 @@ export const createTeamService = ({
     declineInvitation,
     replaceInvitation,
     cancelInvitation,
+    updateTeamStatus,
+    updateTeamPlacement,
+    getEventTeamCapacity,
     normalizeTeam
   }
 }

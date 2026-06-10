@@ -73,6 +73,39 @@ const assignCollaborator = async (req, res, next) => {
   }
 }
 
+const registerRepositoryWebhook = async (req, res, next) => {
+  try {
+    const result = await GITHUB_SERVICE.registerRepositoryWebhook({
+      repoName: req.params.repoName,
+      eventId: req.body.eventId
+    }, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Register GitHub repository webhook successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const revokeCollaborator = async (req, res, next) => {
+  try {
+    const result = await GITHUB_SERVICE.revokeCollaborator({
+      repoName: req.params.repoName,
+      username: req.params.username,
+      eventId: req.body.eventId
+    }, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Revoke GitHub collaborator successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const inviteOrganizationMember = async (req, res, next) => {
   try {
     const result = await GITHUB_SERVICE.inviteOrganizationMember(req.body, req.user)
@@ -105,6 +138,8 @@ export const GITHUB_CONTROLLER = {
   testConnection,
   createRepository,
   assignCollaborator,
+  registerRepositoryWebhook,
+  revokeCollaborator,
   inviteOrganizationMember,
   revokeMembers
 }

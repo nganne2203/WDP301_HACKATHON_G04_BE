@@ -226,3 +226,192 @@ test('createTeam sends temporary account and invitation emails for unknown invit
   assert.equal(sentEmails[0].template, EMAIL_TEMPLATE_KEYS.TEMPORARY_ACCOUNT)
   assert.equal(sentEmails[1].template, EMAIL_TEMPLATE_KEYS.TEAM_INVITATION)
 })
+
+test('createTeam rejects duplicate active participant membership in the same event', async () => {
+  const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'APPROVED' }
+  const repository = {
+    createSession,
+    findEventById: async () => ({
+      _id: 'event-1',
+      title: 'SEAL Hackathon',
+      status: 'OPEN_REGISTRATION',
+      minTeamMembers: 3,
+      maxTeamMembers: 5,
+      maxTeams: 30
+    }),
+    countTeams: async () => 0,
+    findUserById: async () => leader,
+    findTeamByLeaderAndEvent: async () => null,
+    findParticipantByEventAndUser: async () => ({
+      _id: 'participant-1',
+      teamId: 'other-team',
+      status: 'ACTIVE'
+    }),
+    findBlockingInvitation: async () => null
+  }
+
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.createTeam({ eventId: 'event-1', name: 'New Team' }, { id: 'leader-1' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'CONFLICT' &&
+      error.errors.includes('User already belongs to another team in this event')
+  )
+})
+
+test('createTeam enforces event max team size from invited members', async () => {
+  const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'APPROVED' }
+  const repository = {
+    createSession,
+    findEventById: async () => ({
+      _id: 'event-1',
+      title: 'SEAL Hackathon',
+      status: 'OPEN_REGISTRATION',
+      minTeamMembers: 3,
+      maxTeamMembers: 3,
+      maxTeams: 30
+    }),
+    countTeams: async () => 0,
+    findUserById: async () => leader,
+    findTeamByLeaderAndEvent: async () => null,
+    findParticipantByEventAndUser: async () => null,
+    findBlockingInvitation: async () => null
+  }
+
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.createTeam({
+      eventId: 'event-1',
+      name: 'New Team',
+      invitedEmails: ['one@example.com', 'two@example.com', 'three@example.com']
+    }, { id: 'leader-1' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Too many invited members for this event')
+  )
+})
+
+test('updateTeamStatus confirms a team and auto-assigns the next available placement slot', async () => {
+  const event = {
+    _id: '000000000000000000000501',
+    title: 'SEAL Hackathon',
+    status: 'OPEN_REGISTRATION',
+    minTeamMembers: 3,
+    maxTeamMembers: 5,
+    maxTeams: 30,
+    competitionConfig: {
+      boardCount: 2,
+      trackCount: 2,
+      maxTeamsPerBoard: 2
+    }
+  }
+  const tracks = [
+    { _id: '000000000000000000000601', eventId: '000000000000000000000501', code: 'A', name: 'Board A', maxTeams: 2, status: 'OPEN' },
+    { _id: '000000000000000000000602', eventId: '000000000000000000000501', code: 'B', name: 'Board B', maxTeams: 2, status: 'OPEN' }
+  ]
+  const teamMap = new Map([
+    ['000000000000000000000701', {
+      _id: '000000000000000000000701',
+      eventId: event,
+      trackId: null,
+      leaderId: { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader' },
+      memberIds: [{ _id: 'leader-1' }, { _id: 'member-2' }, { _id: 'member-3' }],
+      name: 'Code Wizards',
+      status: 'WAITING_FOR_MEMBERS'
+    }]
+  ])
+  const repository = {
+    createSession,
+    findTeamById: async (id) => teamMap.get(id) || null,
+    findEventById: async () => event,
+    countTeams: async (filter = {}) => {
+      if (filter.trackId === '000000000000000000000601' && filter.status?.$in) return 1
+      if (filter.trackId === '000000000000000000000602' && filter.status?.$in) return 0
+      if (filter.status?.$in) return 1
+      return 0
+    },
+    updateTeamById: async (id, data) => {
+      const existing = teamMap.get(id)
+      const updated = { ...existing, ...data, _id: id }
+      teamMap.set(id, updated)
+      return updated
+    },
+    findTracksByEvent: async () => tracks,
+    findTrackById: async (id) => tracks.find(track => track._id === id) || null,
+    findParticipantsByTeam: async () => [],
+    findInvitationsByTeam: async () => []
+  }
+
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  const result = await service.updateTeamStatus('000000000000000000000701', {
+    status: 'CONFIRMED'
+  }, {
+    id: 'coord-1',
+    roles: ['COORDINATOR']
+  })
+
+  assert.equal(result.status, 'CONFIRMED')
+  assert.equal(result.trackId, '000000000000000000000602')
+  assert.equal(result.boardNumber, 2)
+  assert.equal(result.placementSlot, 1)
+})
+
+test('updateTeamPlacement rejects manual placement when the selected track is full', async () => {
+  const event = {
+    _id: '000000000000000000000801',
+    title: 'SEAL Hackathon',
+    status: 'OPEN_REGISTRATION',
+    minTeamMembers: 3,
+    maxTeamMembers: 5,
+    maxTeams: 30,
+    competitionConfig: {
+      boardCount: 2,
+      trackCount: 2,
+      maxTeamsPerBoard: 1
+    }
+  }
+  const tracks = [
+    { _id: '000000000000000000000901', eventId: '000000000000000000000801', code: 'A', name: 'Board A', maxTeams: 1, status: 'OPEN' },
+    { _id: '000000000000000000000902', eventId: '000000000000000000000801', code: 'B', name: 'Board B', maxTeams: 1, status: 'OPEN' }
+  ]
+  const repository = {
+    createSession,
+    findTeamById: async () => ({
+      _id: '000000000000000000000903',
+      eventId: event,
+      trackId: null,
+      leaderId: { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader' },
+      memberIds: [{ _id: 'leader-1' }, { _id: 'member-2' }, { _id: 'member-3' }],
+      name: 'Code Wizards',
+      status: 'CONFIRMED'
+    }),
+    findEventById: async () => event,
+    countTeams: async (filter = {}) => {
+      if (filter.trackId === '000000000000000000000901' && filter.status?.$in) return 1
+      return 0
+    },
+    updateTeamById: async () => {
+      throw new Error('should not update when capacity is full')
+    },
+    findTracksByEvent: async () => tracks,
+    findTrackById: async (id) => tracks.find(track => track._id === id) || null
+  }
+
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.updateTeamPlacement('000000000000000000000903', {
+      trackId: '000000000000000000000901',
+      trackAssignmentMethod: 'MANUAL'
+    }, {
+      id: 'coord-1',
+      roles: ['COORDINATOR']
+    }),
+    (error) => error instanceof ApiError &&
+      error.code === 'CONFLICT' &&
+      error.errors.includes('Selected track is full')
+  )
+})

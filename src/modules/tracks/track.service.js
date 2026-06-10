@@ -7,7 +7,7 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 
-const TRACK_FIELDS = ['eventId', 'code', 'name', 'description', 'type', 'teamIds', 'maxTeams', 'status']
+const TRACK_FIELDS = ['eventId', 'code', 'name', 'description', 'topic', 'problemStatement', 'type', 'teamIds', 'maxTeams', 'status']
 
 const ensureObjectId = (id, fieldName = 'track id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -86,6 +86,8 @@ const normalizeTrack = (track) => {
     code: plainTrack.code,
     name: plainTrack.name,
     description: plainTrack.description,
+    topic: plainTrack.topic,
+    problemStatement: plainTrack.problemStatement,
     type: plainTrack.type,
     teamIds: plainTrack.teamIds?.map((teamId) => teamId.toString?.() || teamId) || [],
     maxTeams: plainTrack.maxTeams,
