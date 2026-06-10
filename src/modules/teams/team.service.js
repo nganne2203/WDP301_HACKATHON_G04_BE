@@ -1144,11 +1144,87 @@ export const createTeamService = ({
     return normalizeInvitation(updatedInvitation)
   }
 
+  const updateTeam = async (teamId, data, actor = {}) => {
+    ensureObjectId(teamId, 'teamId')
+
+    const team = await repository.findTeamById(teamId)
+    if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
+
+    if (!hasCoordinatorRole(actor)) {
+      ensureTeamLeader(team, actor)
+    }
+
+    ensureTeamIsNotRejected(team)
+
+    const allowed = {}
+    if (data.name !== undefined) allowed.name = String(data.name).trim()
+    if (data.projectName !== undefined) allowed.projectName = String(data.projectName || '').trim()
+    if (data.chapterName !== undefined) allowed.chapterName = String(data.chapterName || '').trim()
+
+    const updated = await repository.updateTeamById(teamId, allowed)
+    return await loadTeamDetail({ repository, team: updated })
+  }
+
+  const kickMember = async ({ teamId, participantId }, actor = {}) => {
+    ensureObjectId(teamId, 'teamId')
+    ensureObjectId(participantId, 'participantId')
+
+    const team = await repository.findTeamById(teamId)
+    if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
+
+    if (!hasCoordinatorRole(actor)) {
+      ensureTeamLeader(team, actor)
+    }
+
+    const participant = await repository.findParticipantById(participantId)
+    if (!participant || !isSameId(participant.teamId, teamId)) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Participant not found in this team'])
+    }
+
+    if (participant.teamRole === 'LEADER') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Cannot kick the team leader'])
+    }
+
+    await repository.removeParticipantFromTeam(participantId)
+
+    const userId = getId(participant.userId)
+    await repository.updateTeamById(teamId, { $pull: { memberIds: userId } })
+
+    const updatedTeam = await repository.findTeamById(teamId)
+    return await loadTeamDetail({ repository, team: updatedTeam })
+  }
+
+  const assignTrack = async ({ teamId, trackId }, actor = {}) => {
+    ensureObjectId(teamId, 'teamId')
+    ensureObjectId(trackId, 'trackId')
+
+    const team = await repository.findTeamById(teamId)
+    if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
+
+    if (!hasCoordinatorRole(actor)) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only coordinators can assign tracks'])
+    }
+
+    const track = await repository.findTrackById(trackId)
+    if (!track) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Track not found'])
+
+    const updated = await repository.updateTeamById(teamId, {
+      trackId,
+      trackAssignmentMethod: 'MANUAL',
+      trackAssignedAt: new Date()
+    })
+
+    return await loadTeamDetail({ repository, team: updated })
+  }
+
   return {
     listTeams,
     getTeamById,
     getMyTeamByEvent,
     createTeam,
+    updateTeam,
+    kickMember,
+    assignTrack,
     inviteMembers,
     acceptInvitation,
     declineInvitation,

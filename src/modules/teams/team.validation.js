@@ -85,9 +85,35 @@ const declineInvitation = {
   params: tokenParam
 }
 
+const updateTeam = {
+  params: idParam,
+  body: Joi.object({
+    name: Joi.string().trim().min(2).max(120),
+    projectName: Joi.string().trim().max(200).allow('', null),
+    chapterName: Joi.string().trim().max(120).allow('', null)
+  }).min(1)
+}
+
+const kickMember = {
+  params: Joi.object({
+    id: objectId.required(),
+    participantId: objectId.required()
+  })
+}
+
+const assignTrack = {
+  params: idParam,
+  body: Joi.object({
+    trackId: objectId.required()
+  })
+}
+
 export const TEAM_VALIDATION = {
   listTeams,
   createTeam,
+  updateTeam,
+  kickMember,
+  assignTrack,
   inviteMembers,
   getMyTeam,
   replaceInvitation,

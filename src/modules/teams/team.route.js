@@ -51,6 +51,27 @@ router.get(
   TEAM_CONTROLLER.getTeamById
 )
 
+router.patch(
+  '/:id',
+  permissionMiddleware(PERMISSIONS.TEAM_UPDATE),
+  validationHandlingMiddleware(TEAM_VALIDATION.updateTeam),
+  TEAM_CONTROLLER.updateTeam
+)
+
+router.delete(
+  '/:id/members/:participantId',
+  permissionMiddleware(PERMISSIONS.TEAM_UPDATE),
+  validationHandlingMiddleware(TEAM_VALIDATION.kickMember),
+  TEAM_CONTROLLER.kickMember
+)
+
+router.patch(
+  '/:id/track',
+  permissionMiddleware(PERMISSIONS.TEAM_UPDATE),
+  validationHandlingMiddleware(TEAM_VALIDATION.assignTrack),
+  TEAM_CONTROLLER.assignTrack
+)
+
 router.post(
   '/:id/invitations',
   permissionMiddleware(PERMISSIONS.TEAM_VIEW),

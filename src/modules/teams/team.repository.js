@@ -3,11 +3,11 @@ import mongoose from 'mongoose'
 import Event from '#models/event.model.js'
 import Participant from '#models/participant.model.js'
 import Role from '#models/role.model.js'
+import Track from '#models/track.model.js'
 import Team from '#models/team.model.js'
 import TeamInvitation from '#models/teamInvitation.model.js'
 import User from '#models/user.model.js'
 import '#models/permission.model.js'
-import '#models/track.model.js'
 
 const populateRoles = [
   {
@@ -211,6 +211,28 @@ const updateInvitations = async (filter, data, { session } = {}) => {
   return await withSession(TeamInvitation.updateMany(filter, data), session)
 }
 
+const findParticipantById = async (id, { session } = {}) => {
+  return await withSession(
+    Participant.findById(id).populate({ path: 'userId', select: 'email fullName status' }),
+    session
+  )
+}
+
+const removeParticipantFromTeam = async (participantId, { session } = {}) => {
+  return await withSession(
+    Participant.findByIdAndUpdate(
+      participantId,
+      { $unset: { teamId: 1 }, $set: { teamRole: 'MEMBER' } },
+      { new: true }
+    ),
+    session
+  )
+}
+
+const findTrackById = async (id, { session } = {}) => {
+  return await withSession(Track.findById(id), session)
+}
+
 export const TEAM_REPOSITORY = {
   createSession,
   findEventById,
@@ -223,6 +245,9 @@ export const TEAM_REPOSITORY = {
   updateTeamById,
   findParticipantsByTeam,
   findParticipantByEventAndUser,
+  findParticipantById,
+  removeParticipantFromTeam,
+  findTrackById,
   upsertParticipant,
   findUserById,
   findUserByEmail,

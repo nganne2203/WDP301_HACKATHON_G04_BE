@@ -128,11 +128,59 @@ const cancelInvitation = async (req, res, next) => {
   }
 }
 
+const updateTeam = async (req, res, next) => {
+  try {
+    const team = await TEAM_SERVICE.updateTeam(req.params.id, req.body, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Update team successfully',
+      data: team
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const kickMember = async (req, res, next) => {
+  try {
+    const team = await TEAM_SERVICE.kickMember({
+      teamId: req.params.id,
+      participantId: req.params.participantId
+    }, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Member removed from team successfully',
+      data: team
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const assignTrack = async (req, res, next) => {
+  try {
+    const team = await TEAM_SERVICE.assignTrack({
+      teamId: req.params.id,
+      trackId: req.body.trackId
+    }, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Track assigned successfully',
+      data: team
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const TEAM_CONTROLLER = {
   listTeams,
   createTeam,
   getTeamById,
   getMyTeam,
+  updateTeam,
+  kickMember,
+  assignTrack,
   inviteMembers,
   acceptInvitation,
   declineInvitation,
