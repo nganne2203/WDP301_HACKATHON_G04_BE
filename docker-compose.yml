@@ -3,11 +3,12 @@ services:
     image: mongo:7
     restart: unless-stopped
     ports:
-      - "${MONGO_PORT:-27017}:27017"
+      - "${MONGO_PORT:-27018}:27017"
     volumes:
       - mongo-data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test:
+        ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -52,7 +53,13 @@ services:
     ports:
       - "${API_PORT:-3000}:3000"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/ready').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/ready').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
       interval: 15s
       timeout: 5s
       retries: 10
