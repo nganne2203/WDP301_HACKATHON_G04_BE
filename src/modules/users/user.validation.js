@@ -78,11 +78,23 @@ const assignRoles = {
   })
 }
 
+const assignRolesByIds = {
+  params: idParam,
+  body: Joi.object({
+    roleIds: Joi.array()
+      .items(Joi.string().hex().length(24))
+      .min(1)
+      .unique()
+      .required()
+  })
+}
+
 export const USER_VALIDATION = {
   listUsers,
   getUserById,
   createUser,
   updateProfile,
   updateStatus,
-  assignRoles
+  assignRoles,
+  assignRolesByIds
 }

@@ -9,6 +9,7 @@ import { normalizePaginationQuery } from '#utils/pagination.js'
 import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 import { EMAIL_TEMPLATE_KEYS } from '#modules/notifications/email-templates.js'
+import { AUDIT_LOG_SERVICE } from '#modules/audit-logs/audit-log.service.js'
 import { env } from '#configs/environment.js'
 
 const PROFILE_FIELDS = ['fullName', 'avatarUrl', 'phone', 'bio']
@@ -76,7 +77,9 @@ const normalizeUser = (user) => {
     return {
       id: role._id?.toString(),
       name: role.name,
+      code: role.code || role.name,
       description: role.description,
+      isSystemRole: role.isSystemRole || false,
       permissions: (role.permissions || []).map(permission => {
         if (typeof permission === 'string' || permission instanceof mongoose.Types.ObjectId) {
           return { id: permission.toString() }
@@ -85,12 +88,14 @@ const normalizeUser = (user) => {
         return {
           id: permission._id?.toString(),
           code: permission.code,
-          description: permission.description
+          name: permission.name,
+          description: permission.description,
+          module: permission.module
         }
       })
     }
   })
-  const permissions = getPermissionCodes({ roles })
+  const effectivePermissions = getPermissionCodes({ roles })
 
   return {
     id: plainUser._id?.toString() || plainUser.id,
@@ -100,7 +105,8 @@ const normalizeUser = (user) => {
     status: plainUser.status,
     mustChangePassword: Boolean(plainUser.mustChangePassword),
     roles,
-    permissions,
+    permissions: effectivePermissions,
+    effectivePermissions,
     googleAuth: plainUser.googleAuth
       ? {
         googleId: plainUser.googleAuth.googleId,
@@ -331,6 +337,41 @@ const assignRoles = async (id, roleNames = []) => {
   return normalizeUser(updatedUser)
 }
 
+const assignRolesByIds = async (id, roleIds = [], actorId = null) => {
+  await ensureUserExists(id)
+
+  const roles = await USER_REPOSITORY.findRolesByIds(roleIds)
+  if (roles.length !== roleIds.length) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more role IDs are invalid'])
+  }
+
+  const updatedUser = await USER_REPOSITORY.updateById(id, {
+    roles: roles.map(role => role._id)
+  })
+
+  if (actorId) {
+    AUDIT_LOG_SERVICE.createAuditLog({
+      userId: actorId,
+      action: 'USER_ASSIGN_ROLE',
+      resourceType: 'User',
+      resourceId: id,
+      metadata: { assignedRoles: roles.map(r => r.name), method: 'BY_ID' }
+    }).catch(() => {})
+  }
+
+  return normalizeUser(updatedUser)
+}
+
+const getEffectivePermissions = async (id) => {
+  const user = await ensureUserExists(id)
+  const normalizedUser = normalizeUser(user)
+  return {
+    userId: id,
+    roles: normalizedUser.roles.map(r => ({ id: r.id, name: r.name, code: r.code })),
+    effectivePermissions: normalizedUser.effectivePermissions
+  }
+}
+
 export const USER_SERVICE = {
   listUsers,
   getUserById,
@@ -343,6 +384,8 @@ export const USER_SERVICE = {
   rejectUser,
   suspendUser,
   assignRoles,
+  assignRolesByIds,
+  getEffectivePermissions,
   normalizeUser,
   getRoleNames,
   getPermissionCodes
