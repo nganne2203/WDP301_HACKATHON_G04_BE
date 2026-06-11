@@ -1,19 +1,4 @@
 services:
-  mongo:
-    image: mongo:7
-    restart: unless-stopped
-    ports:
-      - "${MONGO_PORT:-27018}:27017"
-    volumes:
-      - mongo-data:/data/db
-    healthcheck:
-      test:
-        ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -34,8 +19,6 @@ services:
     init: true
     restart: unless-stopped
     depends_on:
-      mongo:
-        condition: service_healthy
       redis:
         condition: service_healthy
     env_file:
@@ -43,7 +26,6 @@ services:
     environment:
       PORT: 3000
       HOSTNAME: 0.0.0.0
-      MONGODB_URI: mongodb://mongo:27017/seal_db
       REDIS_URL: redis://redis:6379
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       GITHUB_WEBHOOK_CALLBACK_URL: ${GITHUB_WEBHOOK_CALLBACK_URL:-}
@@ -72,33 +54,16 @@ services:
     restart: unless-stopped
     command: ["node", "src/worker.js"]
     depends_on:
-      mongo:
-        condition: service_healthy
       redis:
         condition: service_healthy
     env_file:
       - .env
     environment:
-      MONGODB_URI: mongodb://mongo:27017/seal_db
       REDIS_URL: redis://redis:6379
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       GITHUB_WEBHOOK_CALLBACK_URL: ${GITHUB_WEBHOOK_CALLBACK_URL:-}
       STATIC_ANALYSIS_ESLINT_COMMAND: ${STATIC_ANALYSIS_ESLINT_COMMAND_DOCKER:-}
       STATIC_ANALYSIS_TSC_COMMAND: ${STATIC_ANALYSIS_TSC_COMMAND_DOCKER:-}
 
-  db-init:
-    build:
-      context: .
-    profiles: ["tools"]
-    depends_on:
-      mongo:
-        condition: service_healthy
-    env_file:
-      - .env
-    environment:
-      MONGODB_URI: mongodb://mongo:27017/seal_db
-    command: ["npm", "run", "db:init"]
-
 volumes:
-  mongo-data:
   redis-data:

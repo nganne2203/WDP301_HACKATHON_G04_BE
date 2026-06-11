@@ -5,10 +5,10 @@ import '#models/permission.model.js'
 const populateRoles = [
   {
     path: 'roles',
-    select: 'name description permissions',
+    select: 'name code description permissions isSystemRole isActive',
     populate: {
       path: 'permissions',
-      select: 'code description'
+      select: 'code name description module isActive'
     }
   }
 ]
@@ -46,6 +46,10 @@ const findRolesByNames = async (names) => {
   return await Role.find({ name: { $in: normalizedNames } })
 }
 
+const findRolesByIds = async (ids) => {
+  return await Role.find({ _id: { $in: ids } }).populate({ path: 'permissions', select: 'code name description module isActive' })
+}
+
 const updateById = async (id, data) => {
   return await User.findByIdAndUpdate(id, data, {
     new: true,
@@ -65,6 +69,7 @@ export const USER_REPOSITORY = {
   findByEmail,
   findRoleByName,
   findRolesByNames,
+  findRolesByIds,
   updateById,
   deleteById
 }

@@ -89,9 +89,21 @@ export const createAuditLogService = ({
     }
   }
 
+  const createAuditLog = async ({ userId, action, resourceType, resourceId, metadata = {} } = {}) => {
+    const created = await repository.create({
+      userId: userId || null,
+      action,
+      resourceType: resourceType || null,
+      resourceId: resourceId || null,
+      metadata
+    })
+    return normalizeAuditLog(created)
+  }
+
   return {
     listAuditLogs,
-    getAuditLogSummary
+    getAuditLogSummary,
+    createAuditLog
   }
 }
 

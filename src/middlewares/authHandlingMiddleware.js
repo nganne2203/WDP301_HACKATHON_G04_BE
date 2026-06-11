@@ -18,14 +18,15 @@ export const authorizationMiddleware = async (req, res, next) => {
     }
 
     const roles = USER_SERVICE.getRoleNames(user)
-    const permissions = USER_SERVICE.getPermissionCodes(user)
+    const effectivePermissions = USER_SERVICE.getPermissionCodes(user)
 
     req.user = {
       id: user._id.toString(),
       email: user.email,
       roles,
       role: roles[0] || null,
-      permissions
+      permissions: effectivePermissions,
+      effectivePermissions
     }
 
     next()
