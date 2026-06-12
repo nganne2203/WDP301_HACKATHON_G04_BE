@@ -27,6 +27,20 @@ services:
       retries: 10
       start_period: 5s
 
+  seed:
+    build:
+      context: .
+    init: true
+    restart: "no"
+    command: ["npm", "run", "db:init"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017/seal_db
+
   api:
     build:
       context: .
@@ -37,6 +51,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     env_file:
       - .env
     environment:
@@ -75,6 +91,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     env_file:
       - .env
     environment:
