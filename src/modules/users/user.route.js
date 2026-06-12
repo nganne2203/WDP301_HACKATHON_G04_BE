@@ -535,4 +535,75 @@ router.patch(
   USER_CONTROLLER.assignRoles
 )
 
+/**
+ * @swagger
+ * /api/users/{id}/role:
+ *   patch:
+ *     summary: Assign roles to a user by role IDs (replaces existing)
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           pattern: '^[a-fA-F0-9]{24}$'
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [roleIds]
+ *             properties:
+ *               roleIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["664c3f6a3a6d4a5f3f93b002"]
+ *     responses:
+ *       200:
+ *         description: Roles assigned successfully
+ *       400:
+ *         description: Invalid role IDs
+ *       403:
+ *         description: Requires USER_ASSIGN_ROLE permission
+ */
+router.patch(
+  '/:id/role',
+  permissionMiddleware(PERMISSIONS.USER_ASSIGN_ROLE),
+  validationHandlingMiddleware(USER_VALIDATION.assignRolesByIds),
+  USER_CONTROLLER.assignRolesByIds
+)
+
+/**
+ * @swagger
+ * /api/users/{id}/effective-permissions:
+ *   get:
+ *     summary: Get a user's effective permissions (resolved from all assigned roles)
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           pattern: '^[a-fA-F0-9]{24}$'
+ *     responses:
+ *       200:
+ *         description: Effective permissions retrieved successfully
+ *       403:
+ *         description: Requires USER_VIEW permission
+ */
+router.get(
+  '/:id/effective-permissions',
+  permissionMiddleware(PERMISSIONS.USER_VIEW),
+  validationHandlingMiddleware(USER_VALIDATION.getUserById),
+  USER_CONTROLLER.getEffectivePermissions
+)
+
 export default router
