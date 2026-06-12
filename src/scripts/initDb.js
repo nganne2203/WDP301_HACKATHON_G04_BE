@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import mongoose from 'mongoose'
 import { env } from '#configs/environment.js'
 import { ALL_PERMISSIONS, ROLE_PERMISSION_MAP } from '#constants/permissions.js'
@@ -21,6 +22,7 @@ import TeamInvitation from '#models/teamInvitation.model.js'
 import Repository from '#models/repository.model.js'
 import Commit from '#models/commit.model.js'
 import CommitDiff from '#models/commitDiff.model.js'
+import GitHubWebhookEvent from '#models/githubWebhookEvent.model.js'
 import Submission from '#models/submission.model.js'
 import Rubric from '#models/rubric.model.js'
 import Criterion from '#models/criterion.model.js'
@@ -30,6 +32,10 @@ import Ranking from '#models/ranking.model.js'
 import Prize from '#models/prize.model.js'
 import AiReview from '#models/aiReview.model.js'
 import AiReviewCriterion from '#models/aiReviewCriterion.model.js'
+import TechnicalFinding from '#models/technicalFinding.model.js'
+import StaticAnalysisResult from '#models/staticAnalysisResult.model.js'
+import ImpactDecision from '#models/impactDecision.model.js'
+import ChangedCodeContext from '#models/changedCodeContext.model.js'
 import Notification from '#models/notification.model.js'
 import Media from '#models/media.model.js'
 import MediaActivity from '#models/mediaActivity.model.js'
@@ -55,6 +61,7 @@ const MODELS = [
   Repository,
   Commit,
   CommitDiff,
+  GitHubWebhookEvent,
   Submission,
   Rubric,
   Criterion,
@@ -64,6 +71,10 @@ const MODELS = [
   Prize,
   AiReview,
   AiReviewCriterion,
+  TechnicalFinding,
+  StaticAnalysisResult,
+  ImpactDecision,
+  ChangedCodeContext,
   Notification,
   Media,
   MediaActivity,
@@ -93,12 +104,63 @@ const upsertOne = async (Model, filter, data) => {
 }
 
 const buildDate = (value) => new Date(value)
+const addTime = (date, { days = 0, hours = 0, minutes = 0 } = {}) => {
+  return new Date(date.getTime() + (((days * 24) + hours) * 60 + minutes) * 60 * 1000)
+}
+
+const toQualitativeLevel = (score, totalScore) => {
+  const ratio = totalScore > 0 ? Number(score || 0) / Number(totalScore) : 0
+  if (ratio >= 0.9) return 'EXCELLENT'
+  if (ratio >= 0.75) return 'GOOD'
+  if (ratio >= 0.6) return 'FAIR'
+  if (ratio >= 0.45) return 'AVERAGE'
+  return 'WEAK'
+}
+
+const FALL_2025_SAMPLE_CONFIG = {
+  boardCount: 2,
+  trackCount: 2,
+  maxTeamsPerBoard: 20,
+  finalistCount: 10,
+  finalistsPerBoard: 5,
+  finalistSelectionMode: 'FIXED_PER_BOARD',
+  fillRemainingFinalistsByOverallScore: false,
+  rankingScopes: ['TEAM', 'CHAPTER', 'INDIVIDUAL'],
+  tieBreakRule: 'Judges resolve ties using rubric-level discussion and final deliberation.'
+}
+
+const FALL_2025_TRACK_SEEDS = [
+  {
+    code: 'A',
+    name: 'Bang A',
+    description: 'AI for Requirements and Design',
+    type: 'PRELIMINARY_GROUP',
+    maxTeams: FALL_2025_SAMPLE_CONFIG.maxTeamsPerBoard
+  },
+  {
+    code: 'B',
+    name: 'Bang B',
+    description: 'AI for Development, Testing, and Operations',
+    type: 'PRELIMINARY_GROUP',
+    maxTeams: FALL_2025_SAMPLE_CONFIG.maxTeamsPerBoard
+  }
+]
 
 const buildPermissionDescription = (code) => {
   return code
     .toLowerCase()
     .replaceAll('_', ' ')
     .replace(/^\w/, (char) => char.toUpperCase())
+}
+
+const buildPermissionModule = (code) => {
+  const parts = code.split('_')
+  if (parts.length >= 2) return parts[0]
+  return 'GENERAL'
+}
+
+const buildPermissionName = (code) => {
+  return buildPermissionDescription(code)
 }
 
 const ROLE_SEEDS = [
@@ -142,7 +204,10 @@ const seedPermissions = async () => {
   const permissionRecords = await Promise.all(ALL_PERMISSIONS.map((code) => {
     return upsertOne(Permission, { code }, {
       code,
-      description: buildPermissionDescription(code)
+      name: buildPermissionName(code),
+      description: buildPermissionDescription(code),
+      module: buildPermissionModule(code),
+      isActive: true
     })
   }))
 
@@ -150,19 +215,30 @@ const seedPermissions = async () => {
 }
 
 const seedRoles = async (permissionByCode) => {
+  const allPermissionIds = [...permissionByCode.values()].map(p => p._id)
+
   const roleRecords = await Promise.all(ROLE_SEEDS.map(([name, description]) => {
-    const permissionIds = (ROLE_PERMISSION_MAP[name] || []).map((code) => {
-      const permission = permissionByCode.get(code)
-      if (!permission) {
-        throw new Error(`Missing permission seed for ${code}`)
-      }
-      return permission._id
-    })
+    let permissionIds
+
+    if (name === 'ADMIN') {
+      permissionIds = allPermissionIds
+    } else {
+      permissionIds = (ROLE_PERMISSION_MAP[name] || []).map((code) => {
+        const permission = permissionByCode.get(code)
+        if (!permission) {
+          throw new Error(`Missing permission seed for ${code}`)
+        }
+        return permission._id
+      })
+    }
 
     return upsertOne(Role, { name }, {
       name,
+      code: name,
       description,
-      permissions: permissionIds
+      permissions: permissionIds,
+      isSystemRole: true,
+      isActive: true
     })
   }))
 
@@ -232,7 +308,7 @@ const repairLegacyUserRoles = async (roleByName) => {
   }
 }
 
-const seedBaseUser = async ({ email, legacyEmail, fullName, roleId, passwordHash, extra = {} }) => {
+const seedUser = async ({ email, legacyEmail, fullName, roleIds, passwordHash, status = 'APPROVED', extra = {} }) => {
   const filter = legacyEmail ? { $or: [{ email }, { email: legacyEmail }] } : { email }
 
   return await upsertOne(User, filter, {
@@ -240,10 +316,1061 @@ const seedBaseUser = async ({ email, legacyEmail, fullName, roleId, passwordHash
     authProvider: 'LOCAL',
     passwordHash,
     fullName,
-    status: 'APPROVED',
-    roles: [roleId],
+    status,
+    roles: roleIds,
     ...extra
   })
+}
+
+const seedBaseUser = async ({ email, legacyEmail, fullName, roleId, passwordHash, status = 'APPROVED', extra = {} }) => {
+  return await seedUser({
+    email,
+    legacyEmail,
+    fullName,
+    roleIds: [roleId],
+    passwordHash,
+    status,
+    extra
+  })
+}
+
+const buildSeedInvitation = ({ token, ...data }) => {
+  const normalizedToken = token || `seed-token-${crypto.randomUUID()}`
+  return {
+    ...data,
+    tokenHash: crypto.createHash('sha256').update(normalizedToken).digest('hex'),
+    metadata: {
+      ...(data.metadata || {}),
+      previewToken: normalizedToken
+    }
+  }
+}
+
+const seedRuntimeDevScenarios = async ({
+  roleByName,
+  seededPasswordHash,
+  adminUser,
+  coordinatorUser,
+  judgeUserA,
+  judgeUserB,
+  mentorUser
+}) => {
+  const userRole = roleByName.get('USER')
+  const participantRole = roleByName.get('PARTICIPANT')
+  const now = new Date()
+  const runtimeYear = now.getFullYear() + 1
+
+  const registrationEvent = await upsertOne(Event, { seriesName: 'SEAL Runtime Sandbox', season: 'SPRING', year: runtimeYear }, {
+    title: `SEAL Runtime Sandbox Spring ${runtimeYear}`,
+    description: 'Runtime-ready sandbox event for FE manual testing during registration and team formation.',
+    semester: `Spring ${runtimeYear}`,
+    seriesName: 'SEAL Runtime Sandbox',
+    season: 'SPRING',
+    year: runtimeYear,
+    theme: 'Live FE scenario coverage',
+    registrationStart: addTime(now, { days: -7 }),
+    registrationEnd: addTime(now, { days: 14 }),
+    startDate: addTime(now, { days: 21 }),
+    endDate: addTime(now, { days: 23 }),
+    maxTeams: 8,
+    minTeamMembers: 3,
+    maxTeamMembers: 5,
+    competitionConfig: {
+      boardCount: 2,
+      trackCount: 2,
+      maxTeamsPerBoard: 4,
+      finalistCount: 4,
+      finalistsPerBoard: 2,
+      finalistSelectionMode: 'FIXED_PER_BOARD',
+      fillRemainingFinalistsByOverallScore: false,
+      rankingScopes: ['TEAM', 'CHAPTER', 'INDIVIDUAL'],
+      tieBreakRule: 'Coordinator resolves sandbox ties manually.'
+    },
+    finalistSlotsPerTrack: 2,
+    totalFinalistSlots: 4,
+    status: 'OPEN_REGISTRATION',
+    createdBy: coordinatorUser._id
+  })
+
+  const scoringEvent = await upsertOne(Event, { seriesName: 'SEAL Scoring Sandbox', season: 'SUMMER', year: runtimeYear }, {
+    title: `SEAL Scoring Sandbox Summer ${runtimeYear}`,
+    description: 'Ongoing scoring sandbox for repository, judging, submission, and media review flows.',
+    semester: `Summer ${runtimeYear}`,
+    seriesName: 'SEAL Scoring Sandbox',
+    season: 'SUMMER',
+    year: runtimeYear,
+    theme: 'Judging and repository operations',
+    registrationStart: addTime(now, { days: -30 }),
+    registrationEnd: addTime(now, { days: -14 }),
+    startDate: addTime(now, { days: -1 }),
+    endDate: addTime(now, { days: 2 }),
+    maxTeams: 6,
+    minTeamMembers: 3,
+    maxTeamMembers: 5,
+    competitionConfig: {
+      boardCount: 1,
+      trackCount: 2,
+      maxTeamsPerBoard: 6,
+      finalistCount: 3,
+      finalistsPerBoard: 3,
+      finalistSelectionMode: 'FIXED_PER_BOARD',
+      fillRemainingFinalistsByOverallScore: false,
+      rankingScopes: ['TEAM', 'CHAPTER'],
+      tieBreakRule: 'Judges use rubric-level tie break and coordinator confirmation.'
+    },
+    finalistSlotsPerTrack: 2,
+    totalFinalistSlots: 3,
+    status: 'ONGOING',
+    createdBy: coordinatorUser._id
+  })
+
+  const registrationTracks = await Promise.all([
+    upsertOne(Track, { eventId: registrationEvent._id, code: 'WEB' }, {
+      eventId: registrationEvent._id,
+      code: 'WEB',
+      name: 'Web Experience',
+      description: 'Frontend and product experience sandbox track.',
+      type: 'PRELIMINARY_GROUP',
+      maxTeams: 4,
+      status: 'OPEN'
+    }),
+    upsertOne(Track, { eventId: registrationEvent._id, code: 'OPS' }, {
+      eventId: registrationEvent._id,
+      code: 'OPS',
+      name: 'Automation Ops',
+      description: 'Automation and developer tooling sandbox track.',
+      type: 'PRELIMINARY_GROUP',
+      maxTeams: 4,
+      status: 'OPEN'
+    })
+  ])
+
+  const scoringTracks = await Promise.all([
+    upsertOne(Track, { eventId: scoringEvent._id, code: 'BUILD' }, {
+      eventId: scoringEvent._id,
+      code: 'BUILD',
+      name: 'Build Reliability',
+      description: 'Runtime and CI reliability scenarios.',
+      type: 'PRELIMINARY_GROUP',
+      maxTeams: 3,
+      status: 'LOCKED'
+    }),
+    upsertOne(Track, { eventId: scoringEvent._id, code: 'AI' }, {
+      eventId: scoringEvent._id,
+      code: 'AI',
+      name: 'AI Workflow',
+      description: 'AI-assisted implementation and review scenarios.',
+      type: 'PRELIMINARY_GROUP',
+      maxTeams: 3,
+      status: 'LOCKED'
+    })
+  ])
+
+  const [
+    registrationLead,
+    registrationAcceptedA,
+    registrationAcceptedB,
+    waitingLead,
+    waitlistedLead,
+    rejectedLead,
+    soloParticipant,
+    invitedParticipantUser,
+    checkedInParticipantUser,
+    pendingApprovalUser,
+    rejectedApprovalUser,
+    suspendedUser,
+    scoringLeadA,
+    scoringLeadB,
+    scoringJudgeParticipantUser
+  ] = await Promise.all([
+    seedUser({ email: buildSeedEmail('runtime.registration.lead'), fullName: 'Runtime Registration Leader', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.accepted.a'), fullName: 'Runtime Accepted Member A', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.accepted.b'), fullName: 'Runtime Accepted Member B', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.waiting.lead'), fullName: 'Runtime Waiting Leader', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.waitlist.lead'), fullName: 'Runtime Waitlist Leader', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.rejected.lead'), fullName: 'Runtime Rejected Leader', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.solo'), fullName: 'Runtime Solo Participant', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.invited'), fullName: 'Runtime Invited Participant', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.checkedin'), fullName: 'Runtime Checked In Participant', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.approval.pending'), fullName: 'Runtime Pending Approval', roleIds: [userRole._id], passwordHash: seededPasswordHash, status: 'PENDING' }),
+    seedUser({ email: buildSeedEmail('runtime.approval.rejected'), fullName: 'Runtime Rejected Approval', roleIds: [userRole._id], passwordHash: seededPasswordHash, status: 'REJECTED' }),
+    seedUser({ email: buildSeedEmail('runtime.suspended.user'), fullName: 'Runtime Suspended User', roleIds: [userRole._id], passwordHash: seededPasswordHash, status: 'SUSPENDED' }),
+    seedUser({ email: buildSeedEmail('runtime.scoring.lead.a'), fullName: 'Runtime Scoring Leader A', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.scoring.lead.b'), fullName: 'Runtime Scoring Leader B', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.scoring.judge.participant'), fullName: 'Runtime Judge Participant', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash })
+  ])
+  void [pendingApprovalUser, rejectedApprovalUser, suspendedUser]
+
+  const registrationTimelines = await Promise.all([
+    upsertOne(TimelineEvent, { eventId: registrationEvent._id, title: 'Registration window' }, {
+      eventId: registrationEvent._id,
+      title: 'Registration window',
+      description: 'Current registration window for team creation and invitation flows.',
+      eventType: 'OTHER',
+      status: 'ONGOING',
+      startTime: addTime(now, { days: -7 }),
+      endTime: addTime(now, { days: 14 })
+    }),
+    upsertOne(TimelineEvent, { eventId: registrationEvent._id, title: 'Welcome workshop' }, {
+      eventId: registrationEvent._id,
+      title: 'Welcome workshop',
+      description: 'Kickoff workshop for sandbox participants.',
+      eventType: 'WORKSHOP',
+      status: 'SCHEDULED',
+      startTime: addTime(now, { days: 3, hours: 2 }),
+      endTime: addTime(now, { days: 3, hours: 4 })
+    }),
+    upsertOne(TimelineEvent, { eventId: registrationEvent._id, title: 'Check-in opening' }, {
+      eventId: registrationEvent._id,
+      title: 'Check-in opening',
+      description: 'Check-in station opens for sandbox participants.',
+      eventType: 'CHECK_IN',
+      status: 'SCHEDULED',
+      startTime: addTime(now, { days: 7 }),
+      endTime: addTime(now, { days: 7, hours: 2 })
+    })
+  ])
+
+  await upsertOne(Workshop, { eventId: registrationEvent._id, title: 'Welcome workshop' }, {
+    eventId: registrationEvent._id,
+    timelineEventId: registrationTimelines[1]._id,
+    title: 'Welcome workshop',
+    description: 'Sandbox workshop for testing participant and coordinator workshop screens.',
+    presenterId: mentorUser._id,
+    speakerInfo: {
+      name: mentorUser.fullName,
+      title: 'Sandbox mentor',
+      email: mentorUser.email
+    },
+    meetLink: 'https://meet.google.com/runtime-welcome-workshop',
+    startTime: addTime(now, { days: 3, hours: 2 }),
+    endTime: addTime(now, { days: 3, hours: 4 }),
+    questionnaire: ['What flow are you testing today?', 'Which screen still needs better seed coverage?'],
+    status: 'SCHEDULED'
+  })
+
+  const readyTeam = await upsertOne(Team, { eventId: registrationEvent._id, name: 'Runtime Ready Team' }, {
+    eventId: registrationEvent._id,
+    trackId: registrationTracks[0]._id,
+    leaderId: registrationLead._id,
+    memberIds: [registrationLead._id, registrationAcceptedA._id, registrationAcceptedB._id],
+    name: 'Runtime Ready Team',
+    chapterName: 'SE',
+    projectName: 'Open Registration Portal',
+    trackAssignmentMethod: 'MANUAL',
+    qualificationStatus: 'REGISTERED',
+    status: 'CONFIRMED',
+    confirmedAt: addTime(now, { days: -2 })
+  })
+
+  const waitingTeam = await upsertOne(Team, { eventId: registrationEvent._id, name: 'Runtime Waiting Team' }, {
+    eventId: registrationEvent._id,
+    trackId: registrationTracks[1]._id,
+    leaderId: waitingLead._id,
+    memberIds: [waitingLead._id],
+    name: 'Runtime Waiting Team',
+    chapterName: 'AI',
+    projectName: 'Invitation State Tracker',
+    trackAssignmentMethod: 'MANUAL',
+    qualificationStatus: 'REGISTERED',
+    status: 'WAITING_FOR_MEMBERS'
+  })
+
+  const waitlistedTeam = await upsertOne(Team, { eventId: registrationEvent._id, name: 'Runtime Waitlisted Team' }, {
+    eventId: registrationEvent._id,
+    trackId: registrationTracks[1]._id,
+    leaderId: waitlistedLead._id,
+    memberIds: [waitlistedLead._id],
+    name: 'Runtime Waitlisted Team',
+    chapterName: 'UX',
+    projectName: 'Waitlist Visualizer',
+    trackAssignmentMethod: 'MANUAL',
+    qualificationStatus: 'REGISTERED',
+    status: 'WAITLISTED',
+    waitlistPosition: 2
+  })
+
+  const rejectedTeam = await upsertOne(Team, { eventId: registrationEvent._id, name: 'Runtime Rejected Team' }, {
+    eventId: registrationEvent._id,
+    trackId: registrationTracks[0]._id,
+    leaderId: rejectedLead._id,
+    memberIds: [rejectedLead._id],
+    name: 'Runtime Rejected Team',
+    chapterName: 'QA',
+    projectName: 'Constraint Validator',
+    trackAssignmentMethod: 'MANUAL',
+    qualificationStatus: 'ELIMINATED',
+    status: 'REJECTED',
+    rejectedAt: addTime(now, { days: -1 }),
+    rejectionReason: 'Sandbox rejected team for UI testing.'
+  })
+
+  await Promise.all([
+    upsertOne(Participant, { eventId: registrationEvent._id, userId: registrationLead._id }, {
+      eventId: registrationEvent._id,
+      userId: registrationLead._id,
+      teamId: readyTeam._id,
+      chapterName: 'SE',
+      teamRole: 'LEADER',
+      consentMediaUse: true,
+      eligibilityStatus: 'ELIGIBLE',
+      checkInStatus: 'CHECKED_IN',
+      githubAccessStatus: 'GRANTED',
+      status: 'ACTIVE',
+      joinedAt: addTime(now, { days: -5 })
+    }),
+    upsertOne(Participant, { eventId: registrationEvent._id, userId: registrationAcceptedA._id }, {
+      eventId: registrationEvent._id,
+      userId: registrationAcceptedA._id,
+      teamId: readyTeam._id,
+      chapterName: 'SE',
+      teamRole: 'MEMBER',
+      consentMediaUse: true,
+      eligibilityStatus: 'ELIGIBLE',
+      checkInStatus: 'NOT_CHECKED_IN',
+      githubAccessStatus: 'NOT_GRANTED',
+      status: 'REGISTERED',
+      joinedAt: addTime(now, { days: -4 })
+    }),
+    upsertOne(Participant, { eventId: registrationEvent._id, userId: registrationAcceptedB._id }, {
+      eventId: registrationEvent._id,
+      userId: registrationAcceptedB._id,
+      teamId: readyTeam._id,
+      chapterName: 'SE',
+      teamRole: 'MEMBER',
+      consentMediaUse: true,
+      eligibilityStatus: 'ELIGIBLE',
+      checkInStatus: 'CHECKED_IN',
+      githubAccessStatus: 'GRANTED',
+      status: 'ACTIVE',
+      joinedAt: addTime(now, { days: -3 })
+    }),
+    upsertOne(Participant, { eventId: registrationEvent._id, userId: waitingLead._id }, {
+      eventId: registrationEvent._id,
+      userId: waitingLead._id,
+      teamId: waitingTeam._id,
+      chapterName: 'AI',
+      teamRole: 'LEADER',
+      consentMediaUse: true,
+      eligibilityStatus: 'ELIGIBLE',
+      checkInStatus: 'NOT_CHECKED_IN',
+      githubAccessStatus: 'NOT_GRANTED',
+      status: 'ACTIVE',
+      joinedAt: addTime(now, { days: -2 })
+    }),
+    upsertOne(Participant, { eventId: registrationEvent._id, userId: waitlistedLead._id }, {
+      eventId: registrationEvent._id,
+      userId: waitlistedLead._id,
+      teamId: waitlistedTeam._id,
+      chapterName: 'UX',
+      teamRole: 'LEADER',
+      consentMediaUse: true,
+      eligibilityStatus: 'PENDING',
+      checkInStatus: 'NOT_CHECKED_IN',
+      githubAccessStatus: 'NOT_GRANTED',
+      status: 'REGISTERED',
+      joinedAt: addTime(now, { days: -1 })
+    }),
+    upsertOne(Participant, { eventId: registrationEvent._id, userId: rejectedLead._id }, {
+      eventId: registrationEvent._id,
+      userId: rejectedLead._id,
+      teamId: rejectedTeam._id,
+      chapterName: 'QA',
+      teamRole: 'LEADER',
+      consentMediaUse: true,
+      eligibilityStatus: 'INELIGIBLE',
+      checkInStatus: 'NOT_CHECKED_IN',
+      githubAccessStatus: 'REVOKED',
+      status: 'WITHDRAWN',
+      joinedAt: addTime(now, { days: -1 })
+    }),
+    upsertOne(Participant, { eventId: registrationEvent._id, userId: soloParticipant._id }, {
+      eventId: registrationEvent._id,
+      userId: soloParticipant._id,
+      chapterName: 'SE',
+      teamRole: 'MEMBER',
+      consentMediaUse: true,
+      eligibilityStatus: 'ELIGIBLE',
+      checkInStatus: 'NOT_CHECKED_IN',
+      githubAccessStatus: 'NOT_GRANTED',
+      status: 'REGISTERED',
+      joinedAt: addTime(now, { hours: -12 })
+    }),
+    upsertOne(Participant, { eventId: registrationEvent._id, userId: invitedParticipantUser._id }, {
+      eventId: registrationEvent._id,
+      userId: invitedParticipantUser._id,
+      chapterName: 'AI',
+      consentMediaUse: false,
+      eligibilityStatus: 'PENDING',
+      checkInStatus: 'NOT_CHECKED_IN',
+      githubAccessStatus: 'NOT_GRANTED',
+      status: 'INVITED'
+    }),
+    upsertOne(Participant, { eventId: registrationEvent._id, userId: checkedInParticipantUser._id }, {
+      eventId: registrationEvent._id,
+      userId: checkedInParticipantUser._id,
+      chapterName: 'Cloud',
+      consentMediaUse: true,
+      eligibilityStatus: 'ELIGIBLE',
+      checkInStatus: 'CHECKED_IN',
+      githubAccessStatus: 'NOT_GRANTED',
+      status: 'ACTIVE',
+      joinedAt: addTime(now, { days: -1 })
+    })
+  ])
+
+  await Promise.all([
+    upsertOne(TeamInvitation, { teamId: readyTeam._id, invitedEmail: registrationAcceptedA.email }, buildSeedInvitation({
+      token: 'seed-runtime-ready-a',
+      eventId: registrationEvent._id,
+      teamId: readyTeam._id,
+      leaderId: registrationLead._id,
+      invitedEmail: registrationAcceptedA.email,
+      invitedUserId: registrationAcceptedA._id,
+      expiresAt: addTime(now, { days: 3 }),
+      status: 'ACCEPTED',
+      acceptedAt: addTime(now, { days: -4 })
+    })),
+    upsertOne(TeamInvitation, { teamId: readyTeam._id, invitedEmail: registrationAcceptedB.email }, buildSeedInvitation({
+      token: 'seed-runtime-ready-b',
+      eventId: registrationEvent._id,
+      teamId: readyTeam._id,
+      leaderId: registrationLead._id,
+      invitedEmail: registrationAcceptedB.email,
+      invitedUserId: registrationAcceptedB._id,
+      expiresAt: addTime(now, { days: 3 }),
+      status: 'ACCEPTED',
+      acceptedAt: addTime(now, { days: -3 })
+    })),
+    upsertOne(TeamInvitation, { teamId: waitingTeam._id, invitedEmail: buildSeedEmail('runtime.registration.pending.invite') }, buildSeedInvitation({
+      token: 'seed-runtime-waiting-pending',
+      eventId: registrationEvent._id,
+      teamId: waitingTeam._id,
+      leaderId: waitingLead._id,
+      invitedEmail: buildSeedEmail('runtime.registration.pending.invite'),
+      expiresAt: addTime(now, { days: 4 }),
+      status: 'PENDING'
+    })),
+    upsertOne(TeamInvitation, { teamId: waitingTeam._id, invitedEmail: buildSeedEmail('runtime.registration.declined.invite') }, buildSeedInvitation({
+      token: 'seed-runtime-waiting-declined',
+      eventId: registrationEvent._id,
+      teamId: waitingTeam._id,
+      leaderId: waitingLead._id,
+      invitedEmail: buildSeedEmail('runtime.registration.declined.invite'),
+      expiresAt: addTime(now, { days: 1 }),
+      status: 'DECLINED',
+      declinedAt: addTime(now, { days: -1 })
+    })),
+    upsertOne(TeamInvitation, { teamId: waitingTeam._id, invitedEmail: buildSeedEmail('runtime.registration.cancelled.invite') }, buildSeedInvitation({
+      token: 'seed-runtime-waiting-cancelled',
+      eventId: registrationEvent._id,
+      teamId: waitingTeam._id,
+      leaderId: waitingLead._id,
+      invitedEmail: buildSeedEmail('runtime.registration.cancelled.invite'),
+      expiresAt: addTime(now, { days: 2 }),
+      status: 'CANCELLED',
+      cancelledAt: addTime(now, { hours: -6 })
+    }))
+  ])
+
+  const registrationPendingMedia = await upsertOne(Media, { storagePath: `events/${registrationEvent._id}/users/${registrationLead._id}/runtime-pending-ui.png` }, {
+    eventId: registrationEvent._id,
+    uploadedBy: registrationLead._id,
+    teamId: readyTeam._id,
+    title: 'Pending UI capture',
+    description: 'Pending media moderation scenario for admin media screen.',
+    mediaType: 'IMAGE',
+    storageProvider: 'SUPABASE',
+    bucketName: 'event-media',
+    storagePath: `events/${registrationEvent._id}/users/${registrationLead._id}/runtime-pending-ui.png`,
+    fileUrl: `https://example.supabase.co/storage/v1/object/event-media/events/${registrationEvent._id}/users/${registrationLead._id}/runtime-pending-ui.png`,
+    originalFileName: 'runtime-pending-ui.png',
+    mimeType: 'image/png',
+    fileSize: 2048,
+    fileExtension: 'png',
+    tags: ['runtime', 'pending', 'ui'],
+    status: 'PENDING',
+    uploadedAt: addTime(now, { hours: -4 })
+  })
+
+  const registrationRejectedMedia = await upsertOne(Media, { storagePath: `events/${registrationEvent._id}/users/${waitingLead._id}/runtime-rejected-spec.pdf` }, {
+    eventId: registrationEvent._id,
+    uploadedBy: waitingLead._id,
+    teamId: waitingTeam._id,
+    title: 'Rejected specification',
+    description: 'Rejected media moderation scenario.',
+    mediaType: 'DOCUMENT',
+    storageProvider: 'SUPABASE',
+    bucketName: 'event-media',
+    storagePath: `events/${registrationEvent._id}/users/${waitingLead._id}/runtime-rejected-spec.pdf`,
+    fileUrl: `https://example.supabase.co/storage/v1/object/event-media/events/${registrationEvent._id}/users/${waitingLead._id}/runtime-rejected-spec.pdf`,
+    originalFileName: 'runtime-rejected-spec.pdf',
+    mimeType: 'application/pdf',
+    fileSize: 4096,
+    fileExtension: 'pdf',
+    tags: ['runtime', 'rejected'],
+    status: 'REJECTED',
+    reviewedBy: coordinatorUser._id,
+    reviewedAt: addTime(now, { hours: -1 }),
+    rejectReason: 'Seeded rejected document for moderation testing.',
+    uploadedAt: addTime(now, { hours: -5 })
+  })
+
+  await Promise.all([
+    upsertOne(MediaActivity, { mediaId: registrationPendingMedia._id, action: 'UPLOAD' }, {
+      mediaId: registrationPendingMedia._id,
+      eventId: registrationEvent._id,
+      userId: registrationLead._id,
+      action: 'UPLOAD',
+      metadata: { seeded: true, scenario: 'runtime-pending-media' },
+      createdAt: addTime(now, { hours: -4 })
+    }),
+    upsertOne(MediaActivity, { mediaId: registrationRejectedMedia._id, action: 'REJECT' }, {
+      mediaId: registrationRejectedMedia._id,
+      eventId: registrationEvent._id,
+      userId: coordinatorUser._id,
+      action: 'REJECT',
+      metadata: { seeded: true, reason: 'Seeded rejected document for moderation testing.' },
+      createdAt: addTime(now, { hours: -1 })
+    })
+  ])
+
+  const scoringRubricDraft = await upsertOne(Rubric, { eventId: scoringEvent._id, title: 'Runtime Draft Rubric' }, {
+    eventId: scoringEvent._id,
+    title: 'Runtime Draft Rubric',
+    description: 'Draft rubric used to test rubric lifecycle states.',
+    totalScore: 100,
+    status: 'DRAFT',
+    createdBy: coordinatorUser._id
+  })
+
+  const scoringRubricActive = await upsertOne(Rubric, { eventId: scoringEvent._id, title: 'Runtime Active Rubric' }, {
+    eventId: scoringEvent._id,
+    title: 'Runtime Active Rubric',
+    description: 'Active rubric used for sandbox judging.',
+    totalScore: 100,
+    status: 'ACTIVE',
+    createdBy: coordinatorUser._id
+  })
+
+  const scoringCriteria = await Promise.all([
+    ['Product readiness', 30],
+    ['Technical depth', 25],
+    ['AI usage quality', 25],
+    ['Presentation clarity', 20]
+  ].map(([name, maxScore]) => upsertOne(Criterion, { rubricId: scoringRubricActive._id, name }, {
+    rubricId: scoringRubricActive._id,
+    name,
+    description: `${name} criterion for runtime sandbox scoring.`,
+    maxScore,
+    weight: 1
+  })))
+  void scoringRubricDraft
+
+  const scoringTeamA = await upsertOne(Team, { eventId: scoringEvent._id, name: 'Runtime Scoring Team A' }, {
+    eventId: scoringEvent._id,
+    trackId: scoringTracks[0]._id,
+    leaderId: scoringLeadA._id,
+    memberIds: [scoringLeadA._id],
+    name: 'Runtime Scoring Team A',
+    chapterName: 'SE',
+    projectName: 'Board Scope Viewer',
+    trackAssignmentMethod: 'MANUAL',
+    qualificationStatus: 'PRELIMINARY',
+    status: 'ACTIVE',
+    confirmedAt: addTime(now, { days: -8 })
+  })
+
+  const scoringTeamB = await upsertOne(Team, { eventId: scoringEvent._id, name: 'Runtime Scoring Team B' }, {
+    eventId: scoringEvent._id,
+    trackId: scoringTracks[1]._id,
+    leaderId: scoringLeadB._id,
+    memberIds: [scoringLeadB._id, scoringJudgeParticipantUser._id],
+    name: 'Runtime Scoring Team B',
+    chapterName: 'AI',
+    projectName: 'Submission Review Console',
+    trackAssignmentMethod: 'MANUAL',
+    qualificationStatus: 'PRELIMINARY',
+    status: 'ACTIVE',
+    confirmedAt: addTime(now, { days: -8 })
+  })
+
+  await Promise.all([
+    upsertOne(Participant, { eventId: scoringEvent._id, userId: scoringLeadA._id }, {
+      eventId: scoringEvent._id,
+      userId: scoringLeadA._id,
+      teamId: scoringTeamA._id,
+      chapterName: 'SE',
+      teamRole: 'LEADER',
+      consentMediaUse: true,
+      eligibilityStatus: 'ELIGIBLE',
+      checkInStatus: 'CHECKED_IN',
+      githubAccessStatus: 'GRANTED',
+      status: 'ACTIVE',
+      joinedAt: addTime(now, { days: -10 })
+    }),
+    upsertOne(Participant, { eventId: scoringEvent._id, userId: scoringLeadB._id }, {
+      eventId: scoringEvent._id,
+      userId: scoringLeadB._id,
+      teamId: scoringTeamB._id,
+      chapterName: 'AI',
+      teamRole: 'LEADER',
+      consentMediaUse: true,
+      eligibilityStatus: 'ELIGIBLE',
+      checkInStatus: 'CHECKED_IN',
+      githubAccessStatus: 'NOT_GRANTED',
+      status: 'ACTIVE',
+      joinedAt: addTime(now, { days: -10 })
+    }),
+    upsertOne(Participant, { eventId: scoringEvent._id, userId: scoringJudgeParticipantUser._id }, {
+      eventId: scoringEvent._id,
+      userId: scoringJudgeParticipantUser._id,
+      teamId: scoringTeamB._id,
+      chapterName: 'AI',
+      teamRole: 'MEMBER',
+      consentMediaUse: true,
+      eligibilityStatus: 'ELIGIBLE',
+      checkInStatus: 'NOT_CHECKED_IN',
+      githubAccessStatus: 'REVOKED',
+      status: 'REGISTERED',
+      joinedAt: addTime(now, { days: -9 })
+    })
+  ])
+
+  const scoringTimelines = await Promise.all([
+    upsertOne(TimelineEvent, { eventId: scoringEvent._id, title: 'Coding window' }, {
+      eventId: scoringEvent._id,
+      title: 'Coding window',
+      description: 'Ongoing implementation window.',
+      eventType: 'OTHER',
+      status: 'ONGOING',
+      startTime: addTime(now, { hours: -6 }),
+      endTime: addTime(now, { hours: 8 })
+    }),
+    upsertOne(TimelineEvent, { eventId: scoringEvent._id, title: 'Scoring review' }, {
+      eventId: scoringEvent._id,
+      title: 'Scoring review',
+      description: 'Judges submit and lock score sheets.',
+      eventType: 'ROUND',
+      status: 'SCHEDULED',
+      startTime: addTime(now, { hours: 1 }),
+      endTime: addTime(now, { hours: 12 })
+    })
+  ])
+  void scoringTimelines
+
+  const workshopLive = await upsertOne(Workshop, { eventId: scoringEvent._id, title: 'Live mentoring desk' }, {
+    eventId: scoringEvent._id,
+    title: 'Live mentoring desk',
+    description: 'Ongoing mentor office hours for sandbox participants.',
+    presenterId: mentorUser._id,
+    speakerInfo: {
+      name: mentorUser.fullName,
+      title: 'Live mentor',
+      email: mentorUser.email
+    },
+    meetLink: 'https://meet.google.com/runtime-live-mentor',
+    startTime: addTime(now, { hours: -1 }),
+    endTime: addTime(now, { hours: 2 }),
+    questionnaire: ['What repository signal should judges trust most?'],
+    status: 'LIVE'
+  })
+  void workshopLive
+
+  const draftRound = await upsertOne(Round, { eventId: scoringEvent._id, name: 'Runtime Qualification' }, {
+    eventId: scoringEvent._id,
+    trackId: scoringTracks[0]._id,
+    name: 'Runtime Qualification',
+    roundType: 'PRELIMINARY',
+    assignedTeamIds: [scoringTeamA._id, scoringTeamB._id],
+    assignedJudgeIds: [judgeUserA._id],
+    rubricId: scoringRubricActive._id,
+    submissionDeadline: addTime(now, { hours: 2 }),
+    startTime: addTime(now, { hours: -1 }),
+    endTime: addTime(now, { hours: 5 }),
+    status: 'OPEN'
+  })
+
+  const scoringRound = await upsertOne(Round, { eventId: scoringEvent._id, name: 'Runtime Final Scoring' }, {
+    eventId: scoringEvent._id,
+    trackId: scoringTracks[1]._id,
+    name: 'Runtime Final Scoring',
+    roundType: 'FINAL',
+    assignedTeamIds: [scoringTeamA._id, scoringTeamB._id],
+    promotedTeamIds: [scoringTeamA._id, scoringTeamB._id],
+    assignedJudgeIds: [judgeUserA._id, judgeUserB._id],
+    rubricId: scoringRubricActive._id,
+    submissionDeadline: addTime(now, { hours: -2 }),
+    startTime: addTime(now, { hours: -3 }),
+    endTime: addTime(now, { hours: 6 }),
+    publishTime: addTime(now, { hours: 7 }),
+    status: 'SCORING'
+  })
+
+  const draftBoard = await upsertOne(JudgingBoard, { eventId: scoringEvent._id, roundId: draftRound._id, boardNumber: 1 }, {
+    eventId: scoringEvent._id,
+    roundId: draftRound._id,
+    trackId: scoringTracks[0]._id,
+    name: 'Runtime Qualification Board',
+    boardNumber: 1,
+    teamIds: [scoringTeamA._id, scoringTeamB._id],
+    judgeIds: [judgeUserA._id],
+    maxTeams: 4,
+    status: 'ASSIGNED'
+  })
+
+  const scoringBoard = await upsertOne(JudgingBoard, { eventId: scoringEvent._id, roundId: scoringRound._id, boardNumber: 1 }, {
+    eventId: scoringEvent._id,
+    roundId: scoringRound._id,
+    trackId: scoringTracks[1]._id,
+    name: 'Runtime Final Board',
+    boardNumber: 1,
+    teamIds: [scoringTeamA._id, scoringTeamB._id],
+    judgeIds: [judgeUserA._id, judgeUserB._id],
+    maxTeams: 4,
+    status: 'SCORING'
+  })
+  void draftBoard
+
+  const repositories = await Promise.all([
+    upsertOne(Repository, { teamId: scoringTeamA._id }, {
+      eventId: scoringEvent._id,
+      roundId: scoringRound._id,
+      teamId: scoringTeamA._id,
+      githubOwner: 'seal-runtime-sandbox',
+      githubRepo: 'runtime-scoring-team-a',
+      repositoryFullName: 'seal-runtime-sandbox/runtime-scoring-team-a',
+      repositoryUrl: 'https://github.com/seal-runtime-sandbox/runtime-scoring-team-a',
+      repoUrl: 'https://github.com/seal-runtime-sandbox/runtime-scoring-team-a',
+      contributors: [scoringLeadA._id],
+      defaultBranch: 'main',
+      latestCommitSha: 'runtimea1234567890',
+      lastProcessedCommitSha: 'runtimea1234567890',
+      status: 'ACTIVE',
+      accessState: 'GRANTED',
+      submissionStatus: 'SUBMITTED',
+      webhookStatus: 'REGISTERED',
+      webhookRegisteredAt: addTime(now, { hours: -2 }),
+      accessGrantedAt: addTime(now, { days: -5 }),
+      lastSyncAt: addTime(now, { hours: -1 })
+    }),
+    upsertOne(Repository, { teamId: scoringTeamB._id }, {
+      eventId: scoringEvent._id,
+      roundId: scoringRound._id,
+      teamId: scoringTeamB._id,
+      githubOwner: 'seal-runtime-sandbox',
+      githubRepo: 'runtime-scoring-team-b',
+      repositoryFullName: 'seal-runtime-sandbox/runtime-scoring-team-b',
+      repositoryUrl: 'https://github.com/seal-runtime-sandbox/runtime-scoring-team-b',
+      repoUrl: 'https://github.com/seal-runtime-sandbox/runtime-scoring-team-b',
+      contributors: [scoringLeadB._id, scoringJudgeParticipantUser._id],
+      defaultBranch: 'main',
+      latestCommitSha: 'runtimeb0987654321',
+      lastProcessedCommitSha: 'runtimeb0000000000',
+      status: 'DISCONNECTED',
+      accessState: 'REVOKED',
+      submissionStatus: 'NOT_SUBMITTED',
+      webhookStatus: 'FAILED',
+      lastWebhookRegistrationError: 'Seeded webhook failure for runtime testing.',
+      accessRevokedAt: addTime(now, { hours: -8 }),
+      lastSyncAt: addTime(now, { hours: -9 })
+    })
+  ])
+
+  const [repositoryA, repositoryB] = repositories
+  const commitA = await upsertOne(Commit, { commitSha: 'runtimea1234567890' }, {
+    repositoryId: repositoryA._id,
+    commitSha: 'runtimea1234567890',
+    authorName: scoringLeadA.fullName,
+    authorEmail: scoringLeadA.email,
+    timestamp: addTime(now, { hours: -2 }),
+    message: 'Seeded scoring sandbox commit',
+    linesAdded: 180,
+    linesRemoved: 24,
+    filesChanged: 8
+  })
+
+  const commitB = await upsertOne(Commit, { commitSha: 'runtimeb0987654321' }, {
+    repositoryId: repositoryB._id,
+    commitSha: 'runtimeb0987654321',
+    authorName: scoringLeadB.fullName,
+    authorEmail: scoringLeadB.email,
+    timestamp: addTime(now, { hours: -8 }),
+    message: 'Repository with failing webhook state',
+    linesAdded: 42,
+    linesRemoved: 17,
+    filesChanged: 3
+  })
+
+  const diffA = await upsertOne(CommitDiff, { repositoryId: repositoryA._id, headCommitSha: commitA.commitSha }, {
+    repositoryId: repositoryA._id,
+    commitId: commitA._id,
+    baseCommitSha: 'runtimea0000000000',
+    headCommitSha: commitA.commitSha,
+    provider: 'GITHUB',
+    status: 'READY',
+    diffHash: 'runtime-diff-a',
+    diffText: 'Seeded runtime diff for repository detail testing.',
+    files: [
+      {
+        filePath: 'src/widgets/coordinator/judging/ui/JudgingView.tsx',
+        status: 'modified',
+        additions: 40,
+        deletions: 10,
+        patch: '@@ runtime diff @@'
+      }
+    ],
+    fetchedAt: addTime(now, { hours: -2 })
+  })
+
+  await Promise.all([
+    upsertOne(StaticAnalysisResult, { repositoryId: repositoryA._id, commitSha: commitA.commitSha, source: 'SECRET_SCAN' }, {
+      repositoryId: repositoryA._id,
+      commitSha: commitA.commitSha,
+      source: 'SECRET_SCAN',
+      status: 'COMPLETED',
+      errorCount: 0,
+      warningCount: 1,
+      findings: [
+        {
+          type: 'SECRET',
+          severity: 'LOW',
+          filePath: 'src/config.ts',
+          title: 'Potential token placeholder',
+          message: 'Token-like string found in seeded repository.',
+          evidence: ['const token = "placeholder"']
+        }
+      ]
+    }),
+    upsertOne(ImpactDecision, { repositoryId: repositoryA._id, commitSha: commitA.commitSha }, {
+      repositoryId: repositoryA._id,
+      commitSha: commitA.commitSha,
+      impactScore: 82,
+      impactLevel: 'HIGH',
+      decision: 'CALL_PER_PUSH_AUDIT',
+      reasons: ['Touches judging flow code', 'Updates route-level composition'],
+      needsHumanReview: true
+    }),
+    upsertOne(ChangedCodeContext, { repositoryId: repositoryA._id, commitSha: commitA.commitSha, filePath: 'src/widgets/coordinator/judging/ui/JudgingView.tsx', symbolName: 'JudgingView' }, {
+      repositoryId: repositoryA._id,
+      commitSha: commitA.commitSha,
+      filePath: 'src/widgets/coordinator/judging/ui/JudgingView.tsx',
+      symbolName: 'JudgingView',
+      symbolType: 'MODULE_SYMBOL',
+      startLine: 1,
+      endLine: 120,
+      contextSnippet: 'Seeded component context for repository evidence testing.',
+      confidence: 'HIGH'
+    })
+  ])
+
+  const reviewA = await upsertOne(AiReview, { repositoryId: repositoryA._id, commitSha: commitA.commitSha, reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT' }, {
+    eventId: scoringEvent._id,
+    teamId: scoringTeamA._id,
+    roundId: scoringRound._id,
+    repositoryId: repositoryA._id,
+    commitId: commitA._id,
+    commitDiffId: diffA._id,
+    reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
+    provider: 'SeededAI',
+    model: 'sandbox-evaluator',
+    modelName: 'sandbox-evaluator',
+    commitSha: commitA.commitSha,
+    status: 'COMPLETED',
+    summary: 'Repository A has complete seeded evidence for coordinator and judge review screens.',
+    needsHumanReview: true,
+    requestedBy: coordinatorUser._id,
+    requestedAt: addTime(now, { hours: -2 }),
+    completedAt: addTime(now, { hours: -1 })
+  })
+
+  await upsertOne(TechnicalFinding, { aiReviewId: reviewA._id, title: 'Judging workflow needs manual smoke test' }, {
+    aiReviewId: reviewA._id,
+    type: 'RELIABILITY',
+    severity: 'MEDIUM',
+    title: 'Judging workflow needs manual smoke test',
+    evidence: ['Large composition file was recently split into local sections.'],
+    comment: 'Seeded technical finding for repository detail dialog.',
+    recommendedAction: 'Verify board loading and scoring submission once after every major refactor.'
+  })
+
+  const submissions = await Promise.all([
+    upsertOne(Submission, { roundId: scoringRound._id, teamId: scoringTeamA._id }, {
+      eventId: scoringEvent._id,
+      roundId: scoringRound._id,
+      teamId: scoringTeamA._id,
+      repositoryId: repositoryA._id,
+      demoUrl: 'https://example.com/runtime-scoring-a/demo',
+      reportUrl: 'https://example.com/runtime-scoring-a/report',
+      presentationUrl: 'https://example.com/runtime-scoring-a/slides',
+      submittedAt: addTime(now, { hours: -2 }),
+      status: 'ACCEPTED'
+    }),
+    upsertOne(Submission, { roundId: scoringRound._id, teamId: scoringTeamB._id }, {
+      eventId: scoringEvent._id,
+      roundId: scoringRound._id,
+      teamId: scoringTeamB._id,
+      repositoryId: repositoryB._id,
+      demoUrl: 'https://example.com/runtime-scoring-b/demo',
+      reportUrl: 'https://example.com/runtime-scoring-b/report',
+      presentationUrl: 'https://example.com/runtime-scoring-b/slides',
+      status: 'DRAFT'
+    })
+  ])
+
+  const [submissionA, submissionB] = submissions
+  void submissionB
+
+  const submittedSheet = await upsertOne(ScoreSheet, { roundId: scoringRound._id, teamId: scoringTeamA._id, judgeId: judgeUserA._id }, {
+    eventId: scoringEvent._id,
+    roundId: scoringRound._id,
+    boardId: scoringBoard._id,
+    teamId: scoringTeamA._id,
+    submissionId: submissionA._id,
+    judgeId: judgeUserA._id,
+    rubricId: scoringRubricActive._id,
+    totalScore: 88,
+    weightedScore: 88,
+    finalScore: 88,
+    generalComment: 'Submitted seeded score sheet.',
+    status: 'SUBMITTED',
+    submittedAt: addTime(now, { hours: -1 })
+  })
+
+  const lockedSheet = await upsertOne(ScoreSheet, { roundId: scoringRound._id, teamId: scoringTeamA._id, judgeId: judgeUserB._id }, {
+    eventId: scoringEvent._id,
+    roundId: scoringRound._id,
+    boardId: scoringBoard._id,
+    teamId: scoringTeamA._id,
+    submissionId: submissionA._id,
+    judgeId: judgeUserB._id,
+    rubricId: scoringRubricActive._id,
+    totalScore: 91,
+    weightedScore: 91,
+    finalScore: 91,
+    generalComment: 'Locked seeded score sheet.',
+    status: 'LOCKED',
+    submittedAt: addTime(now, { hours: -1 }),
+    lockedAt: addTime(now, { minutes: -30 })
+  })
+
+  const draftSheet = await upsertOne(ScoreSheet, { roundId: scoringRound._id, teamId: scoringTeamB._id, judgeId: judgeUserA._id }, {
+    eventId: scoringEvent._id,
+    roundId: scoringRound._id,
+    boardId: scoringBoard._id,
+    teamId: scoringTeamB._id,
+    submissionId: submissionB._id,
+    judgeId: judgeUserA._id,
+    rubricId: scoringRubricActive._id,
+    totalScore: 0,
+    weightedScore: 0,
+    finalScore: 0,
+    generalComment: 'Draft seeded score sheet.',
+    status: 'DRAFT'
+  })
+  void draftSheet
+
+  const scoreLines = await Promise.all(scoringCriteria.map((criterion, index) => {
+    const scores = [24, 22, 23, 19]
+    return upsertOne(Score, { submissionId: submissionA._id, judgeId: judgeUserA._id, criterionId: criterion._id }, {
+      submissionId: submissionA._id,
+      scoreSheetId: submittedSheet._id,
+      judgeId: judgeUserA._id,
+      criterionId: criterion._id,
+      scoreValue: scores[index],
+      comment: 'Seeded scoring criterion'
+    })
+  }))
+
+  await upsertOne(ScoreSheet, { _id: submittedSheet._id }, {
+    scoreIds: scoreLines.map((score) => score._id)
+  })
+  await upsertOne(ScoreSheet, { _id: lockedSheet._id }, {
+    scoreIds: scoreLines.map((score) => score._id)
+  })
+
+  await Promise.all([
+    upsertOne(SystemConfiguration, { key: `github.event.${registrationEvent._id}.organization` }, {
+      key: `github.event.${registrationEvent._id}.organization`,
+      value: {
+        eventId: registrationEvent._id.toString(),
+        organizationName: 'seal-runtime-sandbox',
+        ownerUsername: 'runtime-owner',
+        enabled: false
+      },
+      isEncrypted: false,
+      updatedBy: adminUser._id
+    }),
+    upsertOne(SystemConfiguration, { key: `github.event.${scoringEvent._id}.organization` }, {
+      key: `github.event.${scoringEvent._id}.organization`,
+      value: {
+        eventId: scoringEvent._id.toString(),
+        organizationName: 'seal-runtime-sandbox',
+        ownerUsername: 'runtime-owner',
+        enabled: false
+      },
+      isEncrypted: false,
+      updatedBy: adminUser._id
+    }),
+    upsertOne(GitHubWebhookEvent, { deliveryId: `seed-runtime-${repositoryA._id}` }, {
+      deliveryId: `seed-runtime-${repositoryA._id}`,
+      eventType: 'push',
+      repositoryFullName: repositoryA.repositoryFullName,
+      repositoryId: repositoryA._id,
+      teamId: scoringTeamA._id,
+      branch: 'main',
+      beforeCommitSha: 'runtimea0000000000',
+      afterCommitSha: commitA.commitSha,
+      payload: { seeded: true },
+      signatureValid: true,
+      status: 'PROCESSED',
+      receivedAt: addTime(now, { hours: -2 }),
+      processedAt: addTime(now, { hours: -2, minutes: 5 })
+    }),
+    upsertOne(GitHubWebhookEvent, { deliveryId: `seed-runtime-failed-${repositoryB._id}` }, {
+      deliveryId: `seed-runtime-failed-${repositoryB._id}`,
+      eventType: 'push',
+      repositoryFullName: repositoryB.repositoryFullName,
+      repositoryId: repositoryB._id,
+      teamId: scoringTeamB._id,
+      branch: 'main',
+      beforeCommitSha: 'runtimeb0000000000',
+      afterCommitSha: commitB.commitSha,
+      payload: { seeded: true },
+      signatureValid: true,
+      status: 'FAILED',
+      errorMessage: 'Seeded worker failure for operations dashboard coverage.',
+      receivedAt: addTime(now, { hours: -8 }),
+      processedAt: addTime(now, { hours: -8, minutes: 4 })
+    }),
+    upsertOne(Notification, { userId: registrationLead._id, title: 'Runtime sandbox invitation state changed' }, {
+      userId: registrationLead._id,
+      title: 'Runtime sandbox invitation state changed',
+      message: 'A seeded invitation was declined so you can test replacement and cancellation UI.',
+      type: 'SYSTEM',
+      status: 'UNREAD',
+      metadata: { eventId: registrationEvent._id, teamId: waitingTeam._id }
+    }),
+    upsertOne(Notification, { userId: judgeUserA._id, title: 'Runtime scoring round is active' }, {
+      userId: judgeUserA._id,
+      title: 'Runtime scoring round is active',
+      message: 'Seeded scoring round is ready for judge UI testing.',
+      type: 'SYSTEM',
+      status: 'UNREAD',
+      metadata: { eventId: scoringEvent._id, roundId: scoringRound._id, boardId: scoringBoard._id }
+    }),
+    upsertOne(AuditLog, { action: 'SEED_RUNTIME_SCENARIOS', resourceType: 'Event', resourceId: registrationEvent._id }, {
+      userId: adminUser._id,
+      action: 'SEED_RUNTIME_SCENARIOS',
+      resourceType: 'Event',
+      resourceId: registrationEvent._id,
+      metadata: {
+        registrationEventId: registrationEvent._id,
+        scoringEventId: scoringEvent._id,
+        note: 'Seeded runtime sandbox coverage for FE and BE flow testing.'
+      }
+    })
+  ])
 }
 
 const seedSampleData = async () => {
@@ -279,8 +1406,9 @@ const seedSampleData = async () => {
     maxTeams: 30,
     minTeamMembers: 3,
     maxTeamMembers: 5,
-    finalistSlotsPerTrack: 5,
-    totalFinalistSlots: 10,
+    competitionConfig: FALL_2025_SAMPLE_CONFIG,
+    finalistSlotsPerTrack: FALL_2025_SAMPLE_CONFIG.finalistsPerBoard,
+    totalFinalistSlots: FALL_2025_SAMPLE_CONFIG.finalistCount,
     status: 'COMPLETED',
     createdBy: coordinatorUser._id
   })
@@ -346,6 +1474,14 @@ const seedSampleData = async () => {
     maxTeams: 20,
     status: 'LOCKED'
   })
+
+  await Promise.all(FALL_2025_TRACK_SEEDS.map((trackSeed) => {
+    return upsertOne(Track, { eventId: event._id, code: trackSeed.code }, {
+      eventId: event._id,
+      ...trackSeed,
+      status: 'LOCKED'
+    })
+  }))
 
   const teamDefinitions = [
     ['Agent Pioneers', 'SE', trackA, 'Requirements Copilot', 92, 1, true],
@@ -487,7 +1623,7 @@ const seedSampleData = async () => {
     roundType: 'PRELIMINARY',
     assignedTeamIds: trackATeams,
     promotedTeamIds: finalistRecords.filter(({ track }) => track._id.equals(trackA._id)).map(({ team }) => team._id),
-    maxPromotedTeams: 5,
+    maxPromotedTeams: FALL_2025_SAMPLE_CONFIG.finalistsPerBoard,
     startTime: buildDate('2025-11-02T06:00:00+07:00'),
     endTime: buildDate('2025-11-02T17:00:00+07:00'),
     submissionDeadline: buildDate('2025-11-02T14:00:00+07:00'),
@@ -505,7 +1641,7 @@ const seedSampleData = async () => {
     roundType: 'PRELIMINARY',
     assignedTeamIds: trackBTeams,
     promotedTeamIds: finalistRecords.filter(({ track }) => track._id.equals(trackB._id)).map(({ team }) => team._id),
-    maxPromotedTeams: 5,
+    maxPromotedTeams: FALL_2025_SAMPLE_CONFIG.finalistsPerBoard,
     startTime: buildDate('2025-11-02T06:00:00+07:00'),
     endTime: buildDate('2025-11-02T17:00:00+07:00'),
     submissionDeadline: buildDate('2025-11-02T14:00:00+07:00'),
@@ -639,11 +1775,13 @@ const seedSampleData = async () => {
       repositoryId: repository._id,
       commitId: commit._id,
       commitDiffId: commitDiff._id,
+      reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
       provider: 'SampleAI',
       model: 'fall-2025-evaluator',
       status: 'COMPLETED',
-      summary: 'Seeded AI review result for hackathon repository.',
-      score: record.preliminaryScore,
+      summary: 'Seeded AI technical audit result for hackathon repository.',
+      isScoreBased: false,
+      isFinalDecision: false,
       requestedBy: coordinatorUser._id,
       requestedAt: buildDate('2025-11-02T14:30:00+07:00'),
       completedAt: buildDate('2025-11-02T14:35:00+07:00')
@@ -651,8 +1789,6 @@ const seedSampleData = async () => {
     aiReviewByTeamId.set(record.team._id.toString(), aiReview)
 
     const preliminaryAiCriteria = await Promise.all(preliminaryCriteria.map((criterion, order) => {
-      const aiSuggestedScore = Math.min(criterion.maxScore, Math.round(record.preliminaryScore * (criterion.maxScore / preliminaryRubric.totalScore)))
-
       return upsertOne(AiReviewCriterion, { aiReviewId: aiReview._id, code: `PRELIMINARY_${order + 1}` }, {
         aiReviewId: aiReview._id,
         criterionId: criterion._id,
@@ -660,15 +1796,18 @@ const seedSampleData = async () => {
         name: criterion.name,
         description: criterion.description,
         maxScore: criterion.maxScore,
-        score: aiSuggestedScore,
         weight: criterion.weight,
+        qualitativeLevel: toQualitativeLevel(record.preliminaryScore, preliminaryRubric.totalScore),
         feedback: 'Seeded AI criterion feedback aligned with the preliminary rubric.',
-        suggestions: ['Judges should review AI suggestions before submitting final scores.'],
+        strengths: ['Highlights technical areas worth discussing with judges.'],
+        weaknesses: ['This seeded data is qualitative only and does not influence official judging.'],
+        suggestions: ['Judges should review AI findings as advisory context before finalizing official scores.'],
         evidence: [`Commit diff cache ${commitDiff.diffHash}`],
+        risks: ['AI review is advisory and must not replace judge-entered scores.'],
         order: order + 1
       })
     }))
-    const preliminaryAiCriterionByCriterionId = new Map(preliminaryAiCriteria.map((aiCriterion) => [aiCriterion.criterionId.toString(), aiCriterion]))
+    void preliminaryAiCriteria
 
     const preliminaryScoreSheet = await upsertOne(ScoreSheet, { roundId: round._id, teamId: record.team._id, judgeId }, {
       eventId: event._id,
@@ -688,19 +1827,15 @@ const seedSampleData = async () => {
 
     const preliminaryScoreLines = await Promise.all(preliminaryCriteria.map((criterion) => {
       const scoreValue = Math.min(criterion.maxScore, Math.round(record.preliminaryScore * (criterion.maxScore / preliminaryRubric.totalScore)))
-      const aiReviewCriterion = preliminaryAiCriterionByCriterionId.get(criterion._id.toString())
-      const isOverridden = Boolean(aiReviewCriterion && aiReviewCriterion.score !== scoreValue)
 
       return upsertOne(Score, { submissionId: preliminarySubmission._id, judgeId, criterionId: criterion._id }, {
         submissionId: preliminarySubmission._id,
         scoreSheetId: preliminaryScoreSheet._id,
         judgeId,
         criterionId: criterion._id,
-        aiReviewCriterionId: aiReviewCriterion?._id,
-        aiSuggestedScore: aiReviewCriterion?.score,
         scoreValue,
-        isOverridden,
-        overrideReason: isOverridden ? 'Judge adjusted the AI-suggested score after review.' : null,
+        isOverridden: false,
+        overrideReason: null,
         comment: 'Seeded preliminary criterion score'
       })
     }))
@@ -744,8 +1879,6 @@ const seedSampleData = async () => {
 
     const aiReview = aiReviewByTeamId.get(record.team._id.toString())
     const finalAiCriteria = await Promise.all(finalCriteria.map((criterion, order) => {
-      const aiSuggestedScore = Math.min(criterion.maxScore, Math.round(finalScores[index] * (criterion.maxScore / finalRubric.totalScore)))
-
       return upsertOne(AiReviewCriterion, { aiReviewId: aiReview._id, code: `FINAL_${order + 1}` }, {
         aiReviewId: aiReview._id,
         criterionId: criterion._id,
@@ -753,15 +1886,18 @@ const seedSampleData = async () => {
         name: criterion.name,
         description: criterion.description,
         maxScore: criterion.maxScore,
-        score: aiSuggestedScore,
         weight: criterion.weight,
+        qualitativeLevel: toQualitativeLevel(finalScores[index], finalRubric.totalScore),
         feedback: 'Seeded AI criterion feedback aligned with the final rubric.',
-        suggestions: ['Judges should review AI suggestions before submitting final scores.'],
+        strengths: ['Summarizes technical talking points for judges and coordinators.'],
+        weaknesses: ['Does not generate or store any official criterion score.'],
+        suggestions: ['Judges should review AI findings as advisory context before finalizing official scores.'],
         evidence: [`Repository ${repository.repoName}`],
+        risks: ['Official ranking must remain judge-driven even when AI commentary exists.'],
         order: preliminaryCriteria.length + order + 1
       })
     }))
-    const finalAiCriterionByCriterionId = new Map(finalAiCriteria.map((aiCriterion) => [aiCriterion.criterionId.toString(), aiCriterion]))
+    void finalAiCriteria
 
     for (const judge of [judgeUserA, judgeUserB]) {
       const finalScoreSheet = await upsertOne(ScoreSheet, { roundId: finalRound._id, teamId: record.team._id, judgeId: judge._id }, {
@@ -782,19 +1918,15 @@ const seedSampleData = async () => {
 
       const finalScoreLines = await Promise.all(finalCriteria.map((criterion) => {
         const scoreValue = Math.min(criterion.maxScore, Math.round(finalScores[index] * (criterion.maxScore / finalRubric.totalScore)))
-        const aiReviewCriterion = finalAiCriterionByCriterionId.get(criterion._id.toString())
-        const isOverridden = Boolean(aiReviewCriterion && aiReviewCriterion.score !== scoreValue)
 
         return upsertOne(Score, { submissionId: finalSubmission._id, judgeId: judge._id, criterionId: criterion._id }, {
           submissionId: finalSubmission._id,
           scoreSheetId: finalScoreSheet._id,
           judgeId: judge._id,
           criterionId: criterion._id,
-          aiReviewCriterionId: aiReviewCriterion?._id,
-          aiSuggestedScore: aiReviewCriterion?.score,
           scoreValue,
-          isOverridden,
-          overrideReason: isOverridden ? 'Judge adjusted the AI-suggested score after review.' : null,
+          isOverridden: false,
+          overrideReason: null,
           comment: 'Seeded final criterion score'
         })
       }))
@@ -967,8 +2099,9 @@ const seedSampleData = async () => {
       minTeamMembers: 3,
       maxTeamMembers: 5,
       preliminaryTracks: ['A', 'B'],
-      finalistSlotsPerTrack: 5,
-      totalFinalistSlots: 10,
+      competitionConfig: FALL_2025_SAMPLE_CONFIG,
+      finalistSlotsPerTrack: FALL_2025_SAMPLE_CONFIG.finalistsPerBoard,
+      totalFinalistSlots: FALL_2025_SAMPLE_CONFIG.finalistCount,
       prizeSlots: 6
     },
     isEncrypted: false,
@@ -991,6 +2124,16 @@ const seedSampleData = async () => {
     isEncrypted: false,
     updatedBy: adminUser._id
   })))
+
+  await seedRuntimeDevScenarios({
+    roleByName,
+    seededPasswordHash,
+    adminUser,
+    coordinatorUser,
+    judgeUserA,
+    judgeUserB,
+    mentorUser
+  })
 }
 
 const run = async () => {
@@ -999,7 +2142,7 @@ const run = async () => {
     await initIndexes()
     await seedSampleData()
     // eslint-disable-next-line no-console
-    console.log('Database initialized with SEAL Hackathon Fall 2025 sample data successfully.')
+    console.log('Database initialized with historical sample data and runtime dev scenarios successfully.')
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to initialize database:', error)

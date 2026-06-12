@@ -1,0 +1,246 @@
+import mongoose from 'mongoose'
+
+import { REPOSITORY_REPOSITORY } from './repository.repository.js'
+import ApiError from '#utils/ApiError.js'
+import { ERROR_CODES } from '#constants/errorCode.js'
+import Event from '#models/event.model.js'
+import Round from '#models/round.model.js'
+import Team from '#models/team.model.js'
+import { normalizePaginationQuery } from '#utils/pagination.js'
+
+const ensureObjectId = (id, fieldName = 'repository id') => {
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Invalid ${fieldName}`])
+  }
+}
+
+const normalizeEvent = (event) => {
+  if (!event) return null
+  if (typeof event === 'string' || event instanceof mongoose.Types.ObjectId) return { id: event.toString() }
+  return {
+    id: event._id?.toString() || event.id,
+    title: event.title,
+    semester: event.semester,
+    season: event.season,
+    year: event.year,
+    status: event.status
+  }
+}
+
+const normalizeTeam = (team) => {
+  if (!team) return null
+  if (typeof team === 'string' || team instanceof mongoose.Types.ObjectId) return { id: team.toString() }
+  return {
+    id: team._id?.toString() || team.id,
+    name: team.name,
+    projectName: team.projectName,
+    chapterName: team.chapterName,
+    status: team.status,
+    boardNumber: team.boardNumber,
+    placementSlot: team.placementSlot
+  }
+}
+
+const normalizeRound = (round) => {
+  if (!round) return null
+  if (typeof round === 'string' || round instanceof mongoose.Types.ObjectId) return { id: round.toString() }
+  return {
+    id: round._id?.toString() || round.id,
+    name: round.name,
+    roundType: round.roundType,
+    status: round.status
+  }
+}
+
+const normalizeRepository = (repository) => {
+  if (!repository) return null
+  const plain = typeof repository.toObject === 'function'
+    ? repository.toObject({ getters: true, virtuals: false })
+    : repository
+
+  return {
+    id: plain._id?.toString() || plain.id,
+    event: normalizeEvent(plain.eventId),
+    eventId: plain.eventId?._id?.toString?.() || plain.eventId?.toString?.() || plain.eventId,
+    team: normalizeTeam(plain.teamId),
+    teamId: plain.teamId?._id?.toString?.() || plain.teamId?.toString?.() || plain.teamId,
+    round: normalizeRound(plain.roundId),
+    roundId: plain.roundId?._id?.toString?.() || plain.roundId?.toString?.() || plain.roundId || null,
+    githubOwner: plain.githubOwner || plain.githubOrg,
+    githubRepo: plain.githubRepo || plain.repoName,
+    repositoryFullName: plain.repositoryFullName,
+    repositoryUrl: plain.repositoryUrl || plain.repoUrl,
+    repositoryLocalPath: plain.repositoryLocalPath || null,
+    defaultBranch: plain.defaultBranch,
+    latestCommitSha: plain.latestCommitSha || null,
+    lastProcessedCommitSha: plain.lastProcessedCommitSha || null,
+    status: plain.status,
+    accessState: plain.accessState,
+    accessGrantedAt: plain.accessGrantedAt || null,
+    accessRevokedAt: plain.accessRevokedAt || null,
+    webhookRegisteredAt: plain.webhookRegisteredAt || null,
+    webhookStatus: plain.webhookStatus || 'NOT_CONFIGURED',
+    lastWebhookRegistrationError: plain.lastWebhookRegistrationError || null,
+    createdAt: plain.createdAt,
+    updatedAt: plain.updatedAt
+  }
+}
+
+const buildFilter = (query = {}) => {
+  const filter = {}
+
+  if (query.eventId) {
+    ensureObjectId(query.eventId, 'event id')
+    filter.eventId = query.eventId
+  }
+  if (query.teamId) {
+    ensureObjectId(query.teamId, 'team id')
+    filter.teamId = query.teamId
+  }
+  if (query.roundId) {
+    ensureObjectId(query.roundId, 'round id')
+    filter.roundId = query.roundId
+  }
+  if (query.status) filter.status = query.status
+  if (query.accessState) filter.accessState = query.accessState
+  if (query.search) {
+    const pattern = new RegExp(query.search, 'i')
+    filter.$or = [
+      { repositoryFullName: pattern },
+      { githubOwner: pattern },
+      { githubRepo: pattern },
+      { repoName: pattern }
+    ]
+  }
+
+  return filter
+}
+
+const ensureEventExists = async (eventId) => {
+  ensureObjectId(eventId, 'event id')
+  const event = await Event.findById(eventId)
+  if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+  return event
+}
+
+const ensureTeamBelongsToEvent = async ({ eventId, teamId }) => {
+  ensureObjectId(teamId, 'team id')
+  const team = await Team.findById(teamId)
+  if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
+  if (team.eventId?.toString() !== eventId.toString()) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified event'])
+  }
+  return team
+}
+
+const ensureRoundBelongsToEvent = async ({ eventId, roundId }) => {
+  if (!roundId) return null
+  ensureObjectId(roundId, 'round id')
+  const round = await Round.findById(roundId)
+  if (!round) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Round not found'])
+  if (round.eventId?.toString() !== eventId.toString()) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round does not belong to the specified event'])
+  }
+  return round
+}
+
+export const createRepositoryService = ({
+  repository = REPOSITORY_REPOSITORY
+} = {}) => {
+  const ensureRepositoryExists = async (id) => {
+    ensureObjectId(id)
+    const existingRepository = await repository.findById(id)
+    if (!existingRepository) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Repository not found'])
+    return existingRepository
+  }
+
+  const listRepositories = async (query = {}) => {
+    const { page, limit } = normalizePaginationQuery(query)
+    const filter = buildFilter(query)
+    const skip = (page - 1) * limit
+
+    const [repositories, totalItems] = await Promise.all([
+      repository.findAll({ filter, skip, limit }),
+      repository.count(filter)
+    ])
+
+    return {
+      repositories: repositories.map(normalizeRepository),
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalItems / limit) || 1,
+        pageSize: limit,
+        totalItems
+      }
+    }
+  }
+
+  const getRepositoryById = async (id) => normalizeRepository(await ensureRepositoryExists(id))
+
+  const createRepository = async (payload = {}) => {
+    const event = await ensureEventExists(payload.eventId)
+    await ensureTeamBelongsToEvent({ eventId: event._id, teamId: payload.teamId })
+    await ensureRoundBelongsToEvent({ eventId: event._id, roundId: payload.roundId })
+
+    const existingRepository = await repository.findByTeamId(payload.teamId)
+    if (existingRepository) {
+      throw new ApiError(ERROR_CODES.CONFLICT, ['A repository is already linked to this team'])
+    }
+
+    const createdRepository = await repository.create({
+      eventId: payload.eventId,
+      teamId: payload.teamId,
+      roundId: payload.roundId || undefined,
+      githubOwner: payload.githubOwner,
+      githubRepo: payload.githubRepo,
+      repositoryFullName: `${payload.githubOwner}/${payload.githubRepo}`,
+      repositoryUrl: payload.repositoryUrl,
+      repositoryLocalPath: payload.repositoryLocalPath || undefined,
+      repoUrl: payload.repositoryUrl,
+      githubOrg: payload.githubOwner,
+      repoName: payload.githubRepo,
+      defaultBranch: payload.defaultBranch,
+      latestCommitSha: payload.latestCommitSha || undefined,
+      lastProcessedCommitSha: payload.lastProcessedCommitSha || undefined,
+      status: payload.status,
+      accessState: payload.accessState
+    })
+
+    return normalizeRepository(await repository.findById(createdRepository._id))
+  }
+
+  const updateRepository = async (id, payload = {}) => {
+    const existingRepository = await ensureRepositoryExists(id)
+    const eventId = existingRepository.eventId?._id || existingRepository.eventId
+
+    if (payload.roundId !== undefined) {
+      await ensureRoundBelongsToEvent({ eventId, roundId: payload.roundId })
+    }
+
+    const githubOwner = payload.githubOwner || existingRepository.githubOwner || existingRepository.githubOrg
+    const githubRepo = payload.githubRepo || existingRepository.githubRepo || existingRepository.repoName
+    const repositoryUrl = payload.repositoryUrl || existingRepository.repositoryUrl || existingRepository.repoUrl
+
+    const updatedRepository = await repository.updateById(id, {
+      ...payload,
+      repositoryUrl,
+      repoUrl: repositoryUrl,
+      githubOwner,
+      githubOrg: githubOwner,
+      githubRepo,
+      repoName: githubRepo,
+      repositoryFullName: `${githubOwner}/${githubRepo}`
+    })
+
+    return normalizeRepository(updatedRepository)
+  }
+
+  return {
+    listRepositories,
+    getRepositoryById,
+    createRepository,
+    updateRepository
+  }
+}
+
+export const REPOSITORY_SERVICE = createRepositoryService()

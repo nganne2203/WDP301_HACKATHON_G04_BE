@@ -3,6 +3,8 @@ import Joi from 'joi'
 const objectId = Joi.string().hex().length(24)
 const email = Joi.string().email().trim().lowercase()
 const token = Joi.string().trim().min(32).max(256)
+const teamStatus = Joi.string().trim().uppercase().valid('PENDING', 'WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED', 'REJECTED', 'ACTIVE', 'INACTIVE', 'DISQUALIFIED')
+const trackAssignmentMethod = Joi.string().trim().uppercase().valid('DRAW', 'MANUAL', 'SYSTEM')
 const invitedMember = Joi.object({
   fullName: Joi.string().trim().min(2).max(120).required(),
   email: email.required()
@@ -24,7 +26,8 @@ const tokenParam = Joi.object({
 const listTeams = {
   query: Joi.object({
     eventId: objectId,
-    status: Joi.string().trim().uppercase().valid('PENDING', 'WAITING_FOR_MEMBERS', 'CONFIRMED', 'REJECTED', 'ACTIVE', 'INACTIVE', 'DISQUALIFIED'),
+    trackId: objectId,
+    status: teamStatus,
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(20)
   })
@@ -77,6 +80,29 @@ const getTeamById = {
   params: idParam
 }
 
+const updateTeamStatus = {
+  params: idParam,
+  body: Joi.object({
+    status: teamStatus.required(),
+    trackId: objectId.allow(null),
+    rejectionReason: Joi.string().trim().max(500).allow('', null)
+  })
+}
+
+const updateTeamPlacement = {
+  params: idParam,
+  body: Joi.object({
+    trackId: objectId.allow(null),
+    trackAssignmentMethod
+  }).min(1)
+}
+
+const getEventCapacity = {
+  params: Joi.object({
+    eventId: objectId.required()
+  })
+}
+
 const acceptInvitation = {
   params: tokenParam
 }
@@ -93,6 +119,9 @@ export const TEAM_VALIDATION = {
   replaceInvitation,
   cancelInvitation,
   getTeamById,
+  updateTeamStatus,
+  updateTeamPlacement,
+  getEventCapacity,
   acceptInvitation,
   declineInvitation
 }

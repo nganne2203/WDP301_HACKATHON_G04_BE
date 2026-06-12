@@ -32,7 +32,8 @@ const createRepository = {
     repoName: githubName.required(),
     description: Joi.string().trim().max(500).allow('', null),
     private: Joi.boolean().default(true),
-    teamId: objectId
+    teamId: objectId,
+    roundId: objectId.allow(null)
   })
 }
 
@@ -44,6 +45,25 @@ const assignCollaborator = {
   body: Joi.object({
     eventId: objectId.required(),
     permission: Joi.string().trim().valid('pull', 'triage', 'push', 'maintain', 'admin').default('push')
+  })
+}
+
+const registerRepositoryWebhook = {
+  params: Joi.object({
+    repoName: githubName.required()
+  }),
+  body: Joi.object({
+    eventId: objectId.required()
+  })
+}
+
+const revokeCollaborator = {
+  params: Joi.object({
+    repoName: githubName.required(),
+    username: githubUsername.required()
+  }),
+  body: Joi.object({
+    eventId: objectId.required()
   })
 }
 
@@ -68,6 +88,8 @@ export const GITHUB_VALIDATION = {
   testConnection,
   createRepository,
   assignCollaborator,
+  registerRepositoryWebhook,
+  revokeCollaborator,
   inviteOrganizationMember,
   revokeMembers
 }

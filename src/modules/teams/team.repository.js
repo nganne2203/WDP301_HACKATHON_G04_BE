@@ -5,9 +5,9 @@ import Participant from '#models/participant.model.js'
 import Role from '#models/role.model.js'
 import Team from '#models/team.model.js'
 import TeamInvitation from '#models/teamInvitation.model.js'
+import Track from '#models/track.model.js'
 import User from '#models/user.model.js'
 import '#models/permission.model.js'
-import '#models/track.model.js'
 
 const populateRoles = [
   {
@@ -21,8 +21,8 @@ const populateRoles = [
 ]
 
 const teamPopulate = [
-  { path: 'eventId', select: 'title status registrationStart registrationEnd minTeamMembers maxTeamMembers maxTeams totalFinalistSlots' },
-  { path: 'trackId', select: 'code name type' },
+  { path: 'eventId', select: 'title status registrationStart registrationEnd minTeamMembers maxTeamMembers maxTeams totalFinalistSlots competitionConfig' },
+  { path: 'trackId', select: 'code name type maxTeams status' },
   { path: 'leaderId', select: 'email fullName status roles', populate: populateRoles[0] },
   { path: 'memberIds', select: 'email fullName status roles', populate: populateRoles[0] }
 ]
@@ -37,6 +37,17 @@ const createSession = async () => {
 
 const findEventById = async (id, { session } = {}) => {
   return await withSession(Event.findById(id), session)
+}
+
+const findTracksByEvent = async (eventId, { session } = {}) => {
+  return await withSession(
+    Track.find({ eventId }).sort({ code: 1, name: 1, createdAt: 1 }),
+    session
+  )
+}
+
+const findTrackById = async (id, { session } = {}) => {
+  return await withSession(Track.findById(id), session)
 }
 
 const countTeams = async (filter = {}, { session } = {}) => {
@@ -214,6 +225,8 @@ const updateInvitations = async (filter, data, { session } = {}) => {
 export const TEAM_REPOSITORY = {
   createSession,
   findEventById,
+  findTracksByEvent,
+  findTrackById,
   countTeams,
   findTeams,
   findTeamById,

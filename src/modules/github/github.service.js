@@ -1,5 +1,6 @@
 import { GITHUB_REPOSITORY } from './github.repository.js'
 import ApiError from '#utils/ApiError.js'
+import { env } from '#configs/environment.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { ENCRYPTION_UTILS } from '#utils/encryption.util.js'
 import { LOGGER } from '#utils/logger.js'
@@ -84,6 +85,14 @@ const sanitizeMetadata = (metadata = {}) => {
   delete safeMetadata.encryptedToken
   delete safeMetadata.tokenEncrypted
   return safeMetadata
+}
+
+const trimTrailingSlash = (value = '') => String(value).replace(/\/+$/, '')
+
+const buildWebhookCallbackUrl = () => {
+  if (env.github.webhookCallbackUrl) return trimTrailingSlash(env.github.webhookCallbackUrl)
+  if (!env.server.publicUrl) return null
+  return `${trimTrailingSlash(env.server.publicUrl)}/api/github/webhooks`
 }
 
 export const createGithubService = ({
@@ -209,6 +218,105 @@ export const createGithubService = ({
     return await githubClient({ method, path, token, body })
   }
 
+  const updateInternalRepository = async ({ eventId, organizationName, repoName, updates }) => {
+    const linkedRepository = await repository.findRepositoryByEventAndRepoName({
+      eventId,
+      repoName,
+      githubOwner: organizationName
+    })
+
+    if (!linkedRepository) return null
+    return await repository.updateRepositoryById(linkedRepository._id, updates)
+  }
+
+  const registerRepositoryWebhook = async ({ eventId, repoName }, actor = {}) => {
+    const config = await loadOperationalConfig({ eventId })
+    const callbackUrl = buildWebhookCallbackUrl()
+
+    if (!callbackUrl) {
+      const errorMessage = 'Webhook callback URL is not configured'
+      await updateInternalRepository({
+        eventId,
+        organizationName: config.organizationName,
+        repoName,
+        updates: {
+          webhookStatus: 'FAILED',
+          lastWebhookRegistrationError: errorMessage
+        }
+      })
+
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [errorMessage])
+    }
+
+    if (!env.github.webhookSecret) {
+      const errorMessage = 'GITHUB_WEBHOOK_SECRET is not configured'
+      await updateInternalRepository({
+        eventId,
+        organizationName: config.organizationName,
+        repoName,
+        updates: {
+          webhookStatus: 'FAILED',
+          lastWebhookRegistrationError: errorMessage
+        }
+      })
+
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [errorMessage])
+    }
+
+    const body = {
+      name: 'web',
+      active: true,
+      events: env.github.webhookEvents,
+      config: {
+        url: callbackUrl,
+        content_type: 'json',
+        secret: env.github.webhookSecret,
+        insecure_ssl: '0'
+      }
+    }
+
+    const { data, status } = await requestGithub({
+      method: 'POST',
+      path: `/repos/${encodeURIComponent(config.organizationName)}/${encodeURIComponent(repoName)}/hooks`,
+      token: config.token,
+      body
+    })
+
+    await updateInternalRepository({
+      eventId,
+      organizationName: config.organizationName,
+      repoName,
+      updates: {
+        webhookStatus: 'REGISTERED',
+        webhookRegisteredAt: new Date(),
+        lastWebhookRegistrationError: null
+      }
+    })
+
+    await audit({
+      actor,
+      action: 'GITHUB_WEBHOOK_REGISTER',
+      resourceId: eventId,
+      metadata: {
+        eventId,
+        organizationName: config.organizationName,
+        repoName,
+        callbackUrl,
+        events: env.github.webhookEvents,
+        status,
+        hookId: data?.id || null
+      }
+    })
+
+    return {
+      repoName,
+      callbackUrl,
+      events: env.github.webhookEvents,
+      hookId: data?.id || null,
+      active: data?.active !== false
+    }
+  }
+
   const testConnection = async ({ eventId }, actor = {}) => {
     const config = await loadOperationalConfig({ eventId, requireEnabled: false })
     const { data, status } = await requestGithub({
@@ -255,14 +363,38 @@ export const createGithubService = ({
       body: requestBody
     })
 
+    let linkedRepository = null
     if (payload.teamId) {
-      await repository.createRepositoryRecord({
+      linkedRepository = await repository.createRepositoryRecord({
         eventId: payload.eventId,
         teamId: payload.teamId,
+        roundId: payload.roundId,
+        githubOwner: config.organizationName,
+        githubRepo: data?.name || payload.repoName,
+        repositoryFullName: `${config.organizationName}/${data?.name || payload.repoName}`,
+        repositoryUrl: data?.html_url,
         githubOrg: config.organizationName,
         repoName: data?.name || payload.repoName,
         repoUrl: data?.html_url,
-        defaultBranch: data?.default_branch || 'main'
+        defaultBranch: data?.default_branch || 'main',
+        status: 'ACTIVE',
+        accessState: 'PENDING',
+        webhookStatus: 'PENDING',
+        accessGrantedAt: null,
+        accessRevokedAt: null
+      })
+    }
+
+    let webhookRegistration = null
+    try {
+      webhookRegistration = await registerRepositoryWebhook({
+        eventId: payload.eventId,
+        repoName: data?.name || payload.repoName
+      }, actor)
+    } catch (error) {
+      logger.warn('Repository created but webhook registration failed', {
+        repoName: data?.name || payload.repoName,
+        error: error.message
       })
     }
 
@@ -276,7 +408,8 @@ export const createGithubService = ({
         repoName: data?.name || payload.repoName,
         private: requestBody.private,
         status,
-        teamId: payload.teamId
+        teamId: payload.teamId,
+        repositoryId: linkedRepository?._id?.toString?.() || linkedRepository?.id || null
       }
     })
 
@@ -284,7 +417,8 @@ export const createGithubService = ({
       repoName: data?.name || payload.repoName,
       htmlUrl: data?.html_url,
       cloneUrl: data?.clone_url,
-      visibility: data?.visibility || (data?.private ? 'private' : 'public')
+      visibility: data?.visibility || (data?.private ? 'private' : 'public'),
+      webhookRegistration
     }
   }
 
@@ -311,11 +445,59 @@ export const createGithubService = ({
       }
     })
 
+    await updateInternalRepository({
+      eventId,
+      organizationName: config.organizationName,
+      repoName,
+      updates: {
+        accessState: 'GRANTED',
+        accessGrantedAt: new Date(),
+        accessRevokedAt: null
+      }
+    })
+
     return {
       repoName,
       username,
       permission,
       status: status === 204 ? 'already_collaborator' : 'invited_or_added'
+    }
+  }
+
+  const revokeCollaborator = async ({ eventId, repoName, username }, actor = {}) => {
+    const config = await loadOperationalConfig({ eventId })
+    await requestGithub({
+      method: 'DELETE',
+      path: `/repos/${encodeURIComponent(config.organizationName)}/${encodeURIComponent(repoName)}/collaborators/${encodeURIComponent(username)}`,
+      token: config.token
+    })
+
+    await updateInternalRepository({
+      eventId,
+      organizationName: config.organizationName,
+      repoName,
+      updates: {
+        accessState: 'REVOKED',
+        accessRevokedAt: new Date()
+      }
+    })
+
+    await audit({
+      actor,
+      action: 'GITHUB_COLLABORATOR_REVOKE',
+      resourceId: eventId,
+      metadata: {
+        eventId,
+        organizationName: config.organizationName,
+        repoName,
+        username
+      }
+    })
+
+    return {
+      repoName,
+      username,
+      status: 'revoked'
     }
   }
 
@@ -439,6 +621,8 @@ export const createGithubService = ({
     testConnection,
     createRepository,
     assignCollaborator,
+    registerRepositoryWebhook,
+    revokeCollaborator,
     inviteOrganizationMember,
     revokeMembers
   }
