@@ -153,6 +153,16 @@ const buildPermissionDescription = (code) => {
     .replace(/^\w/, (char) => char.toUpperCase())
 }
 
+const buildPermissionModule = (code) => {
+  const parts = code.split('_')
+  if (parts.length >= 2) return parts[0]
+  return 'GENERAL'
+}
+
+const buildPermissionName = (code) => {
+  return buildPermissionDescription(code)
+}
+
 const ROLE_SEEDS = [
   ['ADMIN', 'System administrator'],
   ['COORDINATOR', 'Event coordinator'],
@@ -194,7 +204,10 @@ const seedPermissions = async () => {
   const permissionRecords = await Promise.all(ALL_PERMISSIONS.map((code) => {
     return upsertOne(Permission, { code }, {
       code,
-      description: buildPermissionDescription(code)
+      name: buildPermissionName(code),
+      description: buildPermissionDescription(code),
+      module: buildPermissionModule(code),
+      isActive: true
     })
   }))
 
@@ -202,19 +215,30 @@ const seedPermissions = async () => {
 }
 
 const seedRoles = async (permissionByCode) => {
+  const allPermissionIds = [...permissionByCode.values()].map(p => p._id)
+
   const roleRecords = await Promise.all(ROLE_SEEDS.map(([name, description]) => {
-    const permissionIds = (ROLE_PERMISSION_MAP[name] || []).map((code) => {
-      const permission = permissionByCode.get(code)
-      if (!permission) {
-        throw new Error(`Missing permission seed for ${code}`)
-      }
-      return permission._id
-    })
+    let permissionIds
+
+    if (name === 'ADMIN') {
+      permissionIds = allPermissionIds
+    } else {
+      permissionIds = (ROLE_PERMISSION_MAP[name] || []).map((code) => {
+        const permission = permissionByCode.get(code)
+        if (!permission) {
+          throw new Error(`Missing permission seed for ${code}`)
+        }
+        return permission._id
+      })
+    }
 
     return upsertOne(Role, { name }, {
       name,
+      code: name,
       description,
-      permissions: permissionIds
+      permissions: permissionIds,
+      isSystemRole: true,
+      isActive: true
     })
   }))
 

@@ -26,6 +26,8 @@ import userRoutes from '#modules/users/user.route.js'
 import workshopRoutes from '#modules/workshops/workshop.route.js'
 import rankingRoutes from '#modules/rankings/ranking.route.js'
 import finalistRoutes from '#modules/finalists/finalist.route.js'
+import permissionRoutes from '#modules/permissions/permission.route.js'
+import roleRoutes from '#modules/roles/role.route.js'
 
 const router = Router()
 
@@ -59,5 +61,7 @@ router.use('/timelines', timelineRoutes)
 router.use('/tracks', trackRoutes)
 router.use('/users', userRoutes)
 router.use('/workshops', workshopRoutes)
+router.use('/permissions', permissionRoutes)
+router.use('/roles', roleRoutes)
 
 export default router

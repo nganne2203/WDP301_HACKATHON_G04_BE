@@ -121,6 +121,32 @@ const assignRoles = async (req, res, next) => {
   }
 }
 
+const assignRolesByIds = async (req, res, next) => {
+  try {
+    const user = await USER_SERVICE.assignRolesByIds(req.params.id, req.body.roleIds, req.user?.id)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Assign user roles by IDs successfully',
+      data: user
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const getEffectivePermissions = async (req, res, next) => {
+  try {
+    const result = await USER_SERVICE.getEffectivePermissions(req.params.id)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get user effective permissions successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const USER_CONTROLLER = {
   listUsers,
   getUserById,
@@ -130,5 +156,7 @@ export const USER_CONTROLLER = {
   approveUser,
   rejectUser,
   suspendUser,
-  assignRoles
+  assignRoles,
+  assignRolesByIds,
+  getEffectivePermissions
 }
