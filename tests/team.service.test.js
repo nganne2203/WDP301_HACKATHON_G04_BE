@@ -415,3 +415,45 @@ test('updateTeamPlacement rejects manual placement when the selected track is fu
       error.errors.includes('Selected track is full')
   )
 })
+
+test('mentor can list only teams assigned to them', async () => {
+  const assignedTeam = {
+    _id: '000000000000000000000111',
+    eventId: { _id: '000000000000000000000211', title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' },
+    trackId: { _id: '000000000000000000000311', code: 'WEB', name: 'Web Experience', type: 'PRELIMINARY_GROUP', status: 'OPEN' },
+    leaderId: { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader One', status: 'APPROVED' },
+    memberIds: [{ _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader One', status: 'APPROVED' }],
+    mentorIds: [{ _id: 'mentor-1', email: 'mentor@example.com', fullName: 'Mentor One', status: 'APPROVED' }],
+    name: 'Assigned Team',
+    chapterName: 'SE',
+    projectName: 'Mentored Project',
+    status: 'CONFIRMED',
+    qualificationStatus: 'REGISTERED',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+
+  const repository = {
+    findTeams: async ({ filter }) => {
+      assert.equal(filter.eventId, '000000000000000000000211')
+      assert.equal(filter.mentorIds, 'mentor-1')
+      return [assignedTeam]
+    },
+    countTeams: async (filter) => {
+      assert.equal(filter.mentorIds, 'mentor-1')
+      return 1
+    },
+    findParticipantsByTeam: async () => [],
+    findInvitationsByTeam: async () => []
+  }
+
+  const service = createTeamService({ repository, logger: createLogger() })
+  const result = await service.listTeams({ eventId: '000000000000000000000211' }, {
+    id: 'mentor-1',
+    roles: ['MENTOR']
+  })
+
+  assert.equal(result.teams.length, 1)
+  assert.equal(result.teams[0].name, 'Assigned Team')
+  assert.deepEqual(result.teams[0].mentorIds, ['mentor-1'])
+})

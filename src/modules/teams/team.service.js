@@ -35,6 +35,7 @@ const CONFIRMED_TEAM_STATUSES = [TEAM_STATUSES.CONFIRMED, TEAM_STATUSES.ACTIVE]
 const OPEN_TEAM_STATUSES = [TEAM_STATUSES.PENDING, TEAM_STATUSES.WAITING_FOR_MEMBERS, TEAM_STATUSES.WAITLISTED]
 const ACTIVE_PARTICIPANT_STATUSES = ['INVITED', 'REGISTERED', 'ACTIVE']
 const COORDINATOR_ROLES = ['ADMIN', 'COORDINATOR', 'EVENT_COORDINATOR']
+const MENTOR_SCOPED_ROLES = ['MENTOR', 'SPEAKER']
 
 const getId = (value) => {
   return value?._id?.toString?.() || value?.id || value?.toString?.()
@@ -278,6 +279,8 @@ const normalizeTeam = ({ team, participants = [], invitations = [] } = {}) => {
     leader: normalizeUserSummary(plainTeam.leaderId),
     leaderId: getId(plainTeam.leaderId),
     members: (plainTeam.memberIds || []).map(normalizeUserSummary).filter(Boolean),
+    assignedMentors: (plainTeam.mentorIds || []).map(normalizeUserSummary).filter(Boolean),
+    mentorIds: (plainTeam.mentorIds || []).map(getId).filter(Boolean),
     name: plainTeam.name,
     chapterName: plainTeam.chapterName,
     projectName: plainTeam.projectName,
@@ -300,6 +303,10 @@ const normalizeTeam = ({ team, participants = [], invitations = [] } = {}) => {
 
 const hasCoordinatorRole = (actor = {}) => {
   return (actor.roles || []).some(role => COORDINATOR_ROLES.includes(String(role).toUpperCase()))
+}
+
+const hasMentorScopedRole = (actor = {}) => {
+  return (actor.roles || []).some(role => MENTOR_SCOPED_ROLES.includes(String(role).toUpperCase()))
 }
 
 const ensureCoordinator = (actor = {}) => {
@@ -860,7 +867,7 @@ export const createTeamService = ({
   logger = LOGGER
 } = {}) => {
   const listTeams = async (query = {}, actor = {}) => {
-    if (!hasCoordinatorRole(actor)) {
+    if (!hasCoordinatorRole(actor) && !hasMentorScopedRole(actor)) {
       throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only coordinators can list all teams'])
     }
 
@@ -875,6 +882,12 @@ export const createTeamService = ({
       filter.trackId = query.trackId
     }
     if (query.status) filter.status = query.status
+    if (!hasCoordinatorRole(actor)) {
+      if (!actor.id) {
+        throw new ApiError(ERROR_CODES.FORBIDDEN, ['Mentor account is missing actor context'])
+      }
+      filter.mentorIds = actor.id
+    }
 
     const skip = (page - 1) * limit
     const [teams, totalItems] = await Promise.all([
