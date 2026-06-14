@@ -188,8 +188,10 @@ test('registerRepositoryWebhook stores repository webhook status when callback U
 
   const originalPublicUrl = env.server.publicUrl
   const originalWebhookSecret = env.github.webhookSecret
+  const originalWebhookCallbackUrl = env.github.webhookCallbackUrl
   env.server.publicUrl = 'https://seal.example.com'
   env.github.webhookSecret = 'webhook-secret'
+  env.github.webhookCallbackUrl = undefined
 
   const calls = []
   const service = createGithubService({
@@ -221,6 +223,7 @@ test('registerRepositoryWebhook stores repository webhook status when callback U
   } finally {
     env.server.publicUrl = originalPublicUrl
     env.github.webhookSecret = originalWebhookSecret
+    env.github.webhookCallbackUrl = originalWebhookCallbackUrl
   }
 })
 

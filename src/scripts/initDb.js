@@ -353,7 +353,8 @@ const seedRuntimeDevScenarios = async ({
   coordinatorUser,
   judgeUserA,
   judgeUserB,
-  mentorUser
+  mentorUser,
+  speakerUser
 }) => {
   const userRole = roleByName.get('USER')
   const participantRole = roleByName.get('PARTICIPANT')
@@ -549,11 +550,29 @@ const seedRuntimeDevScenarios = async ({
     status: 'SCHEDULED'
   })
 
+  await upsertOne(Workshop, { eventId: registrationEvent._id, title: 'UI Showcase Session' }, {
+    eventId: registrationEvent._id,
+    title: 'UI Showcase Session',
+    description: 'Speaker-led walkthrough for validating participant and media-facing UI states.',
+    presenterId: speakerUser._id,
+    speakerInfo: {
+      name: speakerUser.fullName,
+      title: 'Sandbox speaker',
+      email: speakerUser.email
+    },
+    meetLink: 'https://meet.google.com/runtime-ui-showcase',
+    startTime: addTime(now, { days: 4, hours: 1 }),
+    endTime: addTime(now, { days: 4, hours: 2, minutes: 30 }),
+    questionnaire: ['Which role view should be verified first?', 'What UI state still lacks seed data?'],
+    status: 'SCHEDULED'
+  })
+
   const readyTeam = await upsertOne(Team, { eventId: registrationEvent._id, name: 'Runtime Ready Team' }, {
     eventId: registrationEvent._id,
     trackId: registrationTracks[0]._id,
     leaderId: registrationLead._id,
     memberIds: [registrationLead._id, registrationAcceptedA._id, registrationAcceptedB._id],
+    mentorIds: [mentorUser._id],
     name: 'Runtime Ready Team',
     chapterName: 'SE',
     projectName: 'Open Registration Portal',
@@ -568,6 +587,7 @@ const seedRuntimeDevScenarios = async ({
     trackId: registrationTracks[1]._id,
     leaderId: waitingLead._id,
     memberIds: [waitingLead._id],
+    mentorIds: [mentorUser._id],
     name: 'Runtime Waiting Team',
     chapterName: 'AI',
     projectName: 'Invitation State Tracker',
@@ -581,6 +601,7 @@ const seedRuntimeDevScenarios = async ({
     trackId: registrationTracks[1]._id,
     leaderId: waitlistedLead._id,
     memberIds: [waitlistedLead._id],
+    mentorIds: [mentorUser._id],
     name: 'Runtime Waitlisted Team',
     chapterName: 'UX',
     projectName: 'Waitlist Visualizer',
@@ -595,6 +616,7 @@ const seedRuntimeDevScenarios = async ({
     trackId: registrationTracks[0]._id,
     leaderId: rejectedLead._id,
     memberIds: [rejectedLead._id],
+    mentorIds: [mentorUser._id],
     name: 'Runtime Rejected Team',
     chapterName: 'QA',
     projectName: 'Constraint Validator',
@@ -872,6 +894,7 @@ const seedRuntimeDevScenarios = async ({
     trackId: scoringTracks[0]._id,
     leaderId: scoringLeadA._id,
     memberIds: [scoringLeadA._id],
+    mentorIds: [mentorUser._id],
     name: 'Runtime Scoring Team A',
     chapterName: 'SE',
     projectName: 'Board Scope Viewer',
@@ -886,6 +909,7 @@ const seedRuntimeDevScenarios = async ({
     trackId: scoringTracks[1]._id,
     leaderId: scoringLeadB._id,
     memberIds: [scoringLeadB._id, scoringJudgeParticipantUser._id],
+    mentorIds: [mentorUser._id],
     name: 'Runtime Scoring Team B',
     chapterName: 'AI',
     projectName: 'Submission Review Console',
@@ -975,7 +999,24 @@ const seedRuntimeDevScenarios = async ({
     questionnaire: ['What repository signal should judges trust most?'],
     status: 'LIVE'
   })
-  void workshopLive
+
+  const workshopSpeakerLive = await upsertOne(Workshop, { eventId: scoringEvent._id, title: 'Final Demo Storytelling Clinic' }, {
+    eventId: scoringEvent._id,
+    title: 'Final Demo Storytelling Clinic',
+    description: 'Speaker-led live session for polishing demos before score submission closes.',
+    presenterId: speakerUser._id,
+    speakerInfo: {
+      name: speakerUser.fullName,
+      title: 'Demo storytelling speaker',
+      email: speakerUser.email
+    },
+    meetLink: 'https://meet.google.com/runtime-demo-clinic',
+    startTime: addTime(now, { minutes: -30 }),
+    endTime: addTime(now, { hours: 1, minutes: 30 }),
+    questionnaire: ['What is the strongest takeaway from your demo?', 'Which slide needs the most clarity?'],
+    status: 'LIVE'
+  })
+  void [workshopLive, workshopSpeakerLive]
 
   const draftRound = await upsertOne(Round, { eventId: scoringEvent._id, name: 'Runtime Qualification' }, {
     eventId: scoringEvent._id,
@@ -1382,6 +1423,7 @@ const seedSampleData = async () => {
   const coordinatorRole = roleByName.get('COORDINATOR')
   const judgeRole = roleByName.get('JUDGE')
   const mentorRole = roleByName.get('MENTOR')
+  const speakerRole = roleByName.get('SPEAKER')
   const userRole = roleByName.get('USER')
 
   const seededPasswordHash = await BCRYPT_UTILS.hashPassword('Password123!')
@@ -1390,6 +1432,7 @@ const seedSampleData = async () => {
   const judgeUserA = await seedBaseUser({ email: buildSeedEmail('judge.a'), legacyEmail: 'judge.a@seal.local', fullName: 'Judge A', roleId: judgeRole._id, passwordHash: seededPasswordHash })
   const judgeUserB = await seedBaseUser({ email: buildSeedEmail('judge.b'), legacyEmail: 'judge.b@seal.local', fullName: 'Judge B', roleId: judgeRole._id, passwordHash: seededPasswordHash })
   const mentorUser = await seedBaseUser({ email: buildSeedEmail('mentor'), legacyEmail: 'mentor@seal.local', fullName: 'Mentor User', roleId: mentorRole._id, passwordHash: seededPasswordHash })
+  const speakerUser = await seedBaseUser({ email: buildSeedEmail('speaker'), legacyEmail: 'speaker@seal.local', fullName: 'Speaker User', roleId: speakerRole._id, passwordHash: seededPasswordHash })
 
   const event = await upsertOne(Event, { seriesName: 'SEAL Hackathon', season: 'FALL', year: 2025 }, {
     title: 'SEAL Hackathon Fall 2025',
@@ -1455,6 +1498,26 @@ const seedSampleData = async () => {
     status: 'COMPLETED'
   })
 
+  await upsertOne(Workshop, { eventId: event._id, title: 'Pitching AI Products to Judges' }, {
+    eventId: event._id,
+    title: 'Pitching AI Products to Judges',
+    description: 'Speaker session focused on demo clarity, judging expectations, and presentation structure.',
+    presenterId: speakerUser._id,
+    speakerInfo: {
+      name: speakerUser.fullName,
+      title: 'Product storytelling speaker',
+      email: speakerUser.email
+    },
+    meetLink: 'https://meet.google.com/seal-fall-2025-pitching-clinic',
+    startTime: buildDate('2025-11-01T09:00:00+07:00'),
+    endTime: buildDate('2025-11-01T10:30:00+07:00'),
+    questionnaire: [
+      'What proof point should your team emphasize to judges?',
+      'Which product story can help your demo feel more convincing?'
+    ],
+    status: 'COMPLETED'
+  })
+
   const trackA = await upsertOne(Track, { eventId: event._id, code: 'A' }, {
     eventId: event._id,
     code: 'A',
@@ -1502,9 +1565,13 @@ const seedSampleData = async () => {
   const participantRecords = []
 
   for (const [teamName, chapterName, track, projectName, preliminaryScore, preliminaryRank, isFinalist] of teamDefinitions) {
+    const assignedMentorIds = track._id.equals(trackA._id)
+      ? [mentorUser._id]
+      : [mentorUser._id, speakerUser._id]
     const team = await upsertOne(Team, { eventId: event._id, name: teamName }, {
       eventId: event._id,
       trackId: track._id,
+      mentorIds: assignedMentorIds,
       name: teamName,
       chapterName,
       projectName,
@@ -2132,7 +2199,8 @@ const seedSampleData = async () => {
     coordinatorUser,
     judgeUserA,
     judgeUserB,
-    mentorUser
+    mentorUser,
+    speakerUser
   })
 }
 
