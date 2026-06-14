@@ -110,15 +110,44 @@ const getMaxTeams = (event) => {
   return event?.maxTeams || 30
 }
 
-const getFrontendUrl = (path) => {
+const getFrontendUrl = (path, logger = LOGGER) => {
   const frontendUrl = env.client.frontendUrl || env.client.urls[0]
   if (!frontendUrl) return null
 
-  return new URL(path, frontendUrl).toString()
+  try {
+    return new URL(path, frontendUrl).toString()
+  } catch (error) {
+    logger.warn('Team frontend URL is invalid; skipping generated link', {
+      frontendUrl,
+      path,
+      error: error.message
+    })
+    return null
+  }
 }
 
-const buildInvitationUrls = (token) => {
-  const baseUrl = getFrontendUrl('/team-invitations/confirm')
+const appendSearchParams = (urlString, params = {}, logger = LOGGER) => {
+  if (!urlString) return null
+
+  try {
+    const url = new URL(urlString)
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        url.searchParams.set(key, String(value))
+      }
+    })
+    return url.toString()
+  } catch (error) {
+    logger.warn('Generated team URL is invalid while appending query params', {
+      urlString,
+      error: error.message
+    })
+    return null
+  }
+}
+
+const buildInvitationUrls = (token, logger = LOGGER) => {
+  const baseUrl = getFrontendUrl('/team-invitations/confirm', logger)
   if (!baseUrl) {
     return {
       acceptUrl: null,
@@ -126,22 +155,14 @@ const buildInvitationUrls = (token) => {
     }
   }
 
-  const acceptUrl = new URL(baseUrl)
-  acceptUrl.searchParams.set('token', token)
-  acceptUrl.searchParams.set('decision', 'accept')
-
-  const declineUrl = new URL(baseUrl)
-  declineUrl.searchParams.set('token', token)
-  declineUrl.searchParams.set('decision', 'decline')
-
   return {
-    acceptUrl: acceptUrl.toString(),
-    declineUrl: declineUrl.toString()
+    acceptUrl: appendSearchParams(baseUrl, { token, decision: 'accept' }, logger),
+    declineUrl: appendSearchParams(baseUrl, { token, decision: 'decline' }, logger)
   }
 }
 
-const buildLoginUrl = () => {
-  return getFrontendUrl('/login')
+const buildLoginUrl = (logger = LOGGER) => {
+  return getFrontendUrl('/login', logger)
 }
 
 const buildFullNameFromEmail = (email) => {
@@ -581,8 +602,8 @@ const ensureParticipantCanJoinEvent = async ({
   }
 }
 
-const buildInvitationEmailContext = ({ event, team, leader, token, invitedUser, email }) => {
-  const { acceptUrl, declineUrl } = buildInvitationUrls(token)
+const buildInvitationEmailContext = ({ event, team, leader, token, invitedUser, email, logger = LOGGER }) => {
+  const { acceptUrl, declineUrl } = buildInvitationUrls(token, logger)
 
   return {
     to: email,
@@ -671,7 +692,8 @@ const createInvitationForEmail = async ({
   fullName,
   session,
   jobs,
-  excludeInvitationId = null
+  excludeInvitationId = null,
+  logger = LOGGER
 }) => {
   ensureEmailIsNotLeader(email, leader)
 
@@ -732,7 +754,7 @@ const createInvitationForEmail = async ({
           fullName: invitedUser.fullName,
           email,
           temporaryPassword,
-          loginUrl: buildLoginUrl()
+          loginUrl: buildLoginUrl(logger)
         },
         metadata: {
           eventId: getId(event),
@@ -752,7 +774,8 @@ const createInvitationForEmail = async ({
       leader,
       token,
       invitedUser,
-      email
+      email,
+      logger
     })
   })
 
