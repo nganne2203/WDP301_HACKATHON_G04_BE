@@ -45,20 +45,45 @@ const ensureObjectId = (id, fieldName = 'notification id') => {
   }
 }
 
-const getFrontendUrl = (path = '/') => {
+const getFrontendUrl = (path = '/', logger = LOGGER) => {
   const frontendUrl = env.client.frontendUrl || env.client.urls[0]
   if (!frontendUrl) return null
 
-  return new URL(path, frontendUrl).toString()
+  try {
+    return new URL(path, frontendUrl).toString()
+  } catch (error) {
+    logger.warn('Notification frontend URL is invalid; skipping generated link', {
+      frontendUrl,
+      path,
+      error: error.message
+    })
+    return null
+  }
 }
 
-const buildRegistrationUrl = (eventId) => {
-  const registrationUrl = getFrontendUrl('/register')
-  if (!registrationUrl) return null
+const appendSearchParams = (urlString, params = {}, logger = LOGGER) => {
+  if (!urlString) return null
 
-  const url = new URL(registrationUrl)
-  if (eventId) url.searchParams.set('eventId', eventId)
-  return url.toString()
+  try {
+    const url = new URL(urlString)
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        url.searchParams.set(key, String(value))
+      }
+    })
+    return url.toString()
+  } catch (error) {
+    logger.warn('Generated notification URL is invalid while appending query params', {
+      urlString,
+      error: error.message
+    })
+    return null
+  }
+}
+
+const buildRegistrationUrl = (eventId, logger = LOGGER) => {
+  const registrationUrl = getFrontendUrl('/register', logger)
+  return appendSearchParams(registrationUrl, { eventId }, logger)
 }
 
 export const createNotificationService = ({
@@ -142,7 +167,7 @@ export const createNotificationService = ({
 
   const sendEventInvitations = async ({ event, emails = [], message, actor } = {}) => {
     const uniqueEmails = [...new Set(emails.map((email) => String(email).trim().toLowerCase()).filter(Boolean))]
-    const registrationUrl = buildRegistrationUrl(getId(event))
+    const registrationUrl = buildRegistrationUrl(getId(event), logger)
     const results = []
 
     for (const email of uniqueEmails) {

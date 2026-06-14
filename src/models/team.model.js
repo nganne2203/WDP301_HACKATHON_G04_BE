@@ -8,6 +8,7 @@ const teamSchema = new Schema(
     trackId: { type: Schema.Types.ObjectId, ref: 'Track' },
     leaderId: { type: Schema.Types.ObjectId, ref: 'User' },
     memberIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    mentorIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     name: { type: String, required: true, trim: true },
     chapterName: { type: String, trim: true },
     projectName: { type: String, trim: true },
@@ -45,6 +46,7 @@ teamSchema.index(
 )
 teamSchema.index({ eventId: 1, status: 1 })
 teamSchema.index({ eventId: 1, chapterName: 1 })
+teamSchema.index({ eventId: 1, mentorIds: 1 })
 teamSchema.index({ qualificationStatus: 1 })
 
 const Team = mongoose.model('Team', teamSchema)
