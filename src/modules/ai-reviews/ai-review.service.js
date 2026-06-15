@@ -1,8 +1,10 @@
 import Joi from 'joi'
 
 import { AI_REVIEW_REPOSITORY } from './ai-review.repository.js'
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES, AUDIT_RESULTS } from '#constants/audit.js'
 import { JOB_TYPES } from '#constants/queue.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
+import { AUDIT_LOG_SERVICE } from '#modules/audit-logs/audit-log.service.js'
 import ApiError from '#utils/ApiError.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { QUEUE_SERVICE } from '#services/queue.service.js'
@@ -448,7 +450,8 @@ export const createAiReviewService = ({
   },
   rankingRepository = {
     async touch() {}
-  }
+  },
+  auditLogService = AUDIT_LOG_SERVICE
 } = {}) => {
   void scoreSheetRepository
   void rankingRepository
@@ -581,6 +584,28 @@ export const createAiReviewService = ({
     } catch (error) {
       return buildGeneratedErrorFallback({ error })
     }
+  }
+
+  const writeAiAudit = ({ userId, action, review, repositoryId, result = AUDIT_RESULTS.SUCCESS, errorMessage = null, metadata = {} }) => {
+    auditLogService.createAuditLog({
+      userId,
+      action,
+      entityType: AUDIT_ENTITY_TYPES.AI_REVIEW,
+      entityId: review?.id || review?._id || null,
+      resourceType: AUDIT_ENTITY_TYPES.AI_REVIEW,
+      resourceId: review?.id || review?._id || null,
+      result,
+      errorMessage,
+      sourceModule: 'ai-reviews',
+      description: `${action} for repository ${repositoryId}`,
+      metadata: {
+        repositoryId,
+        reviewKind: review?.reviewKind,
+        status: review?.status,
+        commitSha: review?.commitSha,
+        ...metadata
+      }
+    }).catch(() => {})
   }
 
   const buildPerPushEvidence = async ({ repositoryId, commitSha }) => {
@@ -763,8 +788,20 @@ export const createAiReviewService = ({
         completedAt: new Date()
       })
 
+      const normalizedSkippedReview = normalizeAiReview(await repository.findAiReviewById(aiReview._id))
+      writeAiAudit({
+        userId: requestedBy,
+        action: AUDIT_ACTIONS.AI_REVIEW_COMPLETED,
+        review: normalizedSkippedReview,
+        repositoryId,
+        metadata: {
+          skipped: true,
+          impactDecision: reviewStatus
+        }
+      })
+
       return {
-        review: normalizeAiReview(await repository.findAiReviewById(aiReview._id)),
+        review: normalizedSkippedReview,
         skipped: true
       }
     }
@@ -829,6 +866,16 @@ export const createAiReviewService = ({
       needsHumanReview: Boolean(normalized.normalizedOutput.needsHumanReview || evidence.impactDecision.needsHumanReview),
       completedAt: new Date(),
       lastError: generated.errorMessage || null
+    })
+
+    writeAiAudit({
+      userId: requestedBy,
+      action: normalized.usedFallback ? AUDIT_ACTIONS.AI_REVIEW_FAILED : AUDIT_ACTIONS.AI_REVIEW_COMPLETED,
+      review: normalizeAiReview(updatedAiReview),
+      repositoryId,
+      result: normalized.usedFallback ? AUDIT_RESULTS.FAILURE : AUDIT_RESULTS.SUCCESS,
+      errorMessage: generated.errorMessage || null,
+      metadata: { usedFallback: normalized.usedFallback }
     })
 
     return {
@@ -898,6 +945,16 @@ export const createAiReviewService = ({
       lastError: generated.errorMessage || null
     })
 
+    writeAiAudit({
+      userId: requestedBy,
+      action: normalized.usedFallback ? AUDIT_ACTIONS.AI_REVIEW_FAILED : AUDIT_ACTIONS.AI_REVIEW_COMPLETED,
+      review: normalizeAiReview(updatedAiReview),
+      repositoryId,
+      result: normalized.usedFallback ? AUDIT_RESULTS.FAILURE : AUDIT_RESULTS.SUCCESS,
+      errorMessage: generated.errorMessage || null,
+      metadata: { usedFallback: normalized.usedFallback }
+    })
+
     return {
       review: normalizeAiReview(updatedAiReview)
     }
@@ -909,6 +966,18 @@ export const createAiReviewService = ({
       repositoryId,
       commitSha: evidence.commit?.commitSha || evidence.commitDiff?.headCommitSha,
       requestedBy
+    })
+
+    writeAiAudit({
+      userId: requestedBy,
+      action: AUDIT_ACTIONS.AI_REVIEW_REQUESTED,
+      repositoryId,
+      review: {
+        reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+        commitSha: evidence.commit?.commitSha || evidence.commitDiff?.headCommitSha,
+        status: 'QUEUED'
+      },
+      metadata: { queuedJobType: JOB_TYPES.RUN_PER_PUSH_AUDIT }
     })
 
     return {
@@ -926,6 +995,17 @@ export const createAiReviewService = ({
       repositoryId,
       batchId,
       requestedBy
+    })
+
+    writeAiAudit({
+      userId: requestedBy,
+      action: AUDIT_ACTIONS.AI_REVIEW_REQUESTED,
+      repositoryId,
+      review: {
+        reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
+        status: 'QUEUED'
+      },
+      metadata: { queuedJobType: JOB_TYPES.RUN_TEAM_AGGREGATE_AUDIT, batchId }
     })
 
     return {

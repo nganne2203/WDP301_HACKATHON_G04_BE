@@ -350,7 +350,7 @@ test('updateTeamStatus confirms a team and auto-assigns the next available place
     status: 'CONFIRMED'
   }, {
     id: 'coord-1',
-    roles: ['COORDINATOR']
+    permissions: ['TEAM_UPDATE']
   })
 
   assert.equal(result.status, 'CONFIRMED')
@@ -408,7 +408,7 @@ test('updateTeamPlacement rejects manual placement when the selected track is fu
       trackAssignmentMethod: 'MANUAL'
     }, {
       id: 'coord-1',
-      roles: ['COORDINATOR']
+      permissions: ['TEAM_UPDATE']
     }),
     (error) => error instanceof ApiError &&
       error.code === 'CONFLICT' &&
@@ -456,4 +456,24 @@ test('mentor can list only teams assigned to them', async () => {
   assert.equal(result.teams.length, 1)
   assert.equal(result.teams[0].name, 'Assigned Team')
   assert.deepEqual(result.teams[0].mentorIds, ['mentor-1'])
+test('updateTeamStatus rejects actors without team management permission', async () => {
+  const service = createTeamService({
+    repository: {
+      createSession
+    },
+    logger: createLogger()
+  })
+
+  await assert.rejects(
+    service.updateTeamStatus('000000000000000000000701', {
+      status: 'CONFIRMED'
+    }, {
+      id: 'user-1',
+      roles: ['COORDINATOR'],
+      permissions: ['TEAM_VIEW']
+    }),
+    (error) => error instanceof ApiError &&
+      error.code === 'FORBIDDEN' &&
+      error.errors.includes('You do not have permission to manage teams')
+  )
 })

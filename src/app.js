@@ -11,6 +11,7 @@ import { swaggerSpec } from '#configs/swagger.js'
 import { swaggerHandlingMiddleware } from '#middlewares/swaggerHandlingMiddleware.js'
 import { errorHandlingMiddleware } from '#middlewares/errorHandlingMiddleware.js'
 import { apiRateLimiter } from '#middlewares/rateLimitHandlingMiddleware.js'
+import auditLogMiddleware from '#middlewares/auditLogMiddleware.js'
 import apiRoutes from '#routes/index.js'
 import { QUEUE_SERVICE } from '#services/queue.service.js'
 
@@ -32,6 +33,7 @@ export const createApp = () => {
   })
   app.use(morgan('dev'))
   app.use(apiRateLimiter)
+  app.use(auditLogMiddleware)
 
   app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok' })
