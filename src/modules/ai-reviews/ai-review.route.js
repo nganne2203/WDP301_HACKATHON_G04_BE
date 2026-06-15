@@ -9,6 +9,11 @@ import { validationHandlingMiddleware } from '#middlewares/validationHandlingMid
 
 const router = Router()
 
+router.post(
+  '/:id/callback',
+  AI_REVIEW_CONTROLLER.handleCallback
+)
+
 router.use(authorizationMiddleware)
 
 router.get(

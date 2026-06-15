@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { createAiReviewService } from '../src/modules/ai-reviews/ai-review.service.js'
+import { env } from '../src/configs/environment.js'
 
 const createAiReviewRepository = () => {
   const repositories = new Map()
@@ -577,3 +578,195 @@ test('team aggregate audit enriches canonical aggregate fields when provider omi
   assert.equal(Array.isArray(result.review.normalizedOutput.riskSummary), true)
   assert.equal(Boolean(result.review.normalizedOutput.judgeDashboardSummary?.headline), true)
 })
+
+test('createPerPushAudit triggers n8n webhook and returns PENDING when enabled', async () => {
+  const { repository, repositoryId, commitSha } = createRepositoryFixture({
+    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+  })
+  
+  let triggered = false
+  let triggeredPayload
+  
+  // Set env.n8n to enabled
+  env.n8n = {
+    enabled: true,
+    perPushWebhookUrl: 'https://n8n.test/per-push',
+    teamAggregateWebhookUrl: 'https://n8n.test/aggregate',
+    callbackSecret: 'secret-key'
+  }
+  
+  // Mock N8N_SERVICE
+  const mockN8nService = {
+    async triggerPerPushAudit(payload) {
+      triggered = true
+      triggeredPayload = payload
+      return 202
+    }
+  }
+
+  const service = createAiReviewService({
+    repository,
+    queueService: {
+      enqueueRunPerPushAudit: async () => null
+    },
+    llmService: {} // Not called in successful trigger
+  })
+
+  // Override internal N8N_SERVICE dependency if possible or use the env configs
+  // Since our service imports N8N_SERVICE directly from `#services/n8n.service.js`,
+  // we can temporarily stub global fetch/N8N_SERVICE.
+  // Wait, let's see how N8N_SERVICE can be mocked. N8N_SERVICE is createN8nService({ fetchImpl }).
+  // So if we stub globalThis.fetch, createN8nService will call it!
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => {
+    triggered = true
+    triggeredPayload = JSON.parse(options.body)
+    return {
+      ok: true,
+      status: 202,
+      async text() { return 'Accepted' }
+    }
+  }
+
+  try {
+    const result = await service.createPerPushAudit({
+      repositoryId,
+      commitSha,
+      requestedBy: 'user-1'
+    })
+
+    assert.equal(triggered, true)
+    assert.equal(result.pending, true)
+    assert.equal(result.review.status, 'PENDING')
+    assert.equal(triggeredPayload.aiReviewId, result.review.id)
+  } finally {
+    globalThis.fetch = originalFetch
+    env.n8n.enabled = false // restore env
+  }
+})
+
+test('handleAuditCallback success path updates PENDING to COMPLETED', async () => {
+  const { repository, stores, repositoryId } = createRepositoryFixture({
+    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+  })
+
+  const pendingReview = await repository.createAiReview({
+    repositoryId,
+    reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+    status: 'PENDING',
+    commitSha: 'commit-1',
+    requestedBy: 'user-1',
+    requestedAt: new Date()
+  })
+
+  const service = createAiReviewService({
+    repository,
+    queueService: {}
+  })
+
+  const result = await service.handleAuditCallback({
+    aiReviewId: pendingReview._id,
+    status: 'success',
+    rawResponse: validAiResponse,
+    modelName: 'gemini-1.5-pro',
+    provider: 'google'
+  })
+
+  assert.equal(result.status, 'COMPLETED')
+  const reviewInDb = await repository.findAiReviewById(pendingReview._id)
+  assert.equal(reviewInDb.status, 'COMPLETED')
+  assert.equal(reviewInDb.model, 'gemini-1.5-pro')
+})
+
+test('handleAuditCallback failure path runs local fallback and updates to FALLBACK', async () => {
+  const { repository, repositoryId } = createRepositoryFixture({
+    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+  })
+
+  const pendingReview = await repository.createAiReview({
+    repositoryId,
+    reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+    status: 'PENDING',
+    commitSha: 'commit-1',
+    requestedBy: 'user-1',
+    promptInput: {},
+    requestedAt: new Date()
+  })
+
+  let fallbackCalled = false
+  const service = createAiReviewService({
+    repository,
+    llmService: {
+      async generateAudit() {
+        fallbackCalled = true
+        return {
+          rawResponse: validAiResponse,
+          modelName: 'fallback-gpt-mini',
+          provider: 'openai'
+        }
+      }
+    }
+  })
+
+  const result = await service.handleAuditCallback({
+    aiReviewId: pendingReview._id,
+    status: 'error',
+    errorMessage: 'Vertex AI quota exceeded'
+  })
+
+  assert.equal(fallbackCalled, true)
+  assert.equal(result.status, 'FALLBACK')
+  const reviewInDb = await repository.findAiReviewById(pendingReview._id)
+  assert.equal(reviewInDb.status, 'FALLBACK')
+  assert.equal(reviewInDb.lastError, 'Vertex AI quota exceeded')
+  assert.equal(result.modelName, 'fallback-gpt-mini')
+})
+
+test('createPerPushAudit local fallback is triggered if n8n webhook throws error', async () => {
+  const { repository, repositoryId, commitSha } = createRepositoryFixture({
+    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+  })
+
+  env.n8n = {
+    enabled: true,
+    perPushWebhookUrl: 'https://n8n.test/per-push',
+    teamAggregateWebhookUrl: 'https://n8n.test/aggregate',
+    callbackSecret: 'secret-key'
+  }
+
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => {
+    throw new Error('Network timeout triggering n8n')
+  }
+
+  let localLlmCalled = false
+  const service = createAiReviewService({
+    repository,
+    llmService: {
+      async generateAudit() {
+        localLlmCalled = true
+        return {
+          rawResponse: validAiResponse,
+          modelName: 'fallback-gpt-mini',
+          provider: 'openai'
+        }
+      }
+    }
+  })
+
+  try {
+    const result = await service.createPerPushAudit({
+      repositoryId,
+      commitSha,
+      requestedBy: 'user-1'
+    })
+
+    assert.equal(localLlmCalled, true)
+    assert.equal(result.review.status, 'FALLBACK') // fell back locally
+    assert.equal(result.review.modelName, 'fallback-gpt-mini')
+  } finally {
+    globalThis.fetch = originalFetch
+    env.n8n.enabled = false
+  }
+})
+

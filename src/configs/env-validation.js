@@ -35,6 +35,18 @@ export const validateRuntimeEnvironment = ({
     errors.push('AI_API_KEY or OPENAI_API_KEY is required when AI_PROVIDER=openai')
   }
 
+  if (config.n8n?.enabled) {
+    if (!config.n8n.perPushWebhookUrl) {
+      errors.push('N8N_PER_PUSH_WEBHOOK_URL is required when N8N_ENABLED=true')
+    }
+    if (!config.n8n.teamAggregateWebhookUrl) {
+      errors.push('N8N_TEAM_AGGREGATE_WEBHOOK_URL is required when N8N_ENABLED=true')
+    }
+    if (!config.n8n.callbackSecret) {
+      errors.push('N8N_CALLBACK_SECRET is required when N8N_ENABLED=true')
+    }
+  }
+
   if (!config.server?.publicUrl) {
     warnings.push('APP_BASE_URL or SERVER_PUBLIC_URL is not configured; webhook callback auto-build may be unavailable')
   }

@@ -84,6 +84,12 @@ export const env = {
     timeoutMs: parseNumber(process.env.AI_TIMEOUT_MS) || 45000,
     maxRetries: parseNumber(process.env.AI_MAX_RETRIES) ?? 2
   },
+  n8n: {
+    enabled: parseBoolean(process.env.N8N_ENABLED, false),
+    perPushWebhookUrl: process.env.N8N_PER_PUSH_WEBHOOK_URL,
+    teamAggregateWebhookUrl: process.env.N8N_TEAM_AGGREGATE_WEBHOOK_URL,
+    callbackSecret: process.env.N8N_CALLBACK_SECRET
+  },
   github: {
     webhookSecret: process.env.GITHUB_WEBHOOK_SECRET,
     webhookCallbackUrl: process.env.GITHUB_WEBHOOK_CALLBACK_URL,
