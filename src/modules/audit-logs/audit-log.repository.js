@@ -33,6 +33,26 @@ const aggregateByResourceType = async (filter = {}) => {
     { $project: { _id: 0, resourceType: '$_id', count: 1 } },
     { $sort: { count: -1, resourceType: 1 } },
     { $limit: 20 }
+])
+}
+
+const aggregateByResult = async (filter = {}) => {
+  return await AuditLog.aggregate([
+    { $match: filter },
+    { $group: { _id: '$result', count: { $sum: 1 } } },
+    { $project: { _id: 0, result: '$_id', count: 1 } },
+    { $sort: { count: -1, result: 1 } },
+    { $limit: 20 }
+  ])
+}
+
+const aggregateByUserRole = async (filter = {}) => {
+  return await AuditLog.aggregate([
+    { $match: filter },
+    { $group: { _id: '$userRole', count: { $sum: 1 } } },
+    { $project: { _id: 0, userRole: '$_id', count: 1 } },
+    { $sort: { count: -1, userRole: 1 } },
+    { $limit: 20 }
   ])
 }
 
@@ -41,5 +61,7 @@ export const AUDIT_LOG_REPOSITORY = {
   findAuditLogs,
   countAuditLogs,
   aggregateByAction,
-  aggregateByResourceType
+  aggregateByResourceType,
+  aggregateByResult,
+  aggregateByUserRole
 }
