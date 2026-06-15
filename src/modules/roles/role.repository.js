@@ -1,4 +1,5 @@
 import Role from '#models/role.model.js'
+import User from '#models/user.model.js'
 
 const POPULATE_PERMISSIONS = { path: 'permissions', select: 'code name description module isActive' }
 
@@ -19,6 +20,10 @@ const findByName = (name) => {
   return Role.findOne({ name: name.toUpperCase() }).populate(POPULATE_PERMISSIONS).lean()
 }
 
+const findByCode = (code) => {
+  return Role.findOne({ code: code.toUpperCase() }).populate(POPULATE_PERMISSIONS).lean()
+}
+
 const findByNames = (names = []) => {
   return Role.find({ name: { $in: names.map(n => n.toUpperCase()) } })
     .populate(POPULATE_PERMISSIONS)
@@ -27,6 +32,10 @@ const findByNames = (names = []) => {
 
 const count = (filter = {}) => {
   return Role.countDocuments(filter)
+}
+
+const countUsersByRoleId = (roleId) => {
+  return User.countDocuments({ roles: roleId })
 }
 
 const create = (data) => {
@@ -47,8 +56,10 @@ export const ROLE_REPOSITORY = {
   findAll,
   findById,
   findByName,
+  findByCode,
   findByNames,
   count,
+  countUsersByRoleId,
   create,
   updateById,
   softDeleteById

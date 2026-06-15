@@ -11,6 +11,7 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
 import { LOGGER } from '#utils/logger.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
+import { PERMISSIONS } from '#constants/permissions.js'
 
 export const TEAM_STATUSES = {
   PENDING: 'PENDING',
@@ -34,7 +35,6 @@ export const INVITATION_STATUSES = {
 const CONFIRMED_TEAM_STATUSES = [TEAM_STATUSES.CONFIRMED, TEAM_STATUSES.ACTIVE]
 const OPEN_TEAM_STATUSES = [TEAM_STATUSES.PENDING, TEAM_STATUSES.WAITING_FOR_MEMBERS, TEAM_STATUSES.WAITLISTED]
 const ACTIVE_PARTICIPANT_STATUSES = ['INVITED', 'REGISTERED', 'ACTIVE']
-const COORDINATOR_ROLES = ['ADMIN', 'COORDINATOR', 'EVENT_COORDINATOR']
 
 const getId = (value) => {
   return value?._id?.toString?.() || value?.id || value?.toString?.()
@@ -277,13 +277,18 @@ const normalizeTeam = ({ team, participants = [], invitations = [] } = {}) => {
   }
 }
 
-const hasCoordinatorRole = (actor = {}) => {
-  return (actor.roles || []).some(role => COORDINATOR_ROLES.includes(String(role).toUpperCase()))
+const actorHasPermission = (actor = {}, permission) => {
+  const permissions = actor.effectivePermissions || actor.permissions || []
+  return permissions.includes(permission)
 }
 
-const ensureCoordinator = (actor = {}) => {
-  if (!hasCoordinatorRole(actor)) {
-    throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only coordinators can perform this action'])
+const hasTeamManagementPermission = (actor = {}) => {
+  return actorHasPermission(actor, PERMISSIONS.TEAM_UPDATE)
+}
+
+const ensureTeamManagementPermission = (actor = {}) => {
+  if (!hasTeamManagementPermission(actor)) {
+    throw new ApiError(ERROR_CODES.FORBIDDEN, ['You do not have permission to manage teams'])
   }
 }
 
@@ -326,7 +331,7 @@ const ensureTeamReadable = (team, actor) => {
   const memberIds = (team.memberIds || []).map(getId)
   const actorId = actor.id
 
-  if (hasCoordinatorRole(actor) || isSameId(team.leaderId, actorId) || memberIds.includes(actorId)) {
+  if (hasTeamManagementPermission(actor) || isSameId(team.leaderId, actorId) || memberIds.includes(actorId)) {
     return
   }
 
@@ -837,8 +842,8 @@ export const createTeamService = ({
   logger = LOGGER
 } = {}) => {
   const listTeams = async (query = {}, actor = {}) => {
-    if (!hasCoordinatorRole(actor)) {
-      throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only coordinators can list all teams'])
+    if (!hasTeamManagementPermission(actor)) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['You do not have permission to list all teams'])
     }
 
     const { page, limit } = normalizePaginationQuery(query)
@@ -1410,7 +1415,7 @@ export const createTeamService = ({
   }
 
   const updateTeamStatus = async (teamId, payload = {}, actor = {}) => {
-    ensureCoordinator(actor)
+    ensureTeamManagementPermission(actor)
 
     return await runWithOptionalTransaction({
       repository,
@@ -1468,7 +1473,7 @@ export const createTeamService = ({
   }
 
   const updateTeamPlacement = async (teamId, payload = {}, actor = {}) => {
-    ensureCoordinator(actor)
+    ensureTeamManagementPermission(actor)
 
     return await runWithOptionalTransaction({
       repository,
@@ -1505,7 +1510,7 @@ export const createTeamService = ({
   }
 
   const getEventTeamCapacity = async (eventId, actor = {}) => {
-    ensureCoordinator(actor)
+    ensureTeamManagementPermission(actor)
     ensureObjectId(eventId, 'event id')
 
     const event = await repository.findEventById(eventId)

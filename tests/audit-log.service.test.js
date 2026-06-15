@@ -12,7 +12,12 @@ test('audit log service returns paginated logs and summary breakdowns', async ()
       return [
         {
           _id: '664c3f6a3a6d4a5f3f93b911',
-          userId: { _id: '664c3f6a3a6d4a5f3f93b922' },
+          userId: {
+            _id: '664c3f6a3a6d4a5f3f93b922',
+            fullName: 'Admin User',
+            email: 'admin@example.com',
+            status: 'APPROVED'
+          },
           action: 'RESULTS_PUBLISHED',
           resourceType: 'Ranking',
           resourceId: '664c3f6a3a6d4a5f3f93b933',
@@ -37,6 +42,9 @@ test('audit log service returns paginated logs and summary breakdowns', async ()
   const listed = await service.listAuditLogs({})
   assert.equal(listed.auditLogs.length, 1)
   assert.equal(listed.auditLogs[0].action, 'RESULTS_PUBLISHED')
+  assert.equal(listed.auditLogs[0].userId, '664c3f6a3a6d4a5f3f93b922')
+  assert.equal(listed.auditLogs[0].user.fullName, 'Admin User')
+  assert.equal(listed.auditLogs[0].user.email, 'admin@example.com')
   assert.equal(listed.pagination.totalItems, 1)
 
   const summary = await service.getAuditLogSummary({})

@@ -6,6 +6,7 @@ const create = async (data) => {
 
 const findAuditLogs = async ({ filter = {}, skip = 0, limit = 20, sort = { createdAt: -1 } } = {}) => {
   return await AuditLog.find(filter)
+    .populate({ path: 'userId', select: 'fullName email status' })
     .sort(sort)
     .skip(skip)
     .limit(limit)

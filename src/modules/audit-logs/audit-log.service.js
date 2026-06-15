@@ -11,6 +11,21 @@ const ensureObjectId = (id, fieldName = 'id') => {
   }
 }
 
+const getAuditUserId = (user) => {
+  return user?._id?.toString?.() || user?.id?.toString?.() || user?.toString?.() || user || null
+}
+
+const normalizeAuditUser = (user) => {
+  if (!user || typeof user !== 'object' || !user._id) return null
+
+  return {
+    id: user._id.toString(),
+    fullName: user.fullName || null,
+    email: user.email || null,
+    status: user.status || null
+  }
+}
+
 const normalizeAuditLog = (auditLog) => {
   if (!auditLog) return null
   const plain = typeof auditLog.toObject === 'function'
@@ -19,7 +34,8 @@ const normalizeAuditLog = (auditLog) => {
 
   return {
     id: plain._id?.toString() || plain.id,
-    userId: plain.userId?._id?.toString?.() || plain.userId?.toString?.() || plain.userId || null,
+    userId: getAuditUserId(plain.userId),
+    user: normalizeAuditUser(plain.userId),
     action: plain.action,
     resourceType: plain.resourceType || null,
     resourceId: plain.resourceId?._id?.toString?.() || plain.resourceId?.toString?.() || plain.resourceId || null,
