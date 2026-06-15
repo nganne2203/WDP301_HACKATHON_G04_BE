@@ -41,6 +41,8 @@ const listMyHistory = {
     eventId: objectId,
     mediaType,
     status: mediaStatus,
+    search: Joi.string().trim().max(100),
+    tags,
     ...dateFilter
   })
 }
@@ -53,6 +55,8 @@ const listAdminMedia = {
     teamId: objectId,
     mediaType,
     status: mediaStatus,
+    search: Joi.string().trim().max(100),
+    tags,
     ...dateFilter
   })
 }

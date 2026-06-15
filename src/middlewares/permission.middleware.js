@@ -2,12 +2,17 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import ApiError from '#utils/ApiError.js'
 
 const normalizePermissions = (user = {}) => {
-  const directPermissions = user.permissions || []
-  const rolePermissions = (user.roles || []).flatMap(role => role.permissions || [])
+  const directPermissions = user.effectivePermissions || user.permissions || []
+  const activeRoles = (user.roles || []).filter(role => {
+    if (typeof role === 'string') return true
+    return role.isActive !== false
+  })
+  const rolePermissions = activeRoles.flatMap(role => role.permissions || [])
 
   return [...directPermissions, ...rolePermissions]
     .map(permission => {
       if (typeof permission === 'string') return permission
+      if (permission.isActive === false) return null
       return permission.code
     })
     .filter(Boolean)

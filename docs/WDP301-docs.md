@@ -1004,11 +1004,53 @@ Configurations include:
 - GitHub token,
 - AI API key,
 - webhook secret,
-- external scoring API configuration.
+- external scoring API configuration,
+- Supabase media storage configuration.
 
 ### FR-ADMIN-03
 
 Configuration data is stored in the database.
+
+---
+
+# 4.17 Media Upload, Gallery, and Moderation Module
+
+## Implementation Status
+
+Backend media APIs are implemented using Supabase Storage for files and MongoDB for metadata. Frontend participant media, event gallery, and admin moderation/statistics pages are implemented.
+
+## Features
+
+- participant media upload for joined events,
+- private Supabase Storage object access through backend-generated signed URLs,
+- participant upload history,
+- approved event gallery,
+- coordinator/admin moderation,
+- media statistics,
+- media activity tracking and audit logs,
+- storage configuration through `SystemConfiguration`.
+
+## Requirements
+
+### FR-MEDIA-01
+
+Participants can upload image, video, and document files only for events they joined.
+
+### FR-MEDIA-02
+
+Uploaded files are validated by extension, MIME type, and configured file-size limits.
+
+### FR-MEDIA-03
+
+Event galleries return approved media only.
+
+### FR-MEDIA-04
+
+Admins and event coordinators can list, approve, reject, delete, and inspect statistics for media.
+
+### FR-MEDIA-05
+
+Supabase service role keys are encrypted at rest and never returned to clients.
 
 ---
 
@@ -1063,6 +1105,7 @@ The system must support integration with:
 - GitHub API,
 - third-party AI APIs,
 - Google Meet,
+- Supabase Storage,
 - external scoring systems.
 
 ---
@@ -1097,8 +1140,9 @@ The main entities include:
 - AIReview
 - AIReviewCriterion
 - Notification
-- AuditLog
 - Media
+- MediaActivity
+- AuditLog
 - SystemConfiguration
 
 ---
@@ -1264,8 +1308,12 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 - Key fields: `userId`, `title`, `message`, `type`, `status`, `metadata`.
 
 **Media**
-- Stores event media records.
-- Key fields: `eventId`, `uploadedBy`, `url`, `caption`, `tags`.
+- Stores event media metadata while actual files live in Supabase Storage.
+- Key fields: `eventId`, `uploadedBy`, `teamId`, `title`, `description`, `mediaType`, `storageProvider`, `bucketName`, `storagePath`, `fileUrl`, `originalFileName`, `mimeType`, `fileSize`, `fileExtension`, `tags`, `status`, `reviewedBy`, `reviewedAt`, `rejectReason`, `uploadedAt`.
+
+**MediaActivity**
+- Tracks media actions.
+- Key fields: `mediaId`, `eventId`, `userId`, `action`, `metadata`, `createdAt`.
 
 **AuditLog**
 - Stores critical system activity.

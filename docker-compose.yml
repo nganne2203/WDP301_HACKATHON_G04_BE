@@ -27,6 +27,20 @@ services:
       retries: 10
       start_period: 5s
 
+  seed:
+    build:
+      context: .
+    init: true
+    restart: "no"
+    command: ["npm", "run", "db:init"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      MONGODB_URI: ${MONGODB_URI_DOCKER:-mongodb://mongodb:27017/seal_db}
+
   api:
     build:
       context: .
@@ -37,12 +51,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     env_file:
       - .env
     environment:
       PORT: 3000
       HOSTNAME: 0.0.0.0
-      MONGODB_URI: mongodb://mongo:27017/seal_db
+      MONGODB_URI: ${MONGODB_URI_DOCKER:-mongodb://mongodb:27017/seal_db}
       REDIS_URL: redis://redis:6379
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       GITHUB_WEBHOOK_CALLBACK_URL: ${GITHUB_WEBHOOK_CALLBACK_URL:-}
@@ -75,15 +91,34 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     env_file:
       - .env
     environment:
-      MONGODB_URI: mongodb://mongo:27017/seal_db
+      MONGODB_URI: ${MONGODB_URI_DOCKER:-mongodb://mongodb:27017/seal_db}
       REDIS_URL: redis://redis:6379
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       GITHUB_WEBHOOK_CALLBACK_URL: ${GITHUB_WEBHOOK_CALLBACK_URL:-}
       STATIC_ANALYSIS_ESLINT_COMMAND: ${STATIC_ANALYSIS_ESLINT_COMMAND_DOCKER:-}
       STATIC_ANALYSIS_TSC_COMMAND: ${STATIC_ANALYSIS_TSC_COMMAND_DOCKER:-}
+
+  frontend:
+    image: node:20-alpine
+    init: true
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3000/api}
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ../WDP301_FE:/app
+      - frontend-node-modules:/app/node_modules
 
 volumes:
   mongo-data:

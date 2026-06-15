@@ -81,12 +81,12 @@ const assignRoles = {
 const assignRolesByIds = {
   params: idParam,
   body: Joi.object({
+    roleId: Joi.string().hex().length(24),
     roleIds: Joi.array()
       .items(Joi.string().hex().length(24))
       .min(1)
       .unique()
-      .required()
-  })
+  }).xor('roleId', 'roleIds')
 }
 
 export const USER_VALIDATION = {
