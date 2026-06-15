@@ -1,11 +1,11 @@
 services:
-  mongodb:
+  mongo:
     image: mongo:7
     restart: unless-stopped
     ports:
-      - "${MONGODB_PORT:-27017}:27017"
+      - "${MONGO_PORT:-27018}:27017"
     volumes:
-      - mongodb-data:/data/db
+      - mongo-data:/data/db
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
@@ -47,7 +47,7 @@ services:
     init: true
     restart: unless-stopped
     depends_on:
-      mongodb:
+      mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -87,7 +87,7 @@ services:
     restart: unless-stopped
     command: ["node", "src/worker.js"]
     depends_on:
-      mongodb:
+      mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -121,6 +121,5 @@ services:
       - frontend-node-modules:/app/node_modules
 
 volumes:
-  frontend-node-modules:
-  mongodb-data:
+  mongo-data:
   redis-data:

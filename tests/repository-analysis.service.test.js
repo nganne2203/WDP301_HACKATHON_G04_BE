@@ -291,10 +291,12 @@ test('processComputeImpactScoreJob persists impact decisions', async () => {
 
 test('command hooks run against configured repositoryLocalPath instead of backend cwd', async () => {
   const originalEslintCommand = env.analysis.eslintCommand
+  const originalTscCommand = env.analysis.tscCommand
   const tempRepositoryPath = await mkdtemp(path.join(os.tmpdir(), 'repo-analysis-'))
 
   try {
     env.analysis.eslintCommand = 'npm run lint'
+    env.analysis.tscCommand = undefined
 
     const { repository, repositories, commitDiffs, staticResults } = createAnalysisRepository()
     repositories.set('repo-1', {
@@ -334,6 +336,7 @@ test('command hooks run against configured repositoryLocalPath instead of backen
     assert.equal(hookResult.rawOutput.cwd, tempRepositoryPath)
   } finally {
     env.analysis.eslintCommand = originalEslintCommand
+    env.analysis.tscCommand = originalTscCommand
     await rm(tempRepositoryPath, { recursive: true, force: true })
   }
 })

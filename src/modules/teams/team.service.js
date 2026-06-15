@@ -35,6 +35,8 @@ export const INVITATION_STATUSES = {
 const CONFIRMED_TEAM_STATUSES = [TEAM_STATUSES.CONFIRMED, TEAM_STATUSES.ACTIVE]
 const OPEN_TEAM_STATUSES = [TEAM_STATUSES.PENDING, TEAM_STATUSES.WAITING_FOR_MEMBERS, TEAM_STATUSES.WAITLISTED]
 const ACTIVE_PARTICIPANT_STATUSES = ['INVITED', 'REGISTERED', 'ACTIVE']
+const COORDINATOR_ROLES = ['ADMIN', 'COORDINATOR', 'EVENT_COORDINATOR']
+const MENTOR_SCOPED_ROLES = ['MENTOR', 'SPEAKER']
 
 const getId = (value) => {
   return value?._id?.toString?.() || value?.id || value?.toString?.()
@@ -110,15 +112,44 @@ const getMaxTeams = (event) => {
   return event?.maxTeams || 30
 }
 
-const getFrontendUrl = (path) => {
+const getFrontendUrl = (path, logger = LOGGER) => {
   const frontendUrl = env.client.frontendUrl || env.client.urls[0]
   if (!frontendUrl) return null
 
-  return new URL(path, frontendUrl).toString()
+  try {
+    return new URL(path, frontendUrl).toString()
+  } catch (error) {
+    logger.warn('Team frontend URL is invalid; skipping generated link', {
+      frontendUrl,
+      path,
+      error: error.message
+    })
+    return null
+  }
 }
 
-const buildInvitationUrls = (token) => {
-  const baseUrl = getFrontendUrl('/team-invitations/confirm')
+const appendSearchParams = (urlString, params = {}, logger = LOGGER) => {
+  if (!urlString) return null
+
+  try {
+    const url = new URL(urlString)
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        url.searchParams.set(key, String(value))
+      }
+    })
+    return url.toString()
+  } catch (error) {
+    logger.warn('Generated team URL is invalid while appending query params', {
+      urlString,
+      error: error.message
+    })
+    return null
+  }
+}
+
+const buildInvitationUrls = (token, logger = LOGGER) => {
+  const baseUrl = getFrontendUrl('/team-invitations/confirm', logger)
   if (!baseUrl) {
     return {
       acceptUrl: null,
@@ -126,22 +157,14 @@ const buildInvitationUrls = (token) => {
     }
   }
 
-  const acceptUrl = new URL(baseUrl)
-  acceptUrl.searchParams.set('token', token)
-  acceptUrl.searchParams.set('decision', 'accept')
-
-  const declineUrl = new URL(baseUrl)
-  declineUrl.searchParams.set('token', token)
-  declineUrl.searchParams.set('decision', 'decline')
-
   return {
-    acceptUrl: acceptUrl.toString(),
-    declineUrl: declineUrl.toString()
+    acceptUrl: appendSearchParams(baseUrl, { token, decision: 'accept' }, logger),
+    declineUrl: appendSearchParams(baseUrl, { token, decision: 'decline' }, logger)
   }
 }
 
-const buildLoginUrl = () => {
-  return getFrontendUrl('/login')
+const buildLoginUrl = (logger = LOGGER) => {
+  return getFrontendUrl('/login', logger)
 }
 
 const buildFullNameFromEmail = (email) => {
@@ -257,6 +280,8 @@ const normalizeTeam = ({ team, participants = [], invitations = [] } = {}) => {
     leader: normalizeUserSummary(plainTeam.leaderId),
     leaderId: getId(plainTeam.leaderId),
     members: (plainTeam.memberIds || []).map(normalizeUserSummary).filter(Boolean),
+    assignedMentors: (plainTeam.mentorIds || []).map(normalizeUserSummary).filter(Boolean),
+    mentorIds: (plainTeam.mentorIds || []).map(getId).filter(Boolean),
     name: plainTeam.name,
     chapterName: plainTeam.chapterName,
     projectName: plainTeam.projectName,
@@ -282,6 +307,13 @@ const actorHasPermission = (actor = {}, permission) => {
   return permissions.includes(permission)
 }
 
+const hasMentorScopedRole = (actor = {}) => {
+  return (actor.roles || []).some(role => MENTOR_SCOPED_ROLES.includes(String(role).toUpperCase()))
+}
+
+const ensureCoordinator = (actor = {}) => {
+  if (!hasCoordinatorRole(actor)) {
+    throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only coordinators can perform this action'])
 const hasTeamManagementPermission = (actor = {}) => {
   return actorHasPermission(actor, PERMISSIONS.TEAM_UPDATE)
 }
@@ -586,8 +618,8 @@ const ensureParticipantCanJoinEvent = async ({
   }
 }
 
-const buildInvitationEmailContext = ({ event, team, leader, token, invitedUser, email }) => {
-  const { acceptUrl, declineUrl } = buildInvitationUrls(token)
+const buildInvitationEmailContext = ({ event, team, leader, token, invitedUser, email, logger = LOGGER }) => {
+  const { acceptUrl, declineUrl } = buildInvitationUrls(token, logger)
 
   return {
     to: email,
@@ -676,7 +708,8 @@ const createInvitationForEmail = async ({
   fullName,
   session,
   jobs,
-  excludeInvitationId = null
+  excludeInvitationId = null,
+  logger = LOGGER
 }) => {
   ensureEmailIsNotLeader(email, leader)
 
@@ -737,7 +770,7 @@ const createInvitationForEmail = async ({
           fullName: invitedUser.fullName,
           email,
           temporaryPassword,
-          loginUrl: buildLoginUrl()
+          loginUrl: buildLoginUrl(logger)
         },
         metadata: {
           eventId: getId(event),
@@ -757,7 +790,8 @@ const createInvitationForEmail = async ({
       leader,
       token,
       invitedUser,
-      email
+      email,
+      logger
     })
   })
 
@@ -857,6 +891,12 @@ export const createTeamService = ({
       filter.trackId = query.trackId
     }
     if (query.status) filter.status = query.status
+    if (!hasCoordinatorRole(actor)) {
+      if (!actor.id) {
+        throw new ApiError(ERROR_CODES.FORBIDDEN, ['Mentor account is missing actor context'])
+      }
+      filter.mentorIds = actor.id
+    }
 
     const skip = (page - 1) * limit
     const [teams, totalItems] = await Promise.all([
