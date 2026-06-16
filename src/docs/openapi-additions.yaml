@@ -2381,7 +2381,9 @@ paths:
           description: Board created
   /api/judging-boards/auto-assign:
     post:
-      summary: Auto assign boards from current team placements
+      summary: Auto confirm randomized boards
+      description: |
+        Backward-compatible shortcut that randomizes eligible teams and immediately confirms the resulting board lineup.
       tags: [Judging Boards]
       security:
         - BearerAuth: []
@@ -2394,6 +2396,60 @@ paths:
       responses:
         '200':
           description: Boards auto-assigned
+  /api/judging-boards/randomize-preview:
+    post:
+      summary: Preview randomized judging boards
+      description: |
+        Build a random board proposal from eligible teams in a round without persisting final assignments.
+      tags: [Judging Boards]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutoAssignBoardsRequest'
+      responses:
+        '200':
+          description: Randomized board preview returned
+  /api/judging-boards/confirm-randomization:
+    post:
+      summary: Confirm randomized board lineup
+      description: |
+        Persist the coordinator-approved board lineup and write final board slots onto eligible teams.
+      tags: [Judging Boards]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId, roundId, boards]
+              properties:
+                eventId:
+                  type: string
+                roundId:
+                  type: string
+                boards:
+                  type: array
+                  items:
+                    type: object
+                    required: [boardNumber, name, teamIds]
+                    properties:
+                      boardNumber:
+                        type: integer
+                      name:
+                        type: string
+                      teamIds:
+                        type: array
+                        items:
+                          type: string
+      responses:
+        '200':
+          description: Randomized board lineup confirmed
   /api/judging-boards/{id}:
     get:
       summary: Get judging board by id
