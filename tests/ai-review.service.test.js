@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { createAiReviewService } from '../src/modules/ai-reviews/ai-review.service.js'
 import { env } from '../src/configs/environment.js'
+import { createAiReviewService } from '../src/modules/ai-reviews/ai-review.service.js'
 
 const createAiReviewRepository = () => {
   const repositories = new Map()
@@ -89,7 +89,14 @@ const createAiReviewRepository = () => {
       listAiReviewCriteria: async (aiReviewId) => reviewCriteria.get(aiReviewId) || [],
       listTechnicalFindings: async (aiReviewId) => technicalFindings.get(aiReviewId) || [],
       listSuggestedTestCases: async (aiReviewId) => suggestedTestCases.get(aiReviewId) || [],
-      listSuggestedJudgeQuestions: async (aiReviewId) => suggestedJudgeQuestions.get(aiReviewId) || []
+      listSuggestedJudgeQuestions: async (aiReviewId) => suggestedJudgeQuestions.get(aiReviewId) || [],
+      upsertCommit: async ({ repositoryId, commitSha, data }) => {
+        const key = `${repositoryId}:${commitSha}`
+        const current = commits.get(key) || { repositoryId, commitSha }
+        const updated = { ...current, ...data, repositoryId, commitSha }
+        commits.set(key, updated)
+        return updated
+      }
     }
   }
 }
@@ -164,11 +171,8 @@ const createRepositoryFixture = ({ impactDecision, commitSha = 'commit-1' }) => 
     includedFiles: 2,
     excludedFiles: 0,
     totalCleanPatchSize: 150,
-    diffText: 'RAW_DIFF_SHOULD_NOT_BE_USED',
-    cleanDiffText: 'CLEAN_DIFF_ONLY',
     files: [{
       filePath: 'src/modules/repositories/repository-analysis.service.js',
-      patch: 'RAW_PATCH_SHOULD_NOT_BE_USED',
       cleanPatch: '+async function runImpact() {}',
       patchSummary: 'Core analysis service updated',
       language: 'JavaScript',
@@ -323,6 +327,26 @@ const validAggregateAiResponse = JSON.stringify({
   needsHumanReview: true
 })
 
+const withN8nEnv = async (fn, { dispatchMaxRetries = 1 } = {}) => {
+  const originalN8n = env.n8n
+  const originalPublicUrl = env.server.publicUrl
+  env.n8n = {
+    enabled: true,
+    perPushWebhookUrl: 'https://n8n.test/per-push',
+    teamAggregateWebhookUrl: 'https://n8n.test/aggregate',
+    callbackSecret: 'secret-key',
+    dispatchMaxRetries
+  }
+  env.server.publicUrl = 'https://seal.example.com'
+
+  try {
+    await fn()
+  } finally {
+    env.n8n = originalN8n
+    env.server.publicUrl = originalPublicUrl
+  }
+}
+
 test('per-push audit is skipped for LOW/SKIP_LLM', async () => {
   const { repository, stores, repositoryId, commitSha } = createRepositoryFixture({
     impactDecision: { impactLevel: 'LOW', decision: 'SKIP_LLM' },
@@ -348,304 +372,85 @@ test('per-push audit is skipped for LOW/SKIP_LLM', async () => {
   assert.equal(stores.technicalFindings.size, 0)
 })
 
-test('per-push audit runs for HIGH/CALL_PER_PUSH_AUDIT and persists findings and questions', async () => {
-  const { repository, stores, repositoryId, commitSha } = createRepositoryFixture({
-    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
-  })
-  let scoreSheetTouches = 0
-  let rankingTouches = 0
-  let capturedPrompt
-
-  const service = createAiReviewService({
-    repository,
-    queueService: {
-      enqueueRunPerPushAudit: async () => null,
-      enqueueRunTeamAggregateAudit: async () => null
-    },
-    llmService: {
-      async generateAudit({ promptInput }) {
-        capturedPrompt = promptInput
-        return {
-          rawResponse: validAiResponse,
-          modelName: 'mock-model',
-          provider: 'mock',
-          tokenUsage: { totalTokens: 100 }
-        }
-      },
-      async repairJson() {
-        throw new Error('should not repair')
-      }
-    },
-    scoreSheetRepository: {
-      async touch() { scoreSheetTouches += 1 }
-    },
-    rankingRepository: {
-      async touch() { rankingTouches += 1 }
-    }
-  })
-
-  const result = await service.createPerPushAudit({
-    repositoryId,
-    commitSha,
-    requestedBy: 'user-1'
-  })
-
-  assert.equal(result.skipped, false)
-  assert.equal(result.review.status, 'COMPLETED')
-  assert.equal(stores.technicalFindings.size, 1)
-  assert.equal(stores.suggestedJudgeQuestions.size, 1)
-  assert.equal(scoreSheetTouches, 0)
-  assert.equal(rankingTouches, 0)
-  assert.equal(JSON.stringify(capturedPrompt).includes('RAW_DIFF_SHOULD_NOT_BE_USED'), false)
-  assert.equal(JSON.stringify(capturedPrompt).includes('RAW_PATCH_SHOULD_NOT_BE_USED'), false)
-  assert.equal(JSON.stringify(capturedPrompt).includes('CLEAN_DIFF_ONLY'), false)
-  assert.equal(capturedPrompt.diffSummary.files[0].cleanPatch.includes('runImpact'), true)
-})
-
-test('urgent audit runs for CRITICAL impact', async () => {
-  const { repository, repositoryId, commitSha } = createRepositoryFixture({
-    impactDecision: { impactLevel: 'CRITICAL', decision: 'URGENT_AUDIT_AND_HUMAN_REVIEW', needsHumanReview: true }
-  })
-
-  const service = createAiReviewService({
-    repository,
-    queueService: {
-      enqueueRunPerPushAudit: async () => null,
-      enqueueRunTeamAggregateAudit: async () => null
-    },
-    llmService: {
-      async generateAudit() {
-        return {
-          rawResponse: validAiResponse.replace('"HIGH"', '"CRITICAL"'),
-          modelName: 'mock-model',
-          provider: 'mock',
-          tokenUsage: { totalTokens: 100 }
-        }
-      },
-      async repairJson() {
-        throw new Error('should not repair')
-      }
-    }
-  })
-
-  const result = await service.createPerPushAudit({
-    repositoryId,
-    commitSha,
-    requestedBy: 'user-1'
-  })
-
-  assert.equal(result.review.status, 'COMPLETED')
-  assert.equal(result.review.needsHumanReview, true)
-})
-
-test('forbidden scoring fields are removed from AI output', async () => {
-  const { repository, stores, repositoryId, commitSha } = createRepositoryFixture({
-    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
-  })
-
-  const service = createAiReviewService({
-    repository,
-    queueService: {
-      enqueueRunPerPushAudit: async () => null,
-      enqueueRunTeamAggregateAudit: async () => null
-    },
-    llmService: {
-      async generateAudit() {
-        return {
-          rawResponse: validAiResponse,
-          modelName: 'mock-model',
-          provider: 'mock'
-        }
-      },
-      async repairJson() {
-        throw new Error('should not repair')
-      }
-    }
-  })
-
-  await service.createPerPushAudit({
-    repositoryId,
-    commitSha,
-    requestedBy: 'user-1'
-  })
-
-  const persistedReview = [...stores.aiReviews.values()].find(review => review.repositoryId === repositoryId && review.status === 'COMPLETED')
-  assert.equal(Object.hasOwn(persistedReview.normalizedOutput, 'suggestedScore'), false)
-})
-
-test('malformed JSON triggers repair and fallback when repair fails', async () => {
-  const { repository, stores, repositoryId, commitSha } = createRepositoryFixture({
-    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
-  })
-
-  const service = createAiReviewService({
-    repository,
-    queueService: {
-      enqueueRunPerPushAudit: async () => null,
-      enqueueRunTeamAggregateAudit: async () => null
-    },
-    llmService: {
-      async generateAudit() {
-        return {
-          rawResponse: '{bad json',
-          modelName: 'mock-model',
-          provider: 'mock'
-        }
-      },
-      async repairJson() {
-        throw new Error('repair failed')
-      }
-    }
-  })
-
-  const result = await service.createPerPushAudit({
-    repositoryId,
-    commitSha,
-    requestedBy: 'user-1'
-  })
-
-  assert.equal(result.review.status, 'FALLBACK')
-  assert.equal(result.review.normalizedOutput.status, 'FALLBACK')
-})
-
-test('malformed JSON triggers repair successfully when repair returns valid JSON', async () => {
-  const { repository, repositoryId, commitSha } = createRepositoryFixture({
-    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
-  })
-
-  const service = createAiReviewService({
-    repository,
-    queueService: {
-      enqueueRunPerPushAudit: async () => null,
-      enqueueRunTeamAggregateAudit: async () => null
-    },
-    llmService: {
-      async generateAudit() {
-        return {
-          rawResponse: '{bad json',
-          modelName: 'mock-model',
-          provider: 'mock'
-        }
-      },
-      async repairJson() {
-        return validAiResponse
-      }
-    }
-  })
-
-  const result = await service.createPerPushAudit({
-    repositoryId,
-    commitSha,
-    requestedBy: 'user-1'
-  })
-
-  assert.equal(result.review.status, 'COMPLETED')
-})
-
-test('team aggregate audit enriches canonical aggregate fields when provider omits them', async () => {
-  const { repository, repositoryId } = createRepositoryFixture({
-    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
-  })
-
-  const service = createAiReviewService({
-    repository,
-    queueService: {
-      enqueueRunPerPushAudit: async () => null,
-      enqueueRunTeamAggregateAudit: async () => null
-    },
-    llmService: {
-      async generateAudit() {
-        return {
-          rawResponse: validAggregateAiResponse,
-          modelName: 'mock-model',
-          provider: 'mock'
-        }
-      },
-      async repairJson() {
-        throw new Error('should not repair')
-      }
-    }
-  })
-
-  const result = await service.createTeamAggregateAudit({
-    repositoryId,
-    requestedBy: 'user-1'
-  })
-
-  assert.equal(result.review.status, 'COMPLETED')
-  assert.equal(Boolean(result.review.normalizedOutput.historicalSynthesis), true)
-  assert.equal(Boolean(result.review.normalizedOutput.currentTechnicalSnapshot), true)
-  assert.equal(Array.isArray(result.review.normalizedOutput.riskSummary), true)
-  assert.equal(Boolean(result.review.normalizedOutput.judgeDashboardSummary?.headline), true)
-})
-
 test('createPerPushAudit triggers n8n webhook and returns PENDING when enabled', async () => {
-  const { repository, repositoryId, commitSha } = createRepositoryFixture({
-    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
-  })
-  
-  let triggered = false
-  let triggeredPayload
-  
-  // Set env.n8n to enabled
-  env.n8n = {
-    enabled: true,
-    perPushWebhookUrl: 'https://n8n.test/per-push',
-    teamAggregateWebhookUrl: 'https://n8n.test/aggregate',
-    callbackSecret: 'secret-key'
-  }
-  
-  // Mock N8N_SERVICE
-  const mockN8nService = {
-    async triggerPerPushAudit(payload) {
-      triggered = true
-      triggeredPayload = payload
-      return 202
-    }
-  }
-
-  const service = createAiReviewService({
-    repository,
-    queueService: {
-      enqueueRunPerPushAudit: async () => null
-    },
-    llmService: {} // Not called in successful trigger
-  })
-
-  // Override internal N8N_SERVICE dependency if possible or use the env configs
-  // Since our service imports N8N_SERVICE directly from `#services/n8n.service.js`,
-  // we can temporarily stub global fetch/N8N_SERVICE.
-  // Wait, let's see how N8N_SERVICE can be mocked. N8N_SERVICE is createN8nService({ fetchImpl }).
-  // So if we stub globalThis.fetch, createN8nService will call it!
-  const originalFetch = globalThis.fetch
-  globalThis.fetch = async (url, options) => {
-    triggered = true
-    triggeredPayload = JSON.parse(options.body)
-    return {
-      ok: true,
-      status: 202,
-      async text() { return 'Accepted' }
-    }
-  }
-
-  try {
-    const result = await service.createPerPushAudit({
-      repositoryId,
-      commitSha,
-      requestedBy: 'user-1'
+  await withN8nEnv(async () => {
+    const { repository, repositoryId, commitSha } = createRepositoryFixture({
+      impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
     })
 
-    assert.equal(triggered, true)
-    assert.equal(result.pending, true)
-    assert.equal(result.review.status, 'PENDING')
-    assert.equal(triggeredPayload.aiReviewId, result.review.id)
-  } finally {
-    globalThis.fetch = originalFetch
-    env.n8n.enabled = false // restore env
-  }
+    let triggeredPayload = null
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async (_url, options) => {
+      triggeredPayload = JSON.parse(options.body)
+      return {
+        ok: true,
+        status: 202,
+        async text() { return 'Accepted' }
+      }
+    }
+
+    try {
+      const service = createAiReviewService({ repository })
+      const result = await service.createPerPushAudit({
+        repositoryId,
+        commitSha,
+        requestedBy: 'user-1'
+      })
+
+      assert.equal(result.pending, true)
+      assert.equal(result.review.status, 'PENDING')
+      assert.equal(triggeredPayload.aiReviewId, result.review.id)
+      assert.equal(triggeredPayload.reviewKind, 'PER_PUSH_TECHNICAL_AUDIT')
+      assert.equal(triggeredPayload.callbackUrl, `https://seal.example.com/api/ai-reviews/${result.review.id}/callback`)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
 })
 
-test('handleAuditCallback success path updates PENDING to COMPLETED', async () => {
+test('createPerPushAudit marks review RETRY_PENDING and queues retry if n8n trigger errors', async () => {
+  await withN8nEnv(async () => {
+    const { repository, repositoryId, commitSha } = createRepositoryFixture({
+      impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+    })
+    const queuedJobs = []
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async () => {
+      throw new Error('Network timeout triggering n8n')
+    }
+
+    try {
+      const service = createAiReviewService({
+        repository,
+        queueService: {
+          enqueueRunPerPushAudit: async (payload) => {
+            queuedJobs.push(payload)
+            return null
+          },
+          enqueueRunTeamAggregateAudit: async () => null
+        }
+      })
+      const result = await service.createPerPushAudit({
+        repositoryId,
+        commitSha,
+        requestedBy: 'user-1'
+      })
+
+      assert.equal(result.retryScheduled, true)
+      assert.equal(result.review.status, 'RETRY_PENDING')
+      assert.equal(result.review.retryCount, 1)
+      assert.equal(result.review.normalizedOutput, null)
+      assert.equal(queuedJobs.length, 1)
+      assert.equal(queuedJobs[0].aiReviewId, result.review.id)
+      assert.equal(queuedJobs[0].manualRedispatch, false)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})
+
+test('handleAuditCallback success path updates PENDING to COMPLETED and strips forbidden scoring fields', async () => {
   const { repository, stores, repositoryId } = createRepositoryFixture({
     impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
   })
@@ -659,11 +464,7 @@ test('handleAuditCallback success path updates PENDING to COMPLETED', async () =
     requestedAt: new Date()
   })
 
-  const service = createAiReviewService({
-    repository,
-    queueService: {}
-  })
-
+  const service = createAiReviewService({ repository })
   const result = await service.handleAuditCallback({
     aiReviewId: pendingReview._id,
     status: 'success',
@@ -673,12 +474,15 @@ test('handleAuditCallback success path updates PENDING to COMPLETED', async () =
   })
 
   assert.equal(result.status, 'COMPLETED')
+  assert.equal(result.modelName, 'gemini-1.5-pro')
+  assert.equal(stores.technicalFindings.size, 1)
+  assert.equal(stores.suggestedJudgeQuestions.size, 1)
   const reviewInDb = await repository.findAiReviewById(pendingReview._id)
   assert.equal(reviewInDb.status, 'COMPLETED')
-  assert.equal(reviewInDb.model, 'gemini-1.5-pro')
+  assert.equal(Object.hasOwn(reviewInDb.normalizedOutput, 'suggestedScore'), false)
 })
 
-test('handleAuditCallback failure path runs local fallback and updates to FALLBACK', async () => {
+test('handleAuditCallback marks review RETRY_PENDING and queues retry when callback reports an error', async () => {
   const { repository, repositoryId } = createRepositoryFixture({
     impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
   })
@@ -693,80 +497,200 @@ test('handleAuditCallback failure path runs local fallback and updates to FALLBA
     requestedAt: new Date()
   })
 
-  let fallbackCalled = false
-  const service = createAiReviewService({
-    repository,
-    llmService: {
-      async generateAudit() {
-        fallbackCalled = true
-        return {
-          rawResponse: validAiResponse,
-          modelName: 'fallback-gpt-mini',
-          provider: 'openai'
-        }
+  await withN8nEnv(async () => {
+    const queuedJobs = []
+    const service = createAiReviewService({
+      repository,
+      queueService: {
+        enqueueRunPerPushAudit: async (payload) => {
+          queuedJobs.push(payload)
+          return null
+        },
+        enqueueRunTeamAggregateAudit: async () => null
       }
-    }
-  })
+    })
+    const result = await service.handleAuditCallback({
+      aiReviewId: pendingReview._id,
+      status: 'error',
+      errorMessage: 'Vertex AI quota exceeded'
+    })
 
-  const result = await service.handleAuditCallback({
-    aiReviewId: pendingReview._id,
-    status: 'error',
-    errorMessage: 'Vertex AI quota exceeded'
+    assert.equal(result.status, 'RETRY_PENDING')
+    assert.equal(result.modelName, null)
+    const reviewInDb = await repository.findAiReviewById(pendingReview._id)
+    assert.equal(reviewInDb.status, 'RETRY_PENDING')
+    assert.equal(reviewInDb.lastError, 'Vertex AI quota exceeded')
+    assert.equal(reviewInDb.retryCount, 1)
+    assert.equal(queuedJobs.length, 1)
   })
-
-  assert.equal(fallbackCalled, true)
-  assert.equal(result.status, 'FALLBACK')
-  const reviewInDb = await repository.findAiReviewById(pendingReview._id)
-  assert.equal(reviewInDb.status, 'FALLBACK')
-  assert.equal(reviewInDb.lastError, 'Vertex AI quota exceeded')
-  assert.equal(result.modelName, 'fallback-gpt-mini')
 })
 
-test('createPerPushAudit local fallback is triggered if n8n webhook throws error', async () => {
-  const { repository, repositoryId, commitSha } = createRepositoryFixture({
+test('handleAuditCallback marks review RETRY_PENDING when rawResponse is invalid JSON', async () => {
+  const { repository, repositoryId } = createRepositoryFixture({
     impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
   })
 
-  env.n8n = {
-    enabled: true,
-    perPushWebhookUrl: 'https://n8n.test/per-push',
-    teamAggregateWebhookUrl: 'https://n8n.test/aggregate',
-    callbackSecret: 'secret-key'
-  }
+  const pendingReview = await repository.createAiReview({
+    repositoryId,
+    reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+    status: 'PENDING',
+    commitSha: 'commit-1',
+    requestedBy: 'user-1',
+    requestedAt: new Date()
+  })
 
-  const originalFetch = globalThis.fetch
-  globalThis.fetch = async () => {
-    throw new Error('Network timeout triggering n8n')
-  }
+  await withN8nEnv(async () => {
+    const queuedJobs = []
+    const service = createAiReviewService({
+      repository,
+      queueService: {
+        enqueueRunPerPushAudit: async (payload) => {
+          queuedJobs.push(payload)
+          return null
+        },
+        enqueueRunTeamAggregateAudit: async () => null
+      }
+    })
+    const result = await service.handleAuditCallback({
+      aiReviewId: pendingReview._id,
+      status: 'success',
+      rawResponse: '{bad json',
+      modelName: 'gemini-1.5-pro',
+      provider: 'google'
+    })
 
-  let localLlmCalled = false
+    assert.equal(result.status, 'RETRY_PENDING')
+    const reviewInDb = await repository.findAiReviewById(pendingReview._id)
+    assert.equal(reviewInDb.status, 'RETRY_PENDING')
+    assert.match(reviewInDb.lastError, /Unexpected token|AI response was empty|JSON/i)
+    assert.equal(queuedJobs.length, 1)
+  })
+})
+
+test('redispatchAiReview queues manual redispatch for review requiring manual action', async () => {
+  const { repository, repositoryId } = createRepositoryFixture({
+    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+  })
+
+  const failedReview = await repository.createAiReview({
+    repositoryId,
+    reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+    status: 'MANUAL_REDISPATCH_REQUIRED',
+    commitSha: 'commit-1',
+    promptInput: { sample: true },
+    requestedBy: 'user-1',
+    retryCount: 2,
+    requestedAt: new Date()
+  })
+
+  const queuedJobs = []
   const service = createAiReviewService({
     repository,
-    llmService: {
-      async generateAudit() {
-        localLlmCalled = true
-        return {
-          rawResponse: validAiResponse,
-          modelName: 'fallback-gpt-mini',
-          provider: 'openai'
-        }
-      }
+    queueService: {
+      enqueueRunPerPushAudit: async (payload) => {
+        queuedJobs.push(payload)
+        return null
+      },
+      enqueueRunTeamAggregateAudit: async () => null
     }
   })
 
-  try {
-    const result = await service.createPerPushAudit({
-      repositoryId,
-      commitSha,
-      requestedBy: 'user-1'
-    })
+  const result = await service.requestAiReviewRedispatch({
+    aiReviewId: failedReview._id,
+    requestedBy: 'coordinator-1'
+  })
 
-    assert.equal(localLlmCalled, true)
-    assert.equal(result.review.status, 'FALLBACK') // fell back locally
-    assert.equal(result.review.modelName, 'fallback-gpt-mini')
-  } finally {
-    globalThis.fetch = originalFetch
-    env.n8n.enabled = false
-  }
+  assert.equal(result.review.status, 'RETRY_PENDING')
+  assert.equal(queuedJobs.length, 1)
+  assert.equal(queuedJobs[0].manualRedispatch, true)
+  assert.equal(queuedJobs[0].aiReviewId, failedReview._id)
 })
 
+test('manual redispatch failure returns review to MANUAL_REDISPATCH_REQUIRED without auto retry', async () => {
+  await withN8nEnv(async () => {
+    const { repository, repositoryId } = createRepositoryFixture({
+      impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+    })
+
+    const review = await repository.createAiReview({
+      repositoryId,
+      reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+      status: 'MANUAL_REDISPATCH_REQUIRED',
+      commitSha: 'commit-1',
+      promptInput: { sample: true },
+      requestedBy: 'user-1',
+      retryCount: 2,
+      requestedAt: new Date()
+    })
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async () => {
+      throw new Error('n8n still unavailable')
+    }
+
+    try {
+      const service = createAiReviewService({
+        repository,
+        queueService: {
+          enqueueRunPerPushAudit: async () => {
+            throw new Error('should not auto retry manual redispatch')
+          },
+          enqueueRunTeamAggregateAudit: async () => null
+        }
+      })
+
+      const result = await service.redispatchAiReview({
+        aiReviewId: review._id,
+        requestedBy: 'coordinator-1',
+        manualRedispatch: true
+      })
+
+      assert.equal(result.review.status, 'MANUAL_REDISPATCH_REQUIRED')
+      assert.equal(result.failed, true)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})
+
+test('createTeamAggregateAudit triggers n8n webhook and handleAuditCallback completes aggregate review', async () => {
+  await withN8nEnv(async () => {
+    const { repository, repositoryId } = createRepositoryFixture({
+      impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+    })
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 202,
+      async text() { return 'Accepted' }
+    })
+
+    try {
+      const service = createAiReviewService({ repository })
+      const created = await service.createTeamAggregateAudit({
+        repositoryId,
+        requestedBy: 'user-1'
+      })
+
+      assert.equal(created.pending, true)
+      assert.equal(created.review.status, 'PENDING')
+
+      const completed = await service.handleAuditCallback({
+        aiReviewId: created.review.id,
+        status: 'success',
+        rawResponse: validAggregateAiResponse,
+        modelName: 'gemini-1.5-pro',
+        provider: 'google'
+      })
+
+      assert.equal(completed.status, 'COMPLETED')
+      assert.equal(Boolean(completed.normalizedOutput.historicalSynthesis), true)
+      assert.equal(Boolean(completed.normalizedOutput.currentTechnicalSnapshot), true)
+      assert.equal(Array.isArray(completed.normalizedOutput.riskSummary), true)
+      assert.equal(Boolean(completed.normalizedOutput.judgeDashboardSummary?.headline), true)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})

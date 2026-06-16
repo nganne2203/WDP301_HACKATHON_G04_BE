@@ -75,20 +75,12 @@ export const env = {
     eslintCommand: process.env.STATIC_ANALYSIS_ESLINT_COMMAND,
     tscCommand: process.env.STATIC_ANALYSIS_TSC_COMMAND
   },
-  ai: {
-    provider: process.env.AI_PROVIDER || null,
-    baseUrl: process.env.AI_BASE_URL || 'https://api.openai.com/v1',
-    apiKey: process.env.AI_API_KEY || process.env.OPENAI_API_KEY,
-    model: process.env.AI_MODEL || 'gpt-4o-mini',
-    repairModel: process.env.AI_REPAIR_MODEL || process.env.AI_MODEL || 'gpt-4o-mini',
-    timeoutMs: parseNumber(process.env.AI_TIMEOUT_MS) || 45000,
-    maxRetries: parseNumber(process.env.AI_MAX_RETRIES) ?? 2
-  },
   n8n: {
     enabled: parseBoolean(process.env.N8N_ENABLED, false),
     perPushWebhookUrl: process.env.N8N_PER_PUSH_WEBHOOK_URL,
     teamAggregateWebhookUrl: process.env.N8N_TEAM_AGGREGATE_WEBHOOK_URL,
-    callbackSecret: process.env.N8N_CALLBACK_SECRET
+    callbackSecret: process.env.N8N_CALLBACK_SECRET,
+    dispatchMaxRetries: parseNumber(process.env.N8N_DISPATCH_MAX_RETRIES) ?? 2
   },
   github: {
     webhookSecret: process.env.GITHUB_WEBHOOK_SECRET,

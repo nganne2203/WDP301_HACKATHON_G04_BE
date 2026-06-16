@@ -122,11 +122,28 @@ const handleCallback = async (req, res, next) => {
   }
 }
 
+const redispatchAiReview = async (req, res, next) => {
+  try {
+    const result = await AI_REVIEW_SERVICE.requestAiReviewRedispatch({
+      aiReviewId: req.params.id,
+      requestedBy: req.user?.id
+    })
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'AI review redispatch queued successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const AI_REVIEW_CONTROLLER = {
   listRepositoryAiReviews,
   getAiReviewById,
   createPerPushAudit,
   createTeamAggregateAudit,
   getTeamAiAuditSummary,
-  handleCallback
+  handleCallback,
+  redispatchAiReview
 }

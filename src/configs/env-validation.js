@@ -31,10 +31,6 @@ export const validateRuntimeEnvironment = ({
     errors.push('GITHUB_WEBHOOK_SECRET is required when GITHUB_WEBHOOK_CALLBACK_URL is configured')
   }
 
-  if (config.ai?.provider === 'openai' && !config.ai?.apiKey) {
-    errors.push('AI_API_KEY or OPENAI_API_KEY is required when AI_PROVIDER=openai')
-  }
-
   if (config.n8n?.enabled) {
     if (!config.n8n.perPushWebhookUrl) {
       errors.push('N8N_PER_PUSH_WEBHOOK_URL is required when N8N_ENABLED=true')

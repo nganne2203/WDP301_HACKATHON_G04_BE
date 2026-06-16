@@ -835,7 +835,11 @@ components:
               type: integer
             pendingAiReviews:
               type: integer
-            fallbackAiReviews:
+            failedAiReviews:
+              type: integer
+            retryPendingAiReviews:
+              type: integer
+            manualRedispatchRequiredAiReviews:
               type: integer
             failedJobs:
               type: integer
@@ -1584,6 +1588,27 @@ paths:
       responses:
         '200':
           description: AI review returned
+  /api/ai-reviews/{id}/redispatch:
+    post:
+      summary: Queue a manual n8n redispatch for a failed AI review
+      description: |
+        Queue a manual redispatch of an existing AI review record to n8n without creating a new review row.
+
+        FE notes:
+        - Use this for reviews in `FAILED` or `MANUAL_REDISPATCH_REQUIRED` states.
+        - The review lifecycle may move through `RETRY_PENDING` and then back to `PENDING`.
+      tags: [AI Reviews]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: AI review redispatch queued
 
   /api/participants:
     get:

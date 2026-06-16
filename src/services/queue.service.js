@@ -105,7 +105,9 @@ export const QUEUE_SERVICE = {
   },
 
   async enqueueRunPerPushAudit(data) {
-    const jobId = buildQueueJobId('run-per-push-audit', data.repositoryId, data.commitSha)
+    const jobId = data.aiReviewId
+      ? buildQueueJobId('run-per-push-audit-review', data.aiReviewId, data.retryCount || 0, data.manualRedispatch ? 'manual' : 'auto')
+      : buildQueueJobId('run-per-push-audit', data.repositoryId, data.commitSha)
 
     return await getGithubPushQueue().add(JOB_TYPES.RUN_PER_PUSH_AUDIT, data, {
       jobId
@@ -113,7 +115,9 @@ export const QUEUE_SERVICE = {
   },
 
   async enqueueRunTeamAggregateAudit(data) {
-    const jobId = buildQueueJobId('run-team-aggregate-audit', data.repositoryId, data.batchId || 'latest')
+    const jobId = data.aiReviewId
+      ? buildQueueJobId('run-team-aggregate-audit-review', data.aiReviewId, data.retryCount || 0, data.manualRedispatch ? 'manual' : 'auto')
+      : buildQueueJobId('run-team-aggregate-audit', data.repositoryId, data.batchId || 'latest')
 
     return await getGithubPushQueue().add(JOB_TYPES.RUN_TEAM_AGGREGATE_AUDIT, data, {
       jobId

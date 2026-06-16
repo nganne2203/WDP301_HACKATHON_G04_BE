@@ -40,19 +40,19 @@ test('environment validation reports missing worker Redis configuration', () => 
   )
 })
 
-test('environment validation reports missing AI key when openai provider is enabled', () => {
-  assert.throws(
-    () => validateRuntimeEnvironment({
-      runtime: 'api',
-      config: createConfig({
-        ai: {
-          provider: 'openai',
-          apiKey: ''
-        }
-      })
-    }),
-    /AI_API_KEY or OPENAI_API_KEY is required when AI_PROVIDER=openai/
-  )
+test('environment validation does not require local AI credentials anymore', () => {
+  const result = validateRuntimeEnvironment({
+    runtime: 'api',
+    strict: false,
+    config: createConfig({
+      ai: {
+        provider: 'openai',
+        apiKey: ''
+      }
+    })
+  })
+
+  assert.equal(result.errors.length, 0)
 })
 
 test('environment validation returns warnings in non-strict mode', () => {

@@ -23,4 +23,11 @@ router.get(
   AI_REVIEW_CONTROLLER.getAiReviewById
 )
 
+router.post(
+  '/:id/redispatch',
+  permissionMiddleware(PERMISSIONS.AI_REVIEW_TRIGGER),
+  validationHandlingMiddleware(AI_REVIEW_VALIDATION.redispatchAiReview),
+  AI_REVIEW_CONTROLLER.redispatchAiReview
+)
+
 export default router

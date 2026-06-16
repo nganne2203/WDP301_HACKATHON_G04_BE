@@ -1022,8 +1022,11 @@ CLOUDINARY_API_SECRET=your_cloudinary_secret
 
 GITHUB_API_URL=https://api.github.com
 
-AI_PROVIDER=openai
-AI_API_URL=https://api.openai.com/v1
+N8N_ENABLED=true
+N8N_PER_PUSH_WEBHOOK_URL=https://n8n.example.com/webhook/per-push-audit
+N8N_TEAM_AGGREGATE_WEBHOOK_URL=https://n8n.example.com/webhook/team-aggregate-audit
+N8N_CALLBACK_SECRET=replace_me_n8n_callback_secret
+N8N_DISPATCH_MAX_RETRIES=2
 ```
 
 Important:
@@ -1041,7 +1044,7 @@ This architecture is suitable for the SEAL project because it supports:
 - scalable business logic,
 - GitHub integration,
 - webhook processing,
-- third-party AI integration,
+- n8n-orchestrated AI integration,
 - audit logging,
 - future extension.
 
