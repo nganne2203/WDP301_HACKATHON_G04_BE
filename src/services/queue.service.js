@@ -68,42 +68,6 @@ export const QUEUE_SERVICE = {
     })
   },
 
-  async enqueueFetchCommitDiff(data) {
-    const jobId = data.deliveryId
-      ? buildQueueJobId('fetch-commit-diff', data.deliveryId)
-      : buildQueueJobId('fetch-commit-diff', data.repositoryId, data.afterCommitSha || data.headCommitSha || Date.now())
-
-    return await getGithubPushQueue().add(JOB_TYPES.FETCH_COMMIT_DIFF, data, {
-      jobId
-    })
-  },
-
-  async enqueueHourlyRepositoryScan(data = {}) {
-    const jobId = data.repositoryId
-      ? buildQueueJobId('hourly-repository-scan', data.repositoryId)
-      : buildQueueJobId('hourly-repository-scan', 'all')
-
-    return await getGithubPushQueue().add(JOB_TYPES.HOURLY_REPOSITORY_SCAN, data, {
-      jobId
-    })
-  },
-
-  async enqueueRunStaticAnalysis(data) {
-    const jobId = buildQueueJobId('run-static-analysis', data.repositoryId, data.commitSha)
-
-    return await getGithubPushQueue().add(JOB_TYPES.RUN_STATIC_ANALYSIS, data, {
-      jobId
-    })
-  },
-
-  async enqueueComputeImpactScore(data) {
-    const jobId = buildQueueJobId('compute-impact-score', data.repositoryId, data.commitSha)
-
-    return await getGithubPushQueue().add(JOB_TYPES.COMPUTE_IMPACT_SCORE, data, {
-      jobId
-    })
-  },
-
   async enqueueRunPerPushAudit(data) {
     const jobId = data.aiReviewId
       ? buildQueueJobId('run-per-push-audit-review', data.aiReviewId, data.retryCount || 0, data.manualRedispatch ? 'manual' : 'auto')

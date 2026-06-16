@@ -752,7 +752,7 @@ Handles third-party AI-assisted repository evaluation as a supporting feature.
 
 Responsibilities:
 
-- send commit diff or repository metadata to third-party AI API
+- dispatch repository, rubric, and trigger context to n8n so n8n can fetch GitHub evidence and call third-party AI APIs
 - store AI review result
 - retry failed review
 - display AI review summary

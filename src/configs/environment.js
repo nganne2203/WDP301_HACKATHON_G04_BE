@@ -71,10 +71,6 @@ export const env = {
     authCallbackUrl: process.env.GOOGLE_AUTH_CALLBACK_URL,
     connectCallbackUrl: process.env.GOOGLE_CONNECT_CALLBACK_URL
   },
-  analysis: {
-    eslintCommand: process.env.STATIC_ANALYSIS_ESLINT_COMMAND,
-    tscCommand: process.env.STATIC_ANALYSIS_TSC_COMMAND
-  },
   n8n: {
     enabled: parseBoolean(process.env.N8N_ENABLED, false),
     perPushWebhookUrl: process.env.N8N_PER_PUSH_WEBHOOK_URL,
@@ -91,10 +87,7 @@ export const env = {
     url: process.env.REDIS_URL || 'redis://127.0.0.1:6379'
   },
   worker: {
-    concurrency: parseNumber(process.env.WORKER_CONCURRENCY) || 3,
-    enableScheduler: parseBoolean(process.env.WORKER_ENABLE_SCHEDULER, false),
-    schedulerIntervalMs: parseNumber(process.env.WORKER_SCHEDULER_INTERVAL_MS) || 60 * 60 * 1000,
-    schedulerRunOnStart: parseBoolean(process.env.WORKER_SCHEDULER_RUN_ON_START, false)
+    concurrency: parseNumber(process.env.WORKER_CONCURRENCY) || 3
   },
   security: {
     tokenEncryptionSecret: process.env.TOKEN_ENCRYPTION_SECRET

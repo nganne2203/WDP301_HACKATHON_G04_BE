@@ -71,17 +71,5 @@ export const REPOSITORY_VALIDATION = {
   createRepository,
   updateRepository,
   getRepositoryById,
-  listRepositoryCommits: repositoryEvidenceQuery,
-  listRepositoryCommitDiffs: repositoryEvidenceQuery,
-  listRepositoryStaticAnalysis: repositoryEvidenceQuery,
-  listRepositoryImpactDecisions: repositoryEvidenceQuery,
-  syncRepositoryCommits: {
-    params: idParam
-  },
-  analyzeCommit: {
-    params: idParam,
-    body: Joi.object({
-      commitSha: Joi.string().trim().max(100).allow('', null)
-    }).default({})
-  }
+  listRepositoryCommits: repositoryEvidenceQuery
 }

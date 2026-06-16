@@ -34,23 +34,23 @@ export const createN8nService = ({
   }
 
   return {
-    async triggerPerPushAudit({ evidence, aiReviewId, callbackUrl }) {
+    async triggerPerPushAudit({ reviewContext, aiReviewId, callbackUrl }) {
       const config = getConfig()
       return await triggerN8nWebhook(config.perPushWebhookUrl, {
         reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
         aiReviewId,
         callbackUrl,
-        evidence
+        context: reviewContext
       })
     },
 
-    async triggerTeamAggregateAudit({ evidence, aiReviewId, callbackUrl }) {
+    async triggerTeamAggregateAudit({ reviewContext, aiReviewId, callbackUrl }) {
       const config = getConfig()
       return await triggerN8nWebhook(config.teamAggregateWebhookUrl, {
         reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
         aiReviewId,
         callbackUrl,
-        evidence
+        context: reviewContext
       })
     }
   }

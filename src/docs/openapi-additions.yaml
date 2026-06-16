@@ -23,11 +23,11 @@ tags:
       - Delivery is designed to return quickly and continue processing asynchronously through Redis + worker.
   - name: Repositories
     description: |
-      Internal repository tracking, commit evidence, static analysis, and impact scoring.
+      Internal repository tracking and repository evidence endpoints.
 
       FE notes:
       - List/detail endpoints are synchronous reads from MongoDB.
-      - Sync/analyze endpoints usually queue background work and return immediately.
+      - Sync/evidence endpoints usually queue background work and return immediately.
       - `webhookStatus` and `accessState` are key status fields for admin screens.
   - name: AI Reviews
     description: |
@@ -1367,11 +1367,10 @@ paths:
     get:
       summary: List repository commits
       description: |
-        Read commit metadata already synchronized into MongoDB.
+        Read commit metadata already synchronized into MongoDB by webhook processing and n8n callback flows.
 
         FE notes:
         - This does not call GitHub live.
-        - Use together with commit diffs and impact decisions for repository detail pages.
       tags: [Repositories]
       security:
         - BearerAuth: []
@@ -1384,60 +1383,6 @@ paths:
       responses:
         '200':
           description: Commits returned
-  /api/repositories/{id}/commit-diffs:
-    get:
-      summary: List repository commit diffs
-      description: |
-        Read normalized diff evidence captured from GitHub pushes or scheduled sync.
-
-        FE notes:
-        - Large/generated/binary files may be excluded from clean diff evidence.
-      tags: [Repositories]
-      security:
-        - BearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Commit diffs returned
-  /api/repositories/{id}/static-analysis:
-    get:
-      summary: List static analysis results for a repository
-      description: |
-        Read static-analysis artifacts derived from repository evidence jobs.
-      tags: [Repositories]
-      security:
-        - BearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Static analysis results returned
-  /api/repositories/{id}/impact-decisions:
-    get:
-      summary: List impact decisions for a repository
-      description: |
-        Read impact-scoring outcomes used to decide whether AI audit should run immediately, later, or be skipped.
-      tags: [Repositories]
-      security:
-        - BearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Impact decisions returned
   /api/repositories/{id}/ai-reviews:
     get:
       summary: List AI reviews for a repository
@@ -1461,59 +1406,6 @@ paths:
       responses:
         '200':
           description: AI reviews returned
-  /api/repositories/{id}/sync-commits:
-    post:
-      summary: Queue repository commit synchronization
-      description: |
-        Queue commit synchronization for one repository.
-
-        FE notes:
-        - This endpoint returns immediately after queueing.
-        - Refresh repository evidence screens after worker processing finishes.
-      tags: [Repositories]
-      security:
-        - BearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Repository sync job queued
-  /api/repositories/{id}/analyze-commit:
-    post:
-      summary: Queue static analysis for a commit
-      description: |
-        Queue static-analysis processing for a commit already known to the platform.
-
-        FE notes:
-        - If `commitSha` is omitted, the backend uses the latest processed or latest known commit.
-      tags: [Repositories]
-      security:
-        - BearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                commitSha:
-                  type: string
-                  nullable: true
-            example:
-              commitSha: 3d2f71fbf91b4fdb8a55f8cce21d0a0c213f1d19
-      responses:
-        '200':
-          description: Analysis job queued
   /api/repositories/{id}/ai-reviews/per-push:
     post:
       summary: Queue a per-push AI technical audit

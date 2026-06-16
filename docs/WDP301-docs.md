@@ -655,7 +655,7 @@ Commit data includes:
 
 ### FR-GH-07
 
-The system stores commit diff snapshots in `CommitDiff` so AI review retries can reuse cached diff data instead of repeatedly requesting or rebuilding the same diff.
+The system may store commit diff snapshots in `CommitDiff` for repository evidence and manual inspection, but the active AI review flow does not depend on BE-side diff assembly.
 
 ### FR-GH-08
 
@@ -693,7 +693,7 @@ Configuration includes:
 
 ### FR-AI-03
 
-The system sends repository metadata and cached commit diff information to n8n, which then orchestrates third-party AI services as a supporting evaluation aid.
+The system sends lightweight repository, team, round, rubric, and trigger context to n8n; n8n is responsible for fetching GitHub data, building the technical evidence, and orchestrating third-party AI services as a supporting evaluation aid.
 
 ### FR-AI-04
 

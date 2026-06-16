@@ -172,9 +172,9 @@ const createRepositoryFixture = ({ impactDecision, commitSha = 'commit-1' }) => 
     excludedFiles: 0,
     totalCleanPatchSize: 150,
     files: [{
-      filePath: 'src/modules/repositories/repository-analysis.service.js',
+      filePath: 'src/modules/ai-reviews/ai-review.service.js',
       cleanPatch: '+async function runImpact() {}',
-      patchSummary: 'Core analysis service updated',
+      patchSummary: 'Core AI review flow updated',
       language: 'JavaScript',
       status: 'modified',
       isExcluded: false
@@ -193,7 +193,7 @@ const createRepositoryFixture = ({ impactDecision, commitSha = 'commit-1' }) => 
   stores.changedContexts.set(`${repositoryId}:${commitSha}`, [{
     repositoryId,
     commitSha,
-    filePath: 'src/modules/repositories/repository-analysis.service.js',
+    filePath: 'src/modules/ai-reviews/ai-review.service.js',
     symbolName: 'runImpact',
     symbolType: 'SERVICE_METHOD',
     startLine: 10,
@@ -250,9 +250,9 @@ const validAiResponse = JSON.stringify({
   technicalFindings: [{
     type: 'ARCHITECTURE',
     severity: 'HIGH',
-    title: 'Core analysis path changed',
-    evidence: ['repository-analysis.service.js'],
-    comment: 'Review the impact-scoring behavior carefully.',
+    title: 'Core AI dispatch path changed',
+    evidence: ['ai-review.service.js'],
+    comment: 'Review the n8n dispatch behavior carefully.',
     recommendedAction: 'Add regression tests.'
   }],
   rubricAwareComments: [{
@@ -264,11 +264,11 @@ const validAiResponse = JSON.stringify({
     risks: ['Potential regression']
   }],
   suggestedTestCases: [{
-    title: 'Regression for impact scoring',
-    purpose: 'Verify high-impact routing',
-    expectedObservation: 'High-impact commits trigger per-push audit.'
+    title: 'Regression for n8n dispatch',
+    purpose: 'Verify webhook-driven AI dispatch',
+    expectedObservation: 'A new push triggers a per-push audit.'
   }],
-  suggestedJudgeQuestions: ['How do you control false positives in impact scoring?'],
+  suggestedJudgeQuestions: ['How do you control reliability when n8n dispatch fails?'],
   costControlNotes: {
     llmCallReason: 'High-impact change',
     skippedFiles: [],
@@ -287,7 +287,7 @@ const validAggregateAiResponse = JSON.stringify({
     pushSummary: 'The team improved core backend modules over multiple commits.',
     significantChange: true,
     changeImpactLevel: 'HIGH',
-    mainAffectedAreas: ['Repository analysis', 'AI review runtime']
+    mainAffectedAreas: ['AI review runtime', 'Webhook dispatch']
   },
   techStackDetected: {
     frontend: [],
@@ -301,7 +301,7 @@ const validAggregateAiResponse = JSON.stringify({
     type: 'MAINTAINABILITY',
     severity: 'HIGH',
     title: 'Core runtime path changed repeatedly',
-    evidence: ['repository-analysis.service.js', 'ai-review.service.js'],
+    evidence: ['github-push.worker.js', 'ai-review.service.js'],
     comment: 'Review regression coverage before go-live.',
     recommendedAction: 'Run integrated runtime verification.'
   }],
@@ -347,29 +347,33 @@ const withN8nEnv = async (fn, { dispatchMaxRetries = 1 } = {}) => {
   }
 }
 
-test('per-push audit is skipped for LOW/SKIP_LLM', async () => {
-  const { repository, stores, repositoryId, commitSha } = createRepositoryFixture({
+test('requestPerPushAudit resolves latest tracked commit and queues n8n-bound review job', async () => {
+  const { repository, repositoryId, commitSha } = createRepositoryFixture({
     impactDecision: { impactLevel: 'LOW', decision: 'SKIP_LLM' },
     commitSha: 'commit-low'
   })
+  const queuedJobs = []
 
   const service = createAiReviewService({
     repository,
     queueService: {
-      enqueueRunPerPushAudit: async () => null,
+      enqueueRunPerPushAudit: async (payload) => {
+        queuedJobs.push(payload)
+        return null
+      },
       enqueueRunTeamAggregateAudit: async () => null
     }
   })
 
-  const result = await service.createPerPushAudit({
+  const result = await service.requestPerPushAudit({
     repositoryId,
-    commitSha,
     requestedBy: 'user-1'
   })
 
-  assert.equal(result.skipped, true)
-  assert.equal(result.review.status, 'SKIPPED')
-  assert.equal(stores.technicalFindings.size, 0)
+  assert.equal(result.commitSha, commitSha)
+  assert.equal(result.queuedJobType, 'RUN_PER_PUSH_AUDIT')
+  assert.equal(queuedJobs.length, 1)
+  assert.equal(queuedJobs[0].commitSha, commitSha)
 })
 
 test('createPerPushAudit triggers n8n webhook and returns PENDING when enabled', async () => {
@@ -402,6 +406,8 @@ test('createPerPushAudit triggers n8n webhook and returns PENDING when enabled',
       assert.equal(triggeredPayload.aiReviewId, result.review.id)
       assert.equal(triggeredPayload.reviewKind, 'PER_PUSH_TECHNICAL_AUDIT')
       assert.equal(triggeredPayload.callbackUrl, `https://seal.example.com/api/ai-reviews/${result.review.id}/callback`)
+      assert.equal(triggeredPayload.context.triggerContext.commitSha, commitSha)
+      assert.equal(triggeredPayload.context.repositoryContext.repositoryFullName, 'seal-org/team-alpha')
     } finally {
       globalThis.fetch = originalFetch
     }
