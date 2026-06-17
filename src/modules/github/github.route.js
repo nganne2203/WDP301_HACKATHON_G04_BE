@@ -91,4 +91,21 @@ router.post(
   GITHUB_CONTROLLER.bulkCreateRepositories
 )
 
+router.post(
+  '/collaborators/bulk-grant',
+  sensitiveRateLimiter,
+  permissionMiddleware(PERMISSIONS.GITHUB_REPOSITORY_CREATE),
+  validationHandlingMiddleware(GITHUB_VALIDATION.bulkCollaboratorAction),
+  GITHUB_CONTROLLER.bulkGrantAccess
+)
+
+router.post(
+  '/collaborators/bulk-revoke',
+  sensitiveRateLimiter,
+  permissionMiddleware(PERMISSIONS.GITHUB_ACCESS_REVOKE),
+  validationHandlingMiddleware(GITHUB_VALIDATION.bulkCollaboratorAction),
+  GITHUB_CONTROLLER.bulkRevokeAccess
+)
+
 export default router
+

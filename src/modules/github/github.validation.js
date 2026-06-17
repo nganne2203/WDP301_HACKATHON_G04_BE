@@ -85,7 +85,14 @@ const revokeMembers = {
 const bulkCreateRepositories = {
   body: Joi.object({
     eventId: objectId.required(),
-    roundId: objectId.allow(null, 'none')
+    roundId: objectId.allow(null, 'none'),
+    assignCollaborators: Joi.boolean().default(true)
+  })
+}
+
+const bulkCollaboratorAction = {
+  body: Joi.object({
+    eventId: objectId.required()
   })
 }
 
@@ -99,5 +106,7 @@ export const GITHUB_VALIDATION = {
   revokeCollaborator,
   inviteOrganizationMember,
   revokeMembers,
-  bulkCreateRepositories
+  bulkCreateRepositories,
+  bulkCollaboratorAction
 }
+

@@ -384,29 +384,31 @@ export const createGithubService = ({
         accessRevokedAt: null
       })
 
-      try {
-        const githubUsernames = await repository.findTeamMembersGithubUsernames(payload.teamId)
-        for (const username of githubUsernames) {
-          try {
-            await assignCollaborator({
-              eventId: payload.eventId,
-              repoName: data?.name || payload.repoName,
-              username,
-              permission: 'push'
-            }, actor)
-          } catch (collabError) {
-            logger.warn('Failed to auto-assign team member as collaborator upon repo creation', {
-              repoName: data?.name || payload.repoName,
-              username,
-              error: collabError.message
-            })
+      if (payload.assignCollaborators !== false) {
+        try {
+          const githubUsernames = await repository.findTeamMembersGithubUsernames(payload.teamId)
+          for (const username of githubUsernames) {
+            try {
+              await assignCollaborator({
+                eventId: payload.eventId,
+                repoName: data?.name || payload.repoName,
+                username,
+                permission: 'push'
+              }, actor)
+            } catch (collabError) {
+              logger.warn('Failed to auto-assign team member as collaborator upon repo creation', {
+                repoName: data?.name || payload.repoName,
+                username,
+                error: collabError.message
+              })
+            }
           }
+        } catch (err) {
+          logger.error('Failed to resolve team members for auto-collaborator assignment upon repo creation', {
+            teamId: payload.teamId,
+            error: err.message
+          })
         }
-      } catch (err) {
-        logger.error('Failed to resolve team members for auto-collaborator assignment upon repo creation', {
-          teamId: payload.teamId,
-          error: err.message
-        })
       }
     }
 
@@ -704,7 +706,8 @@ export const createGithubService = ({
           roundId: payload.roundId === 'none' ? null : payload.roundId,
           repoName,
           description: `Repository for team ${team.name}`,
-          private: true
+          private: true,
+          assignCollaborators: payload.assignCollaborators
         }, actor)
 
         success.push({
@@ -744,6 +747,95 @@ export const createGithubService = ({
     }
   }
 
+  const bulkGrantAccess = async (payload = {}, actor = {}) => {
+    const config = await loadOperationalConfig({ eventId: payload.eventId })
+    const repos = await repository.findRepositoriesByEvent(payload.eventId)
+
+    const success = []
+    const failed = []
+
+    for (const repo of repos) {
+      const repoName = repo.repoName || repo.githubRepo
+      if (!repoName) continue
+
+      try {
+        const usernames = await repository.findTeamMembersGithubUsernames(repo.teamId)
+        for (const username of usernames) {
+          try {
+            await assignCollaborator({
+              eventId: payload.eventId,
+              repoName,
+              username,
+              permission: 'push'
+            }, actor)
+            success.push({ repoName, username })
+          } catch (collabError) {
+            failed.push({ repoName, username, error: collabError.message })
+          }
+        }
+      } catch (err) {
+        failed.push({ repoName, error: `Failed to resolve team members: ${err.message}` })
+      }
+    }
+
+    await audit({
+      actor,
+      action: 'GITHUB_COLLABORATORS_BULK_GRANT',
+      resourceId: payload.eventId,
+      metadata: {
+        eventId: payload.eventId,
+        successCount: success.length,
+        failedCount: failed.length
+      }
+    })
+
+    return { success, failed }
+  }
+
+  const bulkRevokeAccess = async (payload = {}, actor = {}) => {
+    const config = await loadOperationalConfig({ eventId: payload.eventId })
+    const repos = await repository.findRepositoriesByEvent(payload.eventId)
+
+    const success = []
+    const failed = []
+
+    for (const repo of repos) {
+      const repoName = repo.repoName || repo.githubRepo
+      if (!repoName) continue
+
+      try {
+        const usernames = await repository.findTeamMembersGithubUsernames(repo.teamId)
+        for (const username of usernames) {
+          try {
+            await revokeCollaborator({
+              eventId: payload.eventId,
+              repoName,
+              username
+            }, actor)
+            success.push({ repoName, username })
+          } catch (collabError) {
+            failed.push({ repoName, username, error: collabError.message })
+          }
+        }
+      } catch (err) {
+        failed.push({ repoName, error: `Failed to resolve team members: ${err.message}` })
+      }
+    }
+
+    await audit({
+      actor,
+      action: 'GITHUB_COLLABORATORS_BULK_REVOKE',
+      resourceId: payload.eventId,
+      metadata: {
+        eventId: payload.eventId,
+        successCount: success.length,
+        failedCount: failed.length
+      }
+    })
+
+    return { success, failed }
+  }
+
   return {
     getConfig,
     saveConfig,
@@ -754,7 +846,9 @@ export const createGithubService = ({
     revokeCollaborator,
     inviteOrganizationMember,
     revokeMembers,
-    bulkCreateRepositories
+    bulkCreateRepositories,
+    bulkGrantAccess,
+    bulkRevokeAccess
   }
 }
 
