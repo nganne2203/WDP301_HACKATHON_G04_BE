@@ -311,9 +311,16 @@ const hasMentorScopedRole = (actor = {}) => {
   return (actor.roles || []).some(role => MENTOR_SCOPED_ROLES.includes(String(role).toUpperCase()))
 }
 
+const hasCoordinatorRole = (actor = {}) => {
+  return (actor.roles || []).some(role => COORDINATOR_ROLES.includes(String(role).toUpperCase()))
+}
+
 const ensureCoordinator = (actor = {}) => {
   if (!hasCoordinatorRole(actor)) {
     throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only coordinators can perform this action'])
+  }
+}
+
 const hasTeamManagementPermission = (actor = {}) => {
   return actorHasPermission(actor, PERMISSIONS.TEAM_UPDATE)
 }
@@ -876,7 +883,7 @@ export const createTeamService = ({
   logger = LOGGER
 } = {}) => {
   const listTeams = async (query = {}, actor = {}) => {
-    if (!hasTeamManagementPermission(actor)) {
+    if (!hasTeamManagementPermission(actor) && !actorHasPermission(actor, PERMISSIONS.TEAM_VIEW) && !hasMentorScopedRole(actor)) {
       throw new ApiError(ERROR_CODES.FORBIDDEN, ['You do not have permission to list all teams'])
     }
 

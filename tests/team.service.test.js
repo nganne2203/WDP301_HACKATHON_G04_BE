@@ -456,6 +456,8 @@ test('mentor can list only teams assigned to them', async () => {
   assert.equal(result.teams.length, 1)
   assert.equal(result.teams[0].name, 'Assigned Team')
   assert.deepEqual(result.teams[0].mentorIds, ['mentor-1'])
+})
+
 test('updateTeamStatus rejects actors without team management permission', async () => {
   const service = createTeamService({
     repository: {
