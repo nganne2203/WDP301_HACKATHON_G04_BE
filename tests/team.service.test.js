@@ -31,14 +31,14 @@ test('team invitation helper normalizes emails and hashes secure tokens', () => 
   assert.deepEqual(
     normalizeInvitationMembers({
       members: [
-        { fullName: 'Member One', email: 'Member@Example.com' },
-        { fullName: 'Duplicate Member', email: 'member@example.com' }
+        { fullName: 'Member One', email: 'Member@Example.com', githubUsername: 'user1' },
+        { fullName: 'Duplicate Member', email: 'member@example.com', githubUsername: 'user1' }
       ],
       emails: ['Other@Example.com']
     }),
     [
-      { fullName: 'Member One', email: 'member@example.com' },
-      { fullName: '', email: 'other@example.com' }
+      { fullName: 'Member One', email: 'member@example.com', githubUsername: 'user1' },
+      { fullName: '', email: 'other@example.com', githubUsername: '' }
     ]
   )
 

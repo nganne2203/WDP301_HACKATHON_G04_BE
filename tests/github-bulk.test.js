@@ -45,6 +45,9 @@ const createRepository = () => {
     },
     findRepositoriesByEvent: async (eventId) => {
       return [...repositories.values()].filter(r => r.eventId === eventId)
+    },
+    findTeamMembersGithubUsernames: async (teamId) => {
+      return ['user-alpha', 'user-beta']
     }
   }
 }
@@ -185,4 +188,53 @@ test('bulkCreateRepositories aggregates errors and continues loop when one team 
   assert.equal(result.failed.length, 1)
   assert.equal(result.failed[0].teamName, 'Team Fail')
   assert.equal(result.failed[0].error, 'GitHub limit reached')
+})
+
+test('createRepository automatically assigns collaborators from team members', async () => {
+  const repository = createRepository()
+  await repository.upsertConfig({
+    key: eventConfigKey,
+    value: {
+      eventId: EVENT_ID,
+      organizationName: 'seal-org',
+      ownerUsername: 'owner-user',
+      enabled: true,
+      tokenEncrypted: 'encrypted:token'
+    },
+    isEncrypted: true
+  })
+
+  const calls = []
+  const service = createGithubService({
+    repository,
+    encryption: createEncryption(),
+    githubClient: async (payload) => {
+      calls.push(payload)
+      return {
+        status: 201,
+        data: {
+          name: payload.body?.name || 'repo',
+          html_url: `https://github.com/seal-org/repo`
+        }
+      }
+    },
+    logger: createLogger()
+  })
+
+  await service.createRepository({
+    eventId: EVENT_ID,
+    teamId: 'team-123',
+    repoName: 'team-repo',
+    private: true
+  }, { id: 'coordinator-1' })
+
+  // Verify it calls GitHub API to create repository AND to assign collaborators (user-alpha, user-beta)
+  const repoCreateCall = calls.find(call => call.method === 'POST' && call.path === '/orgs/seal-org/repos')
+  assert.ok(repoCreateCall)
+  assert.equal(repoCreateCall.body.name, 'team-repo')
+
+  const collaboratorCalls = calls.filter(call => call.method === 'PUT' && call.path.includes('/collaborators/'))
+  assert.equal(collaboratorCalls.length, 2)
+  assert.ok(collaboratorCalls.some(call => call.path.endsWith('/user-alpha')))
+  assert.ok(collaboratorCalls.some(call => call.path.endsWith('/user-beta')))
 })

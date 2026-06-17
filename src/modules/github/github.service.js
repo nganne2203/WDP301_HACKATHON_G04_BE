@@ -383,6 +383,31 @@ export const createGithubService = ({
         accessGrantedAt: null,
         accessRevokedAt: null
       })
+
+      try {
+        const githubUsernames = await repository.findTeamMembersGithubUsernames(payload.teamId)
+        for (const username of githubUsernames) {
+          try {
+            await assignCollaborator({
+              eventId: payload.eventId,
+              repoName: data?.name || payload.repoName,
+              username,
+              permission: 'push'
+            }, actor)
+          } catch (collabError) {
+            logger.warn('Failed to auto-assign team member as collaborator upon repo creation', {
+              repoName: data?.name || payload.repoName,
+              username,
+              error: collabError.message
+            })
+          }
+        }
+      } catch (err) {
+        logger.error('Failed to resolve team members for auto-collaborator assignment upon repo creation', {
+          teamId: payload.teamId,
+          error: err.message
+        })
+      }
     }
 
     let webhookRegistration = null
@@ -456,6 +481,23 @@ export const createGithubService = ({
       }
     })
 
+    try {
+      const userObj = await mongoose.model('User').findOne({
+        githubUsername: { $regex: new RegExp('^' + username + '$', 'i') }
+      })
+      if (userObj) {
+        await mongoose.model('Participant').findOneAndUpdate(
+          { eventId, userId: userObj._id },
+          { $set: { githubAccessStatus: 'GRANTED' } }
+        )
+      }
+    } catch (err) {
+      logger.warn('Failed to update participant githubAccessStatus in assignCollaborator', {
+        username,
+        error: err.message
+      })
+    }
+
     return {
       repoName,
       username,
@@ -481,6 +523,23 @@ export const createGithubService = ({
         accessRevokedAt: new Date()
       }
     })
+
+    try {
+      const userObj = await mongoose.model('User').findOne({
+        githubUsername: { $regex: new RegExp('^' + username + '$', 'i') }
+      })
+      if (userObj) {
+        await mongoose.model('Participant').findOneAndUpdate(
+          { eventId, userId: userObj._id },
+          { $set: { githubAccessStatus: 'REVOKED' } }
+        )
+      }
+    } catch (err) {
+      logger.warn('Failed to update participant githubAccessStatus in revokeCollaborator', {
+        username,
+        error: err.message
+      })
+    }
 
     await audit({
       actor,
