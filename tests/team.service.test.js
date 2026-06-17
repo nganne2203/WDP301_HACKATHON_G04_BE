@@ -31,14 +31,14 @@ test('team invitation helper normalizes emails and hashes secure tokens', () => 
   assert.deepEqual(
     normalizeInvitationMembers({
       members: [
-        { fullName: 'Member One', email: 'Member@Example.com' },
-        { fullName: 'Duplicate Member', email: 'member@example.com' }
+        { fullName: 'Member One', email: 'Member@Example.com', githubUsername: 'user1' },
+        { fullName: 'Duplicate Member', email: 'member@example.com', githubUsername: 'user1' }
       ],
       emails: ['Other@Example.com']
     }),
     [
-      { fullName: 'Member One', email: 'member@example.com' },
-      { fullName: '', email: 'other@example.com' }
+      { fullName: 'Member One', email: 'member@example.com', githubUsername: 'user1' },
+      { fullName: '', email: 'other@example.com', githubUsername: '' }
     ]
   )
 
@@ -456,6 +456,8 @@ test('mentor can list only teams assigned to them', async () => {
   assert.equal(result.teams.length, 1)
   assert.equal(result.teams[0].name, 'Assigned Team')
   assert.deepEqual(result.teams[0].mentorIds, ['mentor-1'])
+})
+
 test('updateTeamStatus rejects actors without team management permission', async () => {
   const service = createTeamService({
     repository: {

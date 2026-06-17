@@ -1,4 +1,5 @@
 import Repository from '#models/repository.model.js'
+import Commit from '#models/commit.model.js'
 
 const repositoryPopulate = [
   { path: 'eventId', select: 'title semester season year status competitionConfig' },
@@ -37,11 +38,24 @@ const updateById = async (id, data) => {
   }).populate(repositoryPopulate)
 }
 
+const listCommitsByRepository = async ({ repositoryId, skip = 0, limit = 10 }) => {
+  return await Commit.find({ repositoryId })
+    .sort({ timestamp: -1, createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+}
+
+const countCommitsByRepository = async (repositoryId) => {
+  return await Commit.countDocuments({ repositoryId })
+}
+
 export const REPOSITORY_REPOSITORY = {
   count,
   create,
   findAll,
   findById,
   findByTeamId,
-  updateById
+  updateById,
+  listCommitsByRepository,
+  countCommitsByRepository
 }

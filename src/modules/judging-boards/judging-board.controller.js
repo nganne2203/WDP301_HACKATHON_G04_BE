@@ -76,11 +76,37 @@ const autoAssignBoards = async (req, res, next) => {
   }
 }
 
+const randomizePreview = async (req, res, next) => {
+  try {
+    const result = await JUDGING_BOARD_SERVICE.previewRandomizedBoards(req.body)
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Preview randomized judging boards successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const confirmRandomization = async (req, res, next) => {
+  try {
+    const result = await JUDGING_BOARD_SERVICE.confirmRandomizedBoards(req.body)
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Confirm randomized judging boards successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const JUDGING_BOARD_CONTROLLER = {
   listBoards,
   getBoardById,
   createBoard,
   updateBoard,
   deleteBoard,
-  autoAssignBoards
+  autoAssignBoards,
+  randomizePreview,
+  confirmRandomization
 }

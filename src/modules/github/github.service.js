@@ -383,6 +383,33 @@ export const createGithubService = ({
         accessGrantedAt: null,
         accessRevokedAt: null
       })
+
+      if (payload.assignCollaborators !== false) {
+        try {
+          const githubUsernames = await repository.findTeamMembersGithubUsernames(payload.teamId)
+          for (const username of githubUsernames) {
+            try {
+              await assignCollaborator({
+                eventId: payload.eventId,
+                repoName: data?.name || payload.repoName,
+                username,
+                permission: 'push'
+              }, actor)
+            } catch (collabError) {
+              logger.warn('Failed to auto-assign team member as collaborator upon repo creation', {
+                repoName: data?.name || payload.repoName,
+                username,
+                error: collabError.message
+              })
+            }
+          }
+        } catch (err) {
+          logger.error('Failed to resolve team members for auto-collaborator assignment upon repo creation', {
+            teamId: payload.teamId,
+            error: err.message
+          })
+        }
+      }
     }
 
     let webhookRegistration = null
@@ -456,6 +483,23 @@ export const createGithubService = ({
       }
     })
 
+    try {
+      const userObj = await mongoose.model('User').findOne({
+        githubUsername: { $regex: new RegExp('^' + username + '$', 'i') }
+      })
+      if (userObj) {
+        await mongoose.model('Participant').findOneAndUpdate(
+          { eventId, userId: userObj._id },
+          { $set: { githubAccessStatus: 'GRANTED' } }
+        )
+      }
+    } catch (err) {
+      logger.warn('Failed to update participant githubAccessStatus in assignCollaborator', {
+        username,
+        error: err.message
+      })
+    }
+
     return {
       repoName,
       username,
@@ -481,6 +525,23 @@ export const createGithubService = ({
         accessRevokedAt: new Date()
       }
     })
+
+    try {
+      const userObj = await mongoose.model('User').findOne({
+        githubUsername: { $regex: new RegExp('^' + username + '$', 'i') }
+      })
+      if (userObj) {
+        await mongoose.model('Participant').findOneAndUpdate(
+          { eventId, userId: userObj._id },
+          { $set: { githubAccessStatus: 'REVOKED' } }
+        )
+      }
+    } catch (err) {
+      logger.warn('Failed to update participant githubAccessStatus in revokeCollaborator', {
+        username,
+        error: err.message
+      })
+    }
 
     await audit({
       actor,
@@ -615,6 +676,166 @@ export const createGithubService = ({
     return result
   }
 
+  const bulkCreateRepositories = async (payload = {}, actor = {}) => {
+    const config = await loadOperationalConfig({ eventId: payload.eventId })
+    const teams = await repository.findConfirmedTeamsByEvent(payload.eventId)
+    const existingRepos = await repository.findRepositoriesByEvent(payload.eventId)
+    const existingTeamIds = new Set(existingRepos.map((r) => r.teamId.toString()))
+
+    const teamsToCreate = teams.filter((team) => !existingTeamIds.has(team._id.toString()))
+
+    const success = []
+    const failed = []
+
+    for (const team of teamsToCreate) {
+      let repoName = String(team.name || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_.-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '')
+
+      if (!repoName) {
+        repoName = `team-${team._id.toString().slice(-6)}`
+      }
+
+      try {
+        const repoResult = await createRepository({
+          eventId: payload.eventId,
+          teamId: team._id.toString(),
+          roundId: payload.roundId === 'none' ? null : payload.roundId,
+          repoName,
+          description: `Repository for team ${team.name}`,
+          private: true,
+          assignCollaborators: payload.assignCollaborators
+        }, actor)
+
+        success.push({
+          teamId: team._id.toString(),
+          teamName: team.name,
+          repoName: repoResult.repoName,
+          htmlUrl: repoResult.htmlUrl
+        })
+      } catch (error) {
+        failed.push({
+          teamId: team._id.toString(),
+          teamName: team.name,
+          error: error.message || 'Unknown error during repository creation'
+        })
+      }
+    }
+
+    await audit({
+      actor,
+      action: 'GITHUB_REPOSITORIES_BULK_CREATE',
+      resourceId: payload.eventId,
+      metadata: {
+        eventId: payload.eventId,
+        roundId: payload.roundId,
+        totalTeamsChecked: teams.length,
+        totalReposCreated: success.length,
+        successCount: success.length,
+        failedCount: failed.length
+      }
+    })
+
+    return {
+      totalTeamsChecked: teams.length,
+      totalReposCreated: success.length,
+      success,
+      failed
+    }
+  }
+
+  const bulkGrantAccess = async (payload = {}, actor = {}) => {
+    const config = await loadOperationalConfig({ eventId: payload.eventId })
+    const repos = await repository.findRepositoriesByEvent(payload.eventId)
+
+    const success = []
+    const failed = []
+
+    for (const repo of repos) {
+      const repoName = repo.repoName || repo.githubRepo
+      if (!repoName) continue
+
+      try {
+        const usernames = await repository.findTeamMembersGithubUsernames(repo.teamId)
+        for (const username of usernames) {
+          try {
+            await assignCollaborator({
+              eventId: payload.eventId,
+              repoName,
+              username,
+              permission: 'push'
+            }, actor)
+            success.push({ repoName, username })
+          } catch (collabError) {
+            failed.push({ repoName, username, error: collabError.message })
+          }
+        }
+      } catch (err) {
+        failed.push({ repoName, error: `Failed to resolve team members: ${err.message}` })
+      }
+    }
+
+    await audit({
+      actor,
+      action: 'GITHUB_COLLABORATORS_BULK_GRANT',
+      resourceId: payload.eventId,
+      metadata: {
+        eventId: payload.eventId,
+        successCount: success.length,
+        failedCount: failed.length
+      }
+    })
+
+    return { success, failed }
+  }
+
+  const bulkRevokeAccess = async (payload = {}, actor = {}) => {
+    const config = await loadOperationalConfig({ eventId: payload.eventId })
+    const repos = await repository.findRepositoriesByEvent(payload.eventId)
+
+    const success = []
+    const failed = []
+
+    for (const repo of repos) {
+      const repoName = repo.repoName || repo.githubRepo
+      if (!repoName) continue
+
+      try {
+        const usernames = await repository.findTeamMembersGithubUsernames(repo.teamId)
+        for (const username of usernames) {
+          try {
+            await revokeCollaborator({
+              eventId: payload.eventId,
+              repoName,
+              username
+            }, actor)
+            success.push({ repoName, username })
+          } catch (collabError) {
+            failed.push({ repoName, username, error: collabError.message })
+          }
+        }
+      } catch (err) {
+        failed.push({ repoName, error: `Failed to resolve team members: ${err.message}` })
+      }
+    }
+
+    await audit({
+      actor,
+      action: 'GITHUB_COLLABORATORS_BULK_REVOKE',
+      resourceId: payload.eventId,
+      metadata: {
+        eventId: payload.eventId,
+        successCount: success.length,
+        failedCount: failed.length
+      }
+    })
+
+    return { success, failed }
+  }
+
   return {
     getConfig,
     saveConfig,
@@ -624,7 +845,10 @@ export const createGithubService = ({
     registerRepositoryWebhook,
     revokeCollaborator,
     inviteOrganizationMember,
-    revokeMembers
+    revokeMembers,
+    bulkCreateRepositories,
+    bulkGrantAccess,
+    bulkRevokeAccess
   }
 }
 

@@ -2,6 +2,9 @@ import { StatusCodes } from 'http-status-codes'
 
 import { AI_REVIEW_SERVICE } from './ai-review.service.js'
 import { responseSuccess } from '#utils/responseUtil.js'
+import { env } from '#configs/environment.js'
+import ApiError from '#utils/ApiError.js'
+import { ERROR_CODES } from '#constants/errorCode.js'
 
 const listRepositoryAiReviews = async (req, res, next) => {
   try {
@@ -87,10 +90,60 @@ const getTeamAiAuditSummary = async (req, res, next) => {
   }
 }
 
+const handleCallback = async (req, res, next) => {
+  try {
+    const authorizationHeader = req.headers.authorization || ''
+    const callbackSecret = authorizationHeader.replace(/^Bearer /i, '').trim()
+
+    if (!callbackSecret || callbackSecret !== env.n8n.callbackSecret) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Unauthorized callback: invalid token'])
+    }
+
+    const aiReviewId = req.params.id
+    const { status, rawResponse, modelName, provider, tokenUsage, errorMessage, commits } = req.body
+
+    const result = await AI_REVIEW_SERVICE.handleAuditCallback({
+      aiReviewId,
+      status,
+      rawResponse,
+      modelName,
+      provider,
+      tokenUsage,
+      errorMessage,
+      commits
+    })
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'AI review callback processed successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const redispatchAiReview = async (req, res, next) => {
+  try {
+    const result = await AI_REVIEW_SERVICE.requestAiReviewRedispatch({
+      aiReviewId: req.params.id,
+      requestedBy: req.user?.id
+    })
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'AI review redispatch queued successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const AI_REVIEW_CONTROLLER = {
   listRepositoryAiReviews,
   getAiReviewById,
   createPerPushAudit,
   createTeamAggregateAudit,
-  getTeamAiAuditSummary
+  getTeamAiAuditSummary,
+  handleCallback,
+  redispatchAiReview
 }

@@ -28,7 +28,11 @@ test('operations service returns dashboard metrics and degraded queue summary wh
     },
     aiReviewModel: {
       async countDocuments(filter = {}) {
-        return filter.status === 'PENDING' ? 5 : 1
+        if (filter.status === 'PENDING') return 5
+        if (filter.status === 'FAILED') return 1
+        if (filter.status === 'RETRY_PENDING') return 2
+        if (filter.status === 'MANUAL_REDISPATCH_REQUIRED') return 3
+        return 0
       },
       async aggregate() {
         return [{ status: 'PENDING', count: 5 }]
@@ -53,6 +57,9 @@ test('operations service returns dashboard metrics and degraded queue summary wh
 
   const dashboard = await service.getDashboardMetrics({})
   assert.equal(dashboard.metrics.participants, 12)
+  assert.equal(dashboard.metrics.failedAiReviews, 1)
+  assert.equal(dashboard.metrics.retryPendingAiReviews, 2)
+  assert.equal(dashboard.metrics.manualRedispatchRequiredAiReviews, 3)
   assert.equal(dashboard.metrics.failedJobs, 0)
   assert.equal(dashboard.queue.redisStatus, 'not_ready')
 

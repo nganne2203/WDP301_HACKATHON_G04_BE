@@ -43,6 +43,19 @@ const findByRoundAndBoardNumber = async ({ roundId, boardNumber }) => {
   return await JudgingBoard.findOne({ roundId, boardNumber }).populate(boardPopulate)
 }
 
+const findByRoundId = async (roundId) => {
+  return await JudgingBoard.find({ roundId })
+    .populate(boardPopulate)
+    .sort({ boardNumber: 1, createdAt: 1 })
+}
+
+const deleteManyByRoundExcludingBoardNumbers = async ({ roundId, boardNumbers = [] }) => {
+  return await JudgingBoard.deleteMany({
+    roundId,
+    boardNumber: { $nin: boardNumbers }
+  })
+}
+
 export const JUDGING_BOARD_REPOSITORY = {
   count,
   create,
@@ -50,5 +63,7 @@ export const JUDGING_BOARD_REPOSITORY = {
   findById,
   updateById,
   deleteById,
-  findByRoundAndBoardNumber
+  findByRoundAndBoardNumber,
+  findByRoundId,
+  deleteManyByRoundExcludingBoardNumbers
 }
