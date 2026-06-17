@@ -82,6 +82,13 @@ const revokeMembers = {
   })
 }
 
+const bulkCreateRepositories = {
+  body: Joi.object({
+    eventId: objectId.required(),
+    roundId: objectId.allow(null, 'none')
+  })
+}
+
 export const GITHUB_VALIDATION = {
   eventQuery,
   saveConfig,
@@ -91,5 +98,6 @@ export const GITHUB_VALIDATION = {
   registerRepositoryWebhook,
   revokeCollaborator,
   inviteOrganizationMember,
-  revokeMembers
+  revokeMembers,
+  bulkCreateRepositories
 }

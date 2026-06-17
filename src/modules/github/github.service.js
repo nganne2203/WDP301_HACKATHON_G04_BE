@@ -615,6 +615,76 @@ export const createGithubService = ({
     return result
   }
 
+  const bulkCreateRepositories = async (payload = {}, actor = {}) => {
+    const config = await loadOperationalConfig({ eventId: payload.eventId })
+    const teams = await repository.findConfirmedTeamsByEvent(payload.eventId)
+    const existingRepos = await repository.findRepositoriesByEvent(payload.eventId)
+    const existingTeamIds = new Set(existingRepos.map((r) => r.teamId.toString()))
+
+    const teamsToCreate = teams.filter((team) => !existingTeamIds.has(team._id.toString()))
+
+    const success = []
+    const failed = []
+
+    for (const team of teamsToCreate) {
+      let repoName = String(team.name || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_.-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '')
+
+      if (!repoName) {
+        repoName = `team-${team._id.toString().slice(-6)}`
+      }
+
+      try {
+        const repoResult = await createRepository({
+          eventId: payload.eventId,
+          teamId: team._id.toString(),
+          roundId: payload.roundId === 'none' ? null : payload.roundId,
+          repoName,
+          description: `Repository for team ${team.name}`,
+          private: true
+        }, actor)
+
+        success.push({
+          teamId: team._id.toString(),
+          teamName: team.name,
+          repoName: repoResult.repoName,
+          htmlUrl: repoResult.htmlUrl
+        })
+      } catch (error) {
+        failed.push({
+          teamId: team._id.toString(),
+          teamName: team.name,
+          error: error.message || 'Unknown error during repository creation'
+        })
+      }
+    }
+
+    await audit({
+      actor,
+      action: 'GITHUB_REPOSITORIES_BULK_CREATE',
+      resourceId: payload.eventId,
+      metadata: {
+        eventId: payload.eventId,
+        roundId: payload.roundId,
+        totalTeamsChecked: teams.length,
+        totalReposCreated: success.length,
+        successCount: success.length,
+        failedCount: failed.length
+      }
+    })
+
+    return {
+      totalTeamsChecked: teams.length,
+      totalReposCreated: success.length,
+      success,
+      failed
+    }
+  }
+
   return {
     getConfig,
     saveConfig,
@@ -624,7 +694,8 @@ export const createGithubService = ({
     registerRepositoryWebhook,
     revokeCollaborator,
     inviteOrganizationMember,
-    revokeMembers
+    revokeMembers,
+    bulkCreateRepositories
   }
 }
 

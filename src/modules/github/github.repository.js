@@ -1,6 +1,7 @@
 import AuditLog from '#models/auditLog.model.js'
 import Repository from '#models/repository.model.js'
 import SystemConfiguration from '#models/systemConfiguration.model.js'
+import Team from '#models/team.model.js'
 
 const findConfigByKey = async (key) => {
   return await SystemConfiguration.findOne({ key })
@@ -84,11 +85,24 @@ const createAuditLog = async ({ userId, action, resourceType, resourceId, metada
   })
 }
 
+const findConfirmedTeamsByEvent = async (eventId) => {
+  return await Team.find({
+    eventId,
+    status: { $in: ['CONFIRMED', 'ACTIVE'] }
+  })
+}
+
+const findRepositoriesByEvent = async (eventId) => {
+  return await Repository.find({ eventId })
+}
+
 export const GITHUB_REPOSITORY = {
   findConfigByKey,
   upsertConfig,
   createRepositoryRecord,
   findRepositoryByEventAndRepoName,
   updateRepositoryById,
-  createAuditLog
+  createAuditLog,
+  findConfirmedTeamsByEvent,
+  findRepositoriesByEvent
 }

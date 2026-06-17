@@ -49,7 +49,8 @@ const userSchema = new Schema(
     roles: [{ type: Schema.Types.ObjectId, ref: 'Role' }],
     avatarUrl: { type: String },
     phone: { type: String },
-    bio: { type: String }
+    bio: { type: String },
+    githubUsername: { type: String, trim: true }
   },
   { timestamps: true }
 )

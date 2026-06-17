@@ -132,6 +132,19 @@ const revokeMembers = async (req, res, next) => {
   }
 }
 
+const bulkCreateRepositories = async (req, res, next) => {
+  try {
+    const result = await GITHUB_SERVICE.bulkCreateRepositories(req.body, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Bulk create GitHub repositories successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const GITHUB_CONTROLLER = {
   getConfig,
   saveConfig,
@@ -141,5 +154,6 @@ export const GITHUB_CONTROLLER = {
   registerRepositoryWebhook,
   revokeCollaborator,
   inviteOrganizationMember,
-  revokeMembers
+  revokeMembers,
+  bulkCreateRepositories
 }

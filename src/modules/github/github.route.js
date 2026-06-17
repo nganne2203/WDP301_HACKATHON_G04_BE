@@ -83,4 +83,12 @@ router.post(
   GITHUB_CONTROLLER.revokeMembers
 )
 
+router.post(
+  '/repositories/bulk',
+  sensitiveRateLimiter,
+  permissionMiddleware(PERMISSIONS.GITHUB_REPOSITORY_CREATE),
+  validationHandlingMiddleware(GITHUB_VALIDATION.bulkCreateRepositories),
+  GITHUB_CONTROLLER.bulkCreateRepositories
+)
+
 export default router
