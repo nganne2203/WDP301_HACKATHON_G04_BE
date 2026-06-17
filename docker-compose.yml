@@ -60,9 +60,9 @@ services:
       HOSTNAME: 0.0.0.0
       MONGODB_URI: ${MONGODB_URI_DOCKER:-mongodb://mongo:27017/seal_db}
       REDIS_URL: redis://redis:6379
-      APP_BASE_URL: http://api:3000
-      N8N_PER_PUSH_WEBHOOK_URL: http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookperpush/per-push-audit
-      N8N_TEAM_AGGREGATE_WEBHOOK_URL: http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookaggregate/team-aggregate-audit
+      APP_BASE_URL: ${APP_BASE_URL_DOCKER:-http://api:3000}
+      N8N_PER_PUSH_WEBHOOK_URL: ${N8N_PER_PUSH_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookperpush/per-push-audit}
+      N8N_TEAM_AGGREGATE_WEBHOOK_URL: ${N8N_TEAM_AGGREGATE_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookaggregate/team-aggregate-audit}
       GITHUB_WEBHOOK_CALLBACK_URL: ${GITHUB_WEBHOOK_CALLBACK_URL:-}
       READINESS_REQUIRES_REDIS: "true"
       STATIC_ANALYSIS_ESLINT_COMMAND: ${STATIC_ANALYSIS_ESLINT_COMMAND_DOCKER:-}
@@ -102,9 +102,9 @@ services:
     environment:
       MONGODB_URI: ${MONGODB_URI_DOCKER:-mongodb://mongo:27017/seal_db}
       REDIS_URL: redis://redis:6379
-      APP_BASE_URL: http://api:3000
-      N8N_PER_PUSH_WEBHOOK_URL: http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookperpush/per-push-audit
-      N8N_TEAM_AGGREGATE_WEBHOOK_URL: http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookaggregate/team-aggregate-audit
+      APP_BASE_URL: ${APP_BASE_URL_DOCKER:-http://api:3000}
+      N8N_PER_PUSH_WEBHOOK_URL: ${N8N_PER_PUSH_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookperpush/per-push-audit}
+      N8N_TEAM_AGGREGATE_WEBHOOK_URL: ${N8N_TEAM_AGGREGATE_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookaggregate/team-aggregate-audit}
       GITHUB_WEBHOOK_CALLBACK_URL: ${GITHUB_WEBHOOK_CALLBACK_URL:-}
       STATIC_ANALYSIS_ESLINT_COMMAND: ${STATIC_ANALYSIS_ESLINT_COMMAND_DOCKER:-}
       STATIC_ANALYSIS_TSC_COMMAND: ${STATIC_ANALYSIS_TSC_COMMAND_DOCKER:-}
@@ -125,6 +125,8 @@ services:
       WEBHOOK_URL: ${N8N_WEBHOOK_URL_DOCKER:-http://localhost:5678/}
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GOOGLE_GEMINI_API_KEY: ${GOOGLE_GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       N8N_CALLBACK_SECRET: ${N8N_CALLBACK_SECRET}
     ports:
