@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { env } from '../src/configs/environment.js'
 import { createAiReviewService } from '../src/modules/ai-reviews/ai-review.service.js'
 
 const createAiReviewRepository = () => {
@@ -88,7 +89,14 @@ const createAiReviewRepository = () => {
       listAiReviewCriteria: async (aiReviewId) => reviewCriteria.get(aiReviewId) || [],
       listTechnicalFindings: async (aiReviewId) => technicalFindings.get(aiReviewId) || [],
       listSuggestedTestCases: async (aiReviewId) => suggestedTestCases.get(aiReviewId) || [],
-      listSuggestedJudgeQuestions: async (aiReviewId) => suggestedJudgeQuestions.get(aiReviewId) || []
+      listSuggestedJudgeQuestions: async (aiReviewId) => suggestedJudgeQuestions.get(aiReviewId) || [],
+      upsertCommit: async ({ repositoryId, commitSha, data }) => {
+        const key = `${repositoryId}:${commitSha}`
+        const current = commits.get(key) || { repositoryId, commitSha }
+        const updated = { ...current, ...data, repositoryId, commitSha }
+        commits.set(key, updated)
+        return updated
+      }
     }
   }
 }
@@ -163,13 +171,10 @@ const createRepositoryFixture = ({ impactDecision, commitSha = 'commit-1' }) => 
     includedFiles: 2,
     excludedFiles: 0,
     totalCleanPatchSize: 150,
-    diffText: 'RAW_DIFF_SHOULD_NOT_BE_USED',
-    cleanDiffText: 'CLEAN_DIFF_ONLY',
     files: [{
-      filePath: 'src/modules/repositories/repository-analysis.service.js',
-      patch: 'RAW_PATCH_SHOULD_NOT_BE_USED',
+      filePath: 'src/modules/ai-reviews/ai-review.service.js',
       cleanPatch: '+async function runImpact() {}',
-      patchSummary: 'Core analysis service updated',
+      patchSummary: 'Core AI review flow updated',
       language: 'JavaScript',
       status: 'modified',
       isExcluded: false
@@ -188,7 +193,7 @@ const createRepositoryFixture = ({ impactDecision, commitSha = 'commit-1' }) => 
   stores.changedContexts.set(`${repositoryId}:${commitSha}`, [{
     repositoryId,
     commitSha,
-    filePath: 'src/modules/repositories/repository-analysis.service.js',
+    filePath: 'src/modules/ai-reviews/ai-review.service.js',
     symbolName: 'runImpact',
     symbolType: 'SERVICE_METHOD',
     startLine: 10,
@@ -245,9 +250,9 @@ const validAiResponse = JSON.stringify({
   technicalFindings: [{
     type: 'ARCHITECTURE',
     severity: 'HIGH',
-    title: 'Core analysis path changed',
-    evidence: ['repository-analysis.service.js'],
-    comment: 'Review the impact-scoring behavior carefully.',
+    title: 'Core AI dispatch path changed',
+    evidence: ['ai-review.service.js'],
+    comment: 'Review the n8n dispatch behavior carefully.',
     recommendedAction: 'Add regression tests.'
   }],
   rubricAwareComments: [{
@@ -259,11 +264,11 @@ const validAiResponse = JSON.stringify({
     risks: ['Potential regression']
   }],
   suggestedTestCases: [{
-    title: 'Regression for impact scoring',
-    purpose: 'Verify high-impact routing',
-    expectedObservation: 'High-impact commits trigger per-push audit.'
+    title: 'Regression for n8n dispatch',
+    purpose: 'Verify webhook-driven AI dispatch',
+    expectedObservation: 'A new push triggers a per-push audit.'
   }],
-  suggestedJudgeQuestions: ['How do you control false positives in impact scoring?'],
+  suggestedJudgeQuestions: ['How do you control reliability when n8n dispatch fails?'],
   costControlNotes: {
     llmCallReason: 'High-impact change',
     skippedFiles: [],
@@ -282,7 +287,7 @@ const validAggregateAiResponse = JSON.stringify({
     pushSummary: 'The team improved core backend modules over multiple commits.',
     significantChange: true,
     changeImpactLevel: 'HIGH',
-    mainAffectedAreas: ['Repository analysis', 'AI review runtime']
+    mainAffectedAreas: ['AI review runtime', 'Webhook dispatch']
   },
   techStackDetected: {
     frontend: [],
@@ -296,7 +301,7 @@ const validAggregateAiResponse = JSON.stringify({
     type: 'MAINTAINABILITY',
     severity: 'HIGH',
     title: 'Core runtime path changed repeatedly',
-    evidence: ['repository-analysis.service.js', 'ai-review.service.js'],
+    evidence: ['github-push.worker.js', 'ai-review.service.js'],
     comment: 'Review regression coverage before go-live.',
     recommendedAction: 'Run integrated runtime verification.'
   }],
@@ -322,258 +327,376 @@ const validAggregateAiResponse = JSON.stringify({
   needsHumanReview: true
 })
 
-test('per-push audit is skipped for LOW/SKIP_LLM', async () => {
-  const { repository, stores, repositoryId, commitSha } = createRepositoryFixture({
+const withN8nEnv = async (fn, { dispatchMaxRetries = 1 } = {}) => {
+  const originalN8n = env.n8n
+  const originalPublicUrl = env.server.publicUrl
+  env.n8n = {
+    enabled: true,
+    perPushWebhookUrl: 'https://n8n.test/per-push',
+    teamAggregateWebhookUrl: 'https://n8n.test/aggregate',
+    callbackSecret: 'secret-key',
+    dispatchMaxRetries
+  }
+  env.server.publicUrl = 'https://seal.example.com'
+
+  try {
+    await fn()
+  } finally {
+    env.n8n = originalN8n
+    env.server.publicUrl = originalPublicUrl
+  }
+}
+
+test('requestPerPushAudit resolves latest tracked commit and queues n8n-bound review job', async () => {
+  const { repository, repositoryId, commitSha } = createRepositoryFixture({
     impactDecision: { impactLevel: 'LOW', decision: 'SKIP_LLM' },
     commitSha: 'commit-low'
   })
+  const queuedJobs = []
 
   const service = createAiReviewService({
     repository,
     queueService: {
-      enqueueRunPerPushAudit: async () => null,
+      enqueueRunPerPushAudit: async (payload) => {
+        queuedJobs.push(payload)
+        return null
+      },
       enqueueRunTeamAggregateAudit: async () => null
     }
   })
 
-  const result = await service.createPerPushAudit({
+  const result = await service.requestPerPushAudit({
     repositoryId,
-    commitSha,
     requestedBy: 'user-1'
   })
 
-  assert.equal(result.skipped, true)
-  assert.equal(result.review.status, 'SKIPPED')
-  assert.equal(stores.technicalFindings.size, 0)
+  assert.equal(result.commitSha, commitSha)
+  assert.equal(result.queuedJobType, 'RUN_PER_PUSH_AUDIT')
+  assert.equal(queuedJobs.length, 1)
+  assert.equal(queuedJobs[0].commitSha, commitSha)
 })
 
-test('per-push audit runs for HIGH/CALL_PER_PUSH_AUDIT and persists findings and questions', async () => {
-  const { repository, stores, repositoryId, commitSha } = createRepositoryFixture({
-    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
-  })
-  let scoreSheetTouches = 0
-  let rankingTouches = 0
-  let capturedPrompt
+test('createPerPushAudit triggers n8n webhook and returns PENDING when enabled', async () => {
+  await withN8nEnv(async () => {
+    const { repository, repositoryId, commitSha } = createRepositoryFixture({
+      impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+    })
 
-  const service = createAiReviewService({
-    repository,
-    queueService: {
-      enqueueRunPerPushAudit: async () => null,
-      enqueueRunTeamAggregateAudit: async () => null
-    },
-    llmService: {
-      async generateAudit({ promptInput }) {
-        capturedPrompt = promptInput
-        return {
-          rawResponse: validAiResponse,
-          modelName: 'mock-model',
-          provider: 'mock',
-          tokenUsage: { totalTokens: 100 }
-        }
-      },
-      async repairJson() {
-        throw new Error('should not repair')
+    let triggeredPayload = null
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async (_url, options) => {
+      triggeredPayload = JSON.parse(options.body)
+      return {
+        ok: true,
+        status: 202,
+        async text() { return 'Accepted' }
       }
-    },
-    scoreSheetRepository: {
-      async touch() { scoreSheetTouches += 1 }
-    },
-    rankingRepository: {
-      async touch() { rankingTouches += 1 }
+    }
+
+    try {
+      const service = createAiReviewService({ repository })
+      const result = await service.createPerPushAudit({
+        repositoryId,
+        commitSha,
+        requestedBy: 'user-1'
+      })
+
+      assert.equal(result.pending, true)
+      assert.equal(result.review.status, 'PENDING')
+      assert.equal(triggeredPayload.aiReviewId, result.review.id)
+      assert.equal(triggeredPayload.reviewKind, 'PER_PUSH_TECHNICAL_AUDIT')
+      assert.equal(triggeredPayload.callbackUrl, `https://seal.example.com/api/ai-reviews/${result.review.id}/callback`)
+      assert.equal(triggeredPayload.context.triggerContext.commitSha, commitSha)
+      assert.equal(triggeredPayload.context.repositoryContext.repositoryFullName, 'seal-org/team-alpha')
+    } finally {
+      globalThis.fetch = originalFetch
     }
   })
+})
 
-  const result = await service.createPerPushAudit({
-    repositoryId,
-    commitSha,
-    requestedBy: 'user-1'
+test('createPerPushAudit marks review RETRY_PENDING and queues retry if n8n trigger errors', async () => {
+  await withN8nEnv(async () => {
+    const { repository, repositoryId, commitSha } = createRepositoryFixture({
+      impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+    })
+    const queuedJobs = []
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async () => {
+      throw new Error('Network timeout triggering n8n')
+    }
+
+    try {
+      const service = createAiReviewService({
+        repository,
+        queueService: {
+          enqueueRunPerPushAudit: async (payload) => {
+            queuedJobs.push(payload)
+            return null
+          },
+          enqueueRunTeamAggregateAudit: async () => null
+        }
+      })
+      const result = await service.createPerPushAudit({
+        repositoryId,
+        commitSha,
+        requestedBy: 'user-1'
+      })
+
+      assert.equal(result.retryScheduled, true)
+      assert.equal(result.review.status, 'RETRY_PENDING')
+      assert.equal(result.review.retryCount, 1)
+      assert.equal(result.review.normalizedOutput, null)
+      assert.equal(queuedJobs.length, 1)
+      assert.equal(queuedJobs[0].aiReviewId, result.review.id)
+      assert.equal(queuedJobs[0].manualRedispatch, false)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})
+
+test('handleAuditCallback success path updates PENDING to COMPLETED and strips forbidden scoring fields', async () => {
+  const { repository, stores, repositoryId } = createRepositoryFixture({
+    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
   })
 
-  assert.equal(result.skipped, false)
-  assert.equal(result.review.status, 'COMPLETED')
+  const pendingReview = await repository.createAiReview({
+    repositoryId,
+    reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+    status: 'PENDING',
+    commitSha: 'commit-1',
+    requestedBy: 'user-1',
+    requestedAt: new Date()
+  })
+
+  const service = createAiReviewService({ repository })
+  const result = await service.handleAuditCallback({
+    aiReviewId: pendingReview._id,
+    status: 'success',
+    rawResponse: validAiResponse,
+    modelName: 'gemini-1.5-pro',
+    provider: 'google'
+  })
+
+  assert.equal(result.status, 'COMPLETED')
+  assert.equal(result.modelName, 'gemini-1.5-pro')
   assert.equal(stores.technicalFindings.size, 1)
   assert.equal(stores.suggestedJudgeQuestions.size, 1)
-  assert.equal(scoreSheetTouches, 0)
-  assert.equal(rankingTouches, 0)
-  assert.equal(JSON.stringify(capturedPrompt).includes('RAW_DIFF_SHOULD_NOT_BE_USED'), false)
-  assert.equal(JSON.stringify(capturedPrompt).includes('RAW_PATCH_SHOULD_NOT_BE_USED'), false)
-  assert.equal(JSON.stringify(capturedPrompt).includes('CLEAN_DIFF_ONLY'), false)
-  assert.equal(capturedPrompt.diffSummary.files[0].cleanPatch.includes('runImpact'), true)
+  const reviewInDb = await repository.findAiReviewById(pendingReview._id)
+  assert.equal(reviewInDb.status, 'COMPLETED')
+  assert.equal(Object.hasOwn(reviewInDb.normalizedOutput, 'suggestedScore'), false)
 })
 
-test('urgent audit runs for CRITICAL impact', async () => {
-  const { repository, repositoryId, commitSha } = createRepositoryFixture({
-    impactDecision: { impactLevel: 'CRITICAL', decision: 'URGENT_AUDIT_AND_HUMAN_REVIEW', needsHumanReview: true }
-  })
-
-  const service = createAiReviewService({
-    repository,
-    queueService: {
-      enqueueRunPerPushAudit: async () => null,
-      enqueueRunTeamAggregateAudit: async () => null
-    },
-    llmService: {
-      async generateAudit() {
-        return {
-          rawResponse: validAiResponse.replace('"HIGH"', '"CRITICAL"'),
-          modelName: 'mock-model',
-          provider: 'mock',
-          tokenUsage: { totalTokens: 100 }
-        }
-      },
-      async repairJson() {
-        throw new Error('should not repair')
-      }
-    }
-  })
-
-  const result = await service.createPerPushAudit({
-    repositoryId,
-    commitSha,
-    requestedBy: 'user-1'
-  })
-
-  assert.equal(result.review.status, 'COMPLETED')
-  assert.equal(result.review.needsHumanReview, true)
-})
-
-test('forbidden scoring fields are removed from AI output', async () => {
-  const { repository, stores, repositoryId, commitSha } = createRepositoryFixture({
-    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
-  })
-
-  const service = createAiReviewService({
-    repository,
-    queueService: {
-      enqueueRunPerPushAudit: async () => null,
-      enqueueRunTeamAggregateAudit: async () => null
-    },
-    llmService: {
-      async generateAudit() {
-        return {
-          rawResponse: validAiResponse,
-          modelName: 'mock-model',
-          provider: 'mock'
-        }
-      },
-      async repairJson() {
-        throw new Error('should not repair')
-      }
-    }
-  })
-
-  await service.createPerPushAudit({
-    repositoryId,
-    commitSha,
-    requestedBy: 'user-1'
-  })
-
-  const persistedReview = [...stores.aiReviews.values()].find(review => review.repositoryId === repositoryId && review.status === 'COMPLETED')
-  assert.equal(Object.hasOwn(persistedReview.normalizedOutput, 'suggestedScore'), false)
-})
-
-test('malformed JSON triggers repair and fallback when repair fails', async () => {
-  const { repository, stores, repositoryId, commitSha } = createRepositoryFixture({
-    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
-  })
-
-  const service = createAiReviewService({
-    repository,
-    queueService: {
-      enqueueRunPerPushAudit: async () => null,
-      enqueueRunTeamAggregateAudit: async () => null
-    },
-    llmService: {
-      async generateAudit() {
-        return {
-          rawResponse: '{bad json',
-          modelName: 'mock-model',
-          provider: 'mock'
-        }
-      },
-      async repairJson() {
-        throw new Error('repair failed')
-      }
-    }
-  })
-
-  const result = await service.createPerPushAudit({
-    repositoryId,
-    commitSha,
-    requestedBy: 'user-1'
-  })
-
-  assert.equal(result.review.status, 'FALLBACK')
-  assert.equal(result.review.normalizedOutput.status, 'FALLBACK')
-})
-
-test('malformed JSON triggers repair successfully when repair returns valid JSON', async () => {
-  const { repository, repositoryId, commitSha } = createRepositoryFixture({
-    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
-  })
-
-  const service = createAiReviewService({
-    repository,
-    queueService: {
-      enqueueRunPerPushAudit: async () => null,
-      enqueueRunTeamAggregateAudit: async () => null
-    },
-    llmService: {
-      async generateAudit() {
-        return {
-          rawResponse: '{bad json',
-          modelName: 'mock-model',
-          provider: 'mock'
-        }
-      },
-      async repairJson() {
-        return validAiResponse
-      }
-    }
-  })
-
-  const result = await service.createPerPushAudit({
-    repositoryId,
-    commitSha,
-    requestedBy: 'user-1'
-  })
-
-  assert.equal(result.review.status, 'COMPLETED')
-})
-
-test('team aggregate audit enriches canonical aggregate fields when provider omits them', async () => {
+test('handleAuditCallback marks review RETRY_PENDING and queues retry when callback reports an error', async () => {
   const { repository, repositoryId } = createRepositoryFixture({
     impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
   })
 
+  const pendingReview = await repository.createAiReview({
+    repositoryId,
+    reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+    status: 'PENDING',
+    commitSha: 'commit-1',
+    requestedBy: 'user-1',
+    promptInput: {},
+    requestedAt: new Date()
+  })
+
+  await withN8nEnv(async () => {
+    const queuedJobs = []
+    const service = createAiReviewService({
+      repository,
+      queueService: {
+        enqueueRunPerPushAudit: async (payload) => {
+          queuedJobs.push(payload)
+          return null
+        },
+        enqueueRunTeamAggregateAudit: async () => null
+      }
+    })
+    const result = await service.handleAuditCallback({
+      aiReviewId: pendingReview._id,
+      status: 'error',
+      errorMessage: 'Vertex AI quota exceeded'
+    })
+
+    assert.equal(result.status, 'RETRY_PENDING')
+    assert.equal(result.modelName, null)
+    const reviewInDb = await repository.findAiReviewById(pendingReview._id)
+    assert.equal(reviewInDb.status, 'RETRY_PENDING')
+    assert.equal(reviewInDb.lastError, 'Vertex AI quota exceeded')
+    assert.equal(reviewInDb.retryCount, 1)
+    assert.equal(queuedJobs.length, 1)
+  })
+})
+
+test('handleAuditCallback marks review RETRY_PENDING when rawResponse is invalid JSON', async () => {
+  const { repository, repositoryId } = createRepositoryFixture({
+    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+  })
+
+  const pendingReview = await repository.createAiReview({
+    repositoryId,
+    reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+    status: 'PENDING',
+    commitSha: 'commit-1',
+    requestedBy: 'user-1',
+    requestedAt: new Date()
+  })
+
+  await withN8nEnv(async () => {
+    const queuedJobs = []
+    const service = createAiReviewService({
+      repository,
+      queueService: {
+        enqueueRunPerPushAudit: async (payload) => {
+          queuedJobs.push(payload)
+          return null
+        },
+        enqueueRunTeamAggregateAudit: async () => null
+      }
+    })
+    const result = await service.handleAuditCallback({
+      aiReviewId: pendingReview._id,
+      status: 'success',
+      rawResponse: '{bad json',
+      modelName: 'gemini-1.5-pro',
+      provider: 'google'
+    })
+
+    assert.equal(result.status, 'RETRY_PENDING')
+    const reviewInDb = await repository.findAiReviewById(pendingReview._id)
+    assert.equal(reviewInDb.status, 'RETRY_PENDING')
+    assert.match(reviewInDb.lastError, /Unexpected token|AI response was empty|JSON/i)
+    assert.equal(queuedJobs.length, 1)
+  })
+})
+
+test('redispatchAiReview queues manual redispatch for review requiring manual action', async () => {
+  const { repository, repositoryId } = createRepositoryFixture({
+    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+  })
+
+  const failedReview = await repository.createAiReview({
+    repositoryId,
+    reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+    status: 'MANUAL_REDISPATCH_REQUIRED',
+    commitSha: 'commit-1',
+    promptInput: { sample: true },
+    requestedBy: 'user-1',
+    retryCount: 2,
+    requestedAt: new Date()
+  })
+
+  const queuedJobs = []
   const service = createAiReviewService({
     repository,
     queueService: {
-      enqueueRunPerPushAudit: async () => null,
-      enqueueRunTeamAggregateAudit: async () => null
-    },
-    llmService: {
-      async generateAudit() {
-        return {
-          rawResponse: validAggregateAiResponse,
-          modelName: 'mock-model',
-          provider: 'mock'
-        }
+      enqueueRunPerPushAudit: async (payload) => {
+        queuedJobs.push(payload)
+        return null
       },
-      async repairJson() {
-        throw new Error('should not repair')
-      }
+      enqueueRunTeamAggregateAudit: async () => null
     }
   })
 
-  const result = await service.createTeamAggregateAudit({
-    repositoryId,
-    requestedBy: 'user-1'
+  const result = await service.requestAiReviewRedispatch({
+    aiReviewId: failedReview._id,
+    requestedBy: 'coordinator-1'
   })
 
-  assert.equal(result.review.status, 'COMPLETED')
-  assert.equal(Boolean(result.review.normalizedOutput.historicalSynthesis), true)
-  assert.equal(Boolean(result.review.normalizedOutput.currentTechnicalSnapshot), true)
-  assert.equal(Array.isArray(result.review.normalizedOutput.riskSummary), true)
-  assert.equal(Boolean(result.review.normalizedOutput.judgeDashboardSummary?.headline), true)
+  assert.equal(result.review.status, 'RETRY_PENDING')
+  assert.equal(queuedJobs.length, 1)
+  assert.equal(queuedJobs[0].manualRedispatch, true)
+  assert.equal(queuedJobs[0].aiReviewId, failedReview._id)
+})
+
+test('manual redispatch failure returns review to MANUAL_REDISPATCH_REQUIRED without auto retry', async () => {
+  await withN8nEnv(async () => {
+    const { repository, repositoryId } = createRepositoryFixture({
+      impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+    })
+
+    const review = await repository.createAiReview({
+      repositoryId,
+      reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+      status: 'MANUAL_REDISPATCH_REQUIRED',
+      commitSha: 'commit-1',
+      promptInput: { sample: true },
+      requestedBy: 'user-1',
+      retryCount: 2,
+      requestedAt: new Date()
+    })
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async () => {
+      throw new Error('n8n still unavailable')
+    }
+
+    try {
+      const service = createAiReviewService({
+        repository,
+        queueService: {
+          enqueueRunPerPushAudit: async () => {
+            throw new Error('should not auto retry manual redispatch')
+          },
+          enqueueRunTeamAggregateAudit: async () => null
+        }
+      })
+
+      const result = await service.redispatchAiReview({
+        aiReviewId: review._id,
+        requestedBy: 'coordinator-1',
+        manualRedispatch: true
+      })
+
+      assert.equal(result.review.status, 'MANUAL_REDISPATCH_REQUIRED')
+      assert.equal(result.failed, true)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})
+
+test('createTeamAggregateAudit triggers n8n webhook and handleAuditCallback completes aggregate review', async () => {
+  await withN8nEnv(async () => {
+    const { repository, repositoryId } = createRepositoryFixture({
+      impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+    })
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 202,
+      async text() { return 'Accepted' }
+    })
+
+    try {
+      const service = createAiReviewService({ repository })
+      const created = await service.createTeamAggregateAudit({
+        repositoryId,
+        requestedBy: 'user-1'
+      })
+
+      assert.equal(created.pending, true)
+      assert.equal(created.review.status, 'PENDING')
+
+      const completed = await service.handleAuditCallback({
+        aiReviewId: created.review.id,
+        status: 'success',
+        rawResponse: validAggregateAiResponse,
+        modelName: 'gemini-1.5-pro',
+        provider: 'google'
+      })
+
+      assert.equal(completed.status, 'COMPLETED')
+      assert.equal(Boolean(completed.normalizedOutput.historicalSynthesis), true)
+      assert.equal(Boolean(completed.normalizedOutput.currentTechnicalSnapshot), true)
+      assert.equal(Array.isArray(completed.normalizedOutput.riskSummary), true)
+      assert.equal(Boolean(completed.normalizedOutput.judgeDashboardSummary?.headline), true)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
 })

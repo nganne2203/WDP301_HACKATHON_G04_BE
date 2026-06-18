@@ -270,6 +270,20 @@ const buildMediaFilter = (query = {}) => {
   if (query.mediaType) filter.mediaType = query.mediaType
   if (query.status) filter.status = query.status
 
+  const tags = normalizeTags(query.tags)
+  if (tags.length > 0) {
+    filter.tags = { $in: tags }
+  }
+
+  if (query.search) {
+    const pattern = new RegExp(escapeRegex(query.search), 'i')
+    filter.$or = [
+      { title: pattern },
+      { description: pattern },
+      { tags: pattern }
+    ]
+  }
+
   return filter
 }
 
@@ -521,7 +535,7 @@ export const createMediaService = ({
   }
 
   const resolveTeamId = async ({ payloadTeamId, participant, eventId }) => {
-    const participantTeamId = getId(participant.teamId)
+    const participantTeamId = getId(participant?.teamId)
     const requestedTeamId = payloadTeamId || participantTeamId
 
     if (!requestedTeamId) return undefined
@@ -532,7 +546,7 @@ export const createMediaService = ({
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to this event'])
     }
 
-    if (!participantTeamId || participantTeamId !== requestedTeamId) {
+    if (participant && (!participantTeamId || participantTeamId !== requestedTeamId)) {
       throw new ApiError(ERROR_CODES.FORBIDDEN, ['You can upload media only for your own team'])
     }
 
@@ -543,16 +557,21 @@ export const createMediaService = ({
     const safePayload = pickSafeFields(payload, FILE_FIELDS)
     const event = await ensureEventExists(safePayload.eventId)
     ensureUploadsEnabled(event)
+    const canUploadForEvent = canModerateMedia(actor)
 
-    const participant = await ensureParticipantJoinedEvent({
-      eventId: safePayload.eventId,
-      userId: actor.id
-    })
-    const teamId = await resolveTeamId({
-      payloadTeamId: safePayload.teamId,
-      participant,
-      eventId: safePayload.eventId
-    })
+    const participant = canUploadForEvent
+      ? null
+      : await ensureParticipantJoinedEvent({
+        eventId: safePayload.eventId,
+        userId: actor.id
+      })
+    const teamId = canUploadForEvent && !safePayload.teamId
+      ? undefined
+      : await resolveTeamId({
+        payloadTeamId: safePayload.teamId,
+        participant,
+        eventId: safePayload.eventId
+      })
     const config = await loadOperationalConfig()
     const fileMetadata = validateMediaFile({ file, config })
     const storagePath = buildStoragePath({

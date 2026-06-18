@@ -12,7 +12,7 @@ import { EMAIL_TEMPLATE_KEYS } from '#modules/notifications/email-templates.js'
 import { AUDIT_LOG_SERVICE } from '#modules/audit-logs/audit-log.service.js'
 import { env } from '#configs/environment.js'
 
-const PROFILE_FIELDS = ['fullName', 'avatarUrl', 'phone', 'bio']
+const PROFILE_FIELDS = ['fullName', 'avatarUrl', 'phone', 'bio', 'githubUsername']
 const ALLOWED_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED']
 const EMAIL_NOTIFICATION_STATUSES = ['APPROVED', 'REJECTED']
 const PARTICIPANT_ROLES = ['USER', 'PARTICIPANT']
@@ -127,6 +127,7 @@ const normalizeUser = (user) => {
     avatarUrl: plainUser.avatarUrl,
     phone: plainUser.phone,
     bio: plainUser.bio,
+    githubUsername: plainUser.githubUsername,
     studentType: plainUser.studentType,
     studentId: plainUser.studentId,
     schoolName: plainUser.schoolName,
@@ -143,11 +144,16 @@ const getRoleNames = (user) => {
 
 const getPermissionCodes = (user) => {
   const directPermissions = user?.permissions || []
-  const rolePermissions = (user?.roles || []).flatMap(role => role.permissions || [])
+  const activeRoles = (user?.roles || []).filter(role => {
+    if (typeof role === 'string' || role instanceof mongoose.Types.ObjectId) return true
+    return role.isActive !== false
+  })
+  const rolePermissions = activeRoles.flatMap(role => role.permissions || [])
 
   const permissionCodes = [...directPermissions, ...rolePermissions]
     .map(permission => {
       if (typeof permission === 'string') return permission
+      if (permission.isActive === false) return null
       return permission.code
     })
     .filter(Boolean)
@@ -259,6 +265,7 @@ const createUser = async (payload = {}, actor = {}) => {
     roles: roles.map(role => role._id),
     phone: payload.phone,
     bio: payload.bio,
+    githubUsername: payload.githubUsername,
     avatarUrl: payload.avatarUrl,
     studentType: payload.studentType,
     studentId: payload.studentId,
@@ -322,42 +329,68 @@ const suspendUser = async (id) => {
   return await updateStatus(id, 'SUSPENDED')
 }
 
-const assignRoles = async (id, roleNames = []) => {
-  await ensureUserExists(id)
+const getRoleAuditSnapshot = (user) => {
+  return (user?.roles || []).map(role => ({
+    id: role._id?.toString?.() || role.id?.toString?.() || role.toString?.(),
+    name: role.name,
+    code: role.code || role.name
+  }))
+}
+
+const writeRoleAssignmentAudit = ({ actorId, userId, before, after, method }) => {
+  if (!actorId) return
+
+  AUDIT_LOG_SERVICE.createAuditLog({
+    userId: actorId,
+    action: 'USER_ASSIGN_ROLE',
+    resourceType: 'User',
+    resourceId: userId,
+    metadata: { before, after, method }
+  }).catch(() => {})
+}
+
+const assignRoles = async (id, roleNames = [], actorId = null) => {
+  const existingUser = await ensureUserExists(id)
 
   const roles = await USER_REPOSITORY.findRolesByNames(roleNames)
   if (roles.length !== roleNames.length) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more roles do not exist'])
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more roles do not exist or are inactive'])
   }
 
   const updatedUser = await USER_REPOSITORY.updateById(id, {
     roles: roles.map(role => role._id)
+  })
+
+  writeRoleAssignmentAudit({
+    actorId,
+    userId: id,
+    before: getRoleAuditSnapshot(existingUser),
+    after: getRoleAuditSnapshot(updatedUser),
+    method: 'BY_NAME'
   })
 
   return normalizeUser(updatedUser)
 }
 
 const assignRolesByIds = async (id, roleIds = [], actorId = null) => {
-  await ensureUserExists(id)
+  const existingUser = await ensureUserExists(id)
 
   const roles = await USER_REPOSITORY.findRolesByIds(roleIds)
   if (roles.length !== roleIds.length) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more role IDs are invalid'])
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more role IDs are invalid or inactive'])
   }
 
   const updatedUser = await USER_REPOSITORY.updateById(id, {
     roles: roles.map(role => role._id)
   })
 
-  if (actorId) {
-    AUDIT_LOG_SERVICE.createAuditLog({
-      userId: actorId,
-      action: 'USER_ASSIGN_ROLE',
-      resourceType: 'User',
-      resourceId: id,
-      metadata: { assignedRoles: roles.map(r => r.name), method: 'BY_ID' }
-    }).catch(() => {})
-  }
+  writeRoleAssignmentAudit({
+    actorId,
+    userId: id,
+    before: getRoleAuditSnapshot(existingUser),
+    after: getRoleAuditSnapshot(updatedUser),
+    method: 'BY_ID'
+  })
 
   return normalizeUser(updatedUser)
 }

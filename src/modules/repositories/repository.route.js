@@ -44,27 +44,6 @@ router.get(
 )
 
 router.get(
-  '/:id/commit-diffs',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
-  validationHandlingMiddleware(REPOSITORY_VALIDATION.listRepositoryCommitDiffs),
-  REPOSITORY_CONTROLLER.listRepositoryCommitDiffs
-)
-
-router.get(
-  '/:id/static-analysis',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
-  validationHandlingMiddleware(REPOSITORY_VALIDATION.listRepositoryStaticAnalysis),
-  REPOSITORY_CONTROLLER.listRepositoryStaticAnalysis
-)
-
-router.get(
-  '/:id/impact-decisions',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
-  validationHandlingMiddleware(REPOSITORY_VALIDATION.listRepositoryImpactDecisions),
-  REPOSITORY_CONTROLLER.listRepositoryImpactDecisions
-)
-
-router.get(
   '/:id/ai-reviews',
   permissionMiddleware(PERMISSIONS.AI_REVIEW_VIEW),
   validationHandlingMiddleware(AI_REVIEW_VALIDATION.repositoryAiReviews),
@@ -77,22 +56,6 @@ router.patch(
   permissionMiddleware(PERMISSIONS.GITHUB_REPOSITORY_CREATE),
   validationHandlingMiddleware(REPOSITORY_VALIDATION.updateRepository),
   REPOSITORY_CONTROLLER.updateRepository
-)
-
-router.post(
-  '/:id/sync-commits',
-  sensitiveRateLimiter,
-  permissionMiddleware(PERMISSIONS.GITHUB_REPOSITORY_CREATE),
-  validationHandlingMiddleware(REPOSITORY_VALIDATION.syncRepositoryCommits),
-  REPOSITORY_CONTROLLER.syncRepositoryCommits
-)
-
-router.post(
-  '/:id/analyze-commit',
-  sensitiveRateLimiter,
-  permissionMiddleware(PERMISSIONS.GITHUB_REPOSITORY_CREATE),
-  validationHandlingMiddleware(REPOSITORY_VALIDATION.analyzeCommit),
-  REPOSITORY_CONTROLLER.analyzeCommit
 )
 
 router.post(

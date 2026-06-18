@@ -24,7 +24,8 @@ const teamPopulate = [
   { path: 'eventId', select: 'title status registrationStart registrationEnd minTeamMembers maxTeamMembers maxTeams totalFinalistSlots competitionConfig' },
   { path: 'trackId', select: 'code name type maxTeams status' },
   { path: 'leaderId', select: 'email fullName status roles', populate: populateRoles[0] },
-  { path: 'memberIds', select: 'email fullName status roles', populate: populateRoles[0] }
+  { path: 'memberIds', select: 'email fullName status roles', populate: populateRoles[0] },
+  { path: 'mentorIds', select: 'email fullName status roles', populate: populateRoles[0] }
 ]
 
 const withSession = (query, session) => {

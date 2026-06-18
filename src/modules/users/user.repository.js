@@ -43,11 +43,11 @@ const findRoleByName = async (name) => {
 
 const findRolesByNames = async (names) => {
   const normalizedNames = names.map(name => String(name).toUpperCase())
-  return await Role.find({ name: { $in: normalizedNames } })
+  return await Role.find({ name: { $in: normalizedNames }, isActive: true })
 }
 
 const findRolesByIds = async (ids) => {
-  return await Role.find({ _id: { $in: ids } }).populate({ path: 'permissions', select: 'code name description module isActive' })
+  return await Role.find({ _id: { $in: ids }, isActive: true }).populate({ path: 'permissions', select: 'code name description module isActive' })
 }
 
 const updateById = async (id, data) => {

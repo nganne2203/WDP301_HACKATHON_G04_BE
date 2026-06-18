@@ -655,7 +655,7 @@ Commit data includes:
 
 ### FR-GH-07
 
-The system stores commit diff snapshots in `CommitDiff` so AI review retries can reuse cached diff data instead of repeatedly requesting or rebuilding the same diff.
+The system may store commit diff snapshots in `CommitDiff` for repository evidence and manual inspection, but the active AI review flow does not depend on BE-side diff assembly.
 
 ### FR-GH-08
 
@@ -671,7 +671,7 @@ Coordinators can revoke repository access after the deadline so submissions are 
 
 ## Features
 
-- third-party AI integration,
+- n8n-orchestrated third-party AI integration,
 - supporting repository evaluation,
 - repository analysis,
 - AI-generated feedback.
@@ -680,20 +680,20 @@ Coordinators can revoke repository access after the deadline so submissions are 
 
 ### FR-AI-01
 
-Admins can configure third-party AI providers.
+Admins can configure the n8n integration used to orchestrate third-party AI providers.
 
 ### FR-AI-02
 
 Configuration includes:
 
-- API key,
-- API endpoint,
-- model name,
-- provider name.
+- per-push webhook URL,
+- team-aggregate webhook URL,
+- callback secret,
+- automatic redispatch retry limit.
 
 ### FR-AI-03
 
-The system sends repository metadata and cached commit diff information to third-party AI services as a supporting evaluation aid.
+The system sends lightweight repository, team, round, rubric, and trigger context to n8n; n8n is responsible for fetching GitHub data, building the technical evidence, and orchestrating third-party AI services as a supporting evaluation aid.
 
 ### FR-AI-04
 
@@ -719,7 +719,7 @@ Judges and coordinators can view AI-generated review summaries. AI output suppor
 
 ### FR-AI-08
 
-Coordinators can retry failed AI review requests. Retry requests should reuse `CommitDiff` records when available to reduce backend calls after AI provider errors.
+The system supports automatic redispatch retries and manual redispatch for failed AI review requests. Redispatch must reuse existing `CommitDiff` and stored prompt evidence instead of rebuilding a new review record.
 
 ### FR-AI-09
 
@@ -1004,11 +1004,53 @@ Configurations include:
 - GitHub token,
 - AI API key,
 - webhook secret,
-- external scoring API configuration.
+- external scoring API configuration,
+- Supabase media storage configuration.
 
 ### FR-ADMIN-03
 
 Configuration data is stored in the database.
+
+---
+
+# 4.17 Media Upload, Gallery, and Moderation Module
+
+## Implementation Status
+
+Backend media APIs are implemented using Supabase Storage for files and MongoDB for metadata. Frontend participant media, event gallery, and admin moderation/statistics pages are implemented.
+
+## Features
+
+- participant media upload for joined events,
+- private Supabase Storage object access through backend-generated signed URLs,
+- participant upload history,
+- approved event gallery,
+- coordinator/admin moderation,
+- media statistics,
+- media activity tracking and audit logs,
+- storage configuration through `SystemConfiguration`.
+
+## Requirements
+
+### FR-MEDIA-01
+
+Participants can upload image, video, and document files only for events they joined.
+
+### FR-MEDIA-02
+
+Uploaded files are validated by extension, MIME type, and configured file-size limits.
+
+### FR-MEDIA-03
+
+Event galleries return approved media only.
+
+### FR-MEDIA-04
+
+Admins and event coordinators can list, approve, reject, delete, and inspect statistics for media.
+
+### FR-MEDIA-05
+
+Supabase service role keys are encrypted at rest and never returned to clients.
 
 ---
 
@@ -1063,6 +1105,7 @@ The system must support integration with:
 - GitHub API,
 - third-party AI APIs,
 - Google Meet,
+- Supabase Storage,
 - external scoring systems.
 
 ---
@@ -1097,8 +1140,9 @@ The main entities include:
 - AIReview
 - AIReviewCriterion
 - Notification
-- AuditLog
 - Media
+- MediaActivity
+- AuditLog
 - SystemConfiguration
 
 ---
@@ -1246,7 +1290,9 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 **AIReview**
 - Stores one AI review request/result for a repository commit.
 - Key fields: `repositoryId`, `commitId`, `commitDiffId`, `provider`, `model`, `status`, `summary`, `details`, `retryCount`, `lastError`, `requestedBy`, `requestedAt`, `completedAt`.
-- Purpose: stores top-level AI review summary and retry state. It references `CommitDiff` so retries can reuse cached diff content.
+- Important statuses: `PENDING`, `COMPLETED`, `FAILED`, `RETRY_PENDING`, `MANUAL_REDISPATCH_REQUIRED`, `SKIPPED`.
+- Purpose: stores top-level AI review summary and redispatch state. It references `CommitDiff` so retries can reuse cached diff content.
+- Runtime note: the backend does not execute local LLM fallback logic. AI generation is delegated to n8n and external providers only.
 
 **AIReviewCriterion**
 - Stores criterion-level AI evaluation details.
@@ -1264,8 +1310,12 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 - Key fields: `userId`, `title`, `message`, `type`, `status`, `metadata`.
 
 **Media**
-- Stores event media records.
-- Key fields: `eventId`, `uploadedBy`, `url`, `caption`, `tags`.
+- Stores event media metadata while actual files live in Supabase Storage.
+- Key fields: `eventId`, `uploadedBy`, `teamId`, `title`, `description`, `mediaType`, `storageProvider`, `bucketName`, `storagePath`, `fileUrl`, `originalFileName`, `mimeType`, `fileSize`, `fileExtension`, `tags`, `status`, `reviewedBy`, `reviewedAt`, `rejectReason`, `uploadedAt`.
+
+**MediaActivity**
+- Tracks media actions.
+- Key fields: `mediaId`, `eventId`, `userId`, `action`, `metadata`, `createdAt`.
 
 **AuditLog**
 - Stores critical system activity.
@@ -1282,7 +1332,10 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 - `CommitDiff` caches the diff for a commit or commit range.
 - `AIReview` references `Repository`, `Commit`, and `CommitDiff`.
 - `AIReviewCriterion` stores detailed qualitative AI feedback for each `AIReview`.
-- If the AI provider fails, the retry increases `retryCount` and reuses the existing `CommitDiff`.
+- If n8n dispatch or callback fails, the retry increases `retryCount` and reuses the existing `CommitDiff`.
+- Automatic retries move the review to `RETRY_PENDING`.
+- When retry budget is exhausted, the review moves to `MANUAL_REDISPATCH_REQUIRED`.
+- Manual redispatch queues the same `AIReview` back to n8n instead of creating a new row.
 
 **Judging flow**
 - `Round` defines assigned teams, judges, rubric, and tie-break rules.

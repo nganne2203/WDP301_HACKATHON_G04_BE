@@ -132,6 +132,45 @@ const revokeMembers = async (req, res, next) => {
   }
 }
 
+const bulkCreateRepositories = async (req, res, next) => {
+  try {
+    const result = await GITHUB_SERVICE.bulkCreateRepositories(req.body, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Bulk create GitHub repositories successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const bulkGrantAccess = async (req, res, next) => {
+  try {
+    const result = await GITHUB_SERVICE.bulkGrantAccess(req.body, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Bulk grant collaborator access successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const bulkRevokeAccess = async (req, res, next) => {
+  try {
+    const result = await GITHUB_SERVICE.bulkRevokeAccess(req.body, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Bulk revoke collaborator access successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const GITHUB_CONTROLLER = {
   getConfig,
   saveConfig,
@@ -141,5 +180,9 @@ export const GITHUB_CONTROLLER = {
   registerRepositoryWebhook,
   revokeCollaborator,
   inviteOrganizationMember,
-  revokeMembers
+  revokeMembers,
+  bulkCreateRepositories,
+  bulkGrantAccess,
+  bulkRevokeAccess
 }
+

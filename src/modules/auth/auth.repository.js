@@ -5,10 +5,10 @@ import '#models/permission.model.js'
 const populateRoles = [
   {
     path: 'roles',
-    select: 'name description permissions',
+    select: 'name code description permissions isSystemRole isActive',
     populate: {
       path: 'permissions',
-      select: 'code description'
+      select: 'code name description module isActive'
     }
   }
 ]

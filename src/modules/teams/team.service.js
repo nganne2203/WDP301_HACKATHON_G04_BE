@@ -11,6 +11,8 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
 import { LOGGER } from '#utils/logger.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
+import { PERMISSIONS } from '#constants/permissions.js'
+import { GITHUB_SERVICE } from '#modules/github/github.service.js'
 
 export const TEAM_STATUSES = {
   PENDING: 'PENDING',
@@ -35,6 +37,7 @@ const CONFIRMED_TEAM_STATUSES = [TEAM_STATUSES.CONFIRMED, TEAM_STATUSES.ACTIVE]
 const OPEN_TEAM_STATUSES = [TEAM_STATUSES.PENDING, TEAM_STATUSES.WAITING_FOR_MEMBERS, TEAM_STATUSES.WAITLISTED]
 const ACTIVE_PARTICIPANT_STATUSES = ['INVITED', 'REGISTERED', 'ACTIVE']
 const COORDINATOR_ROLES = ['ADMIN', 'COORDINATOR', 'EVENT_COORDINATOR']
+const MENTOR_SCOPED_ROLES = ['MENTOR', 'SPEAKER']
 
 const getId = (value) => {
   return value?._id?.toString?.() || value?.id || value?.toString?.()
@@ -78,11 +81,13 @@ export const normalizeInvitationMembers = ({ members = [], emails = [] } = {}) =
   const normalizedMembers = [
     ...members.map((member) => ({
       fullName: String(member.fullName || '').trim(),
-      email: String(member.email || '').trim().toLowerCase()
+      email: String(member.email || '').trim().toLowerCase(),
+      githubUsername: String(member.githubUsername || '').trim()
     })),
     ...emails.map((email) => ({
       fullName: '',
-      email: String(email || '').trim().toLowerCase()
+      email: String(email || '').trim().toLowerCase(),
+      githubUsername: ''
     }))
   ].filter(member => member.email)
 
@@ -110,15 +115,44 @@ const getMaxTeams = (event) => {
   return event?.maxTeams || 30
 }
 
-const getFrontendUrl = (path) => {
+const getFrontendUrl = (path, logger = LOGGER) => {
   const frontendUrl = env.client.frontendUrl || env.client.urls[0]
   if (!frontendUrl) return null
 
-  return new URL(path, frontendUrl).toString()
+  try {
+    return new URL(path, frontendUrl).toString()
+  } catch (error) {
+    logger.warn('Team frontend URL is invalid; skipping generated link', {
+      frontendUrl,
+      path,
+      error: error.message
+    })
+    return null
+  }
 }
 
-const buildInvitationUrls = (token) => {
-  const baseUrl = getFrontendUrl('/team-invitations/confirm')
+const appendSearchParams = (urlString, params = {}, logger = LOGGER) => {
+  if (!urlString) return null
+
+  try {
+    const url = new URL(urlString)
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        url.searchParams.set(key, String(value))
+      }
+    })
+    return url.toString()
+  } catch (error) {
+    logger.warn('Generated team URL is invalid while appending query params', {
+      urlString,
+      error: error.message
+    })
+    return null
+  }
+}
+
+const buildInvitationUrls = (token, logger = LOGGER) => {
+  const baseUrl = getFrontendUrl('/team-invitations/confirm', logger)
   if (!baseUrl) {
     return {
       acceptUrl: null,
@@ -126,22 +160,14 @@ const buildInvitationUrls = (token) => {
     }
   }
 
-  const acceptUrl = new URL(baseUrl)
-  acceptUrl.searchParams.set('token', token)
-  acceptUrl.searchParams.set('decision', 'accept')
-
-  const declineUrl = new URL(baseUrl)
-  declineUrl.searchParams.set('token', token)
-  declineUrl.searchParams.set('decision', 'decline')
-
   return {
-    acceptUrl: acceptUrl.toString(),
-    declineUrl: declineUrl.toString()
+    acceptUrl: appendSearchParams(baseUrl, { token, decision: 'accept' }, logger),
+    declineUrl: appendSearchParams(baseUrl, { token, decision: 'decline' }, logger)
   }
 }
 
-const buildLoginUrl = () => {
-  return getFrontendUrl('/login')
+const buildLoginUrl = (logger = LOGGER) => {
+  return getFrontendUrl('/login', logger)
 }
 
 const buildFullNameFromEmail = (email) => {
@@ -257,6 +283,8 @@ const normalizeTeam = ({ team, participants = [], invitations = [] } = {}) => {
     leader: normalizeUserSummary(plainTeam.leaderId),
     leaderId: getId(plainTeam.leaderId),
     members: (plainTeam.memberIds || []).map(normalizeUserSummary).filter(Boolean),
+    assignedMentors: (plainTeam.mentorIds || []).map(normalizeUserSummary).filter(Boolean),
+    mentorIds: (plainTeam.mentorIds || []).map(getId).filter(Boolean),
     name: plainTeam.name,
     chapterName: plainTeam.chapterName,
     projectName: plainTeam.projectName,
@@ -277,6 +305,15 @@ const normalizeTeam = ({ team, participants = [], invitations = [] } = {}) => {
   }
 }
 
+const actorHasPermission = (actor = {}, permission) => {
+  const permissions = actor.effectivePermissions || actor.permissions || []
+  return permissions.includes(permission)
+}
+
+const hasMentorScopedRole = (actor = {}) => {
+  return (actor.roles || []).some(role => MENTOR_SCOPED_ROLES.includes(String(role).toUpperCase()))
+}
+
 const hasCoordinatorRole = (actor = {}) => {
   return (actor.roles || []).some(role => COORDINATOR_ROLES.includes(String(role).toUpperCase()))
 }
@@ -284,6 +321,16 @@ const hasCoordinatorRole = (actor = {}) => {
 const ensureCoordinator = (actor = {}) => {
   if (!hasCoordinatorRole(actor)) {
     throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only coordinators can perform this action'])
+  }
+}
+
+const hasTeamManagementPermission = (actor = {}) => {
+  return actorHasPermission(actor, PERMISSIONS.TEAM_UPDATE)
+}
+
+const ensureTeamManagementPermission = (actor = {}) => {
+  if (!hasTeamManagementPermission(actor)) {
+    throw new ApiError(ERROR_CODES.FORBIDDEN, ['You do not have permission to manage teams'])
   }
 }
 
@@ -326,7 +373,7 @@ const ensureTeamReadable = (team, actor) => {
   const memberIds = (team.memberIds || []).map(getId)
   const actorId = actor.id
 
-  if (hasCoordinatorRole(actor) || isSameId(team.leaderId, actorId) || memberIds.includes(actorId)) {
+  if (hasTeamManagementPermission(actor) || isSameId(team.leaderId, actorId) || memberIds.includes(actorId)) {
     return
   }
 
@@ -581,8 +628,8 @@ const ensureParticipantCanJoinEvent = async ({
   }
 }
 
-const buildInvitationEmailContext = ({ event, team, leader, token, invitedUser, email }) => {
-  const { acceptUrl, declineUrl } = buildInvitationUrls(token)
+const buildInvitationEmailContext = ({ event, team, leader, token, invitedUser, email, logger = LOGGER }) => {
+  const { acceptUrl, declineUrl } = buildInvitationUrls(token, logger)
 
   return {
     to: email,
@@ -637,6 +684,23 @@ const sendJobs = async ({ jobs, emailService, notificationService, logger }) => 
     if (job.kind === 'notification') {
       await sendNotificationJob(notificationService, logger, job.payload)
     }
+
+    if (job.kind === 'github_assign') {
+      try {
+        await GITHUB_SERVICE.assignCollaborator({
+          eventId: job.payload.eventId,
+          repoName: job.payload.repoName,
+          username: job.payload.githubUsername,
+          permission: 'push'
+        }, job.payload.actor)
+      } catch (err) {
+        logger.error('Failed to auto-assign collaborator upon invitation acceptance', {
+          repoName: job.payload.repoName,
+          username: job.payload.githubUsername,
+          error: err.message
+        })
+      }
+    }
   }
 }
 
@@ -669,9 +733,11 @@ const createInvitationForEmail = async ({
   leader,
   email,
   fullName,
+  githubUsername,
   session,
   jobs,
-  excludeInvitationId = null
+  excludeInvitationId = null,
+  logger = LOGGER
 }) => {
   ensureEmailIsNotLeader(email, leader)
 
@@ -687,6 +753,10 @@ const createInvitationForEmail = async ({
       excludeInvitationId,
       session
     })
+
+    if (!invitedUser.githubUsername && githubUsername) {
+      await User.findByIdAndUpdate(invitedUser._id, { githubUsername }, { session })
+    }
   } else {
     const blockingInvitation = await repository.findBlockingInvitation({
       eventId: getId(event),
@@ -702,6 +772,7 @@ const createInvitationForEmail = async ({
     invitedUser = await repository.createUser({
       email,
       fullName: fullName || buildFullNameFromEmail(email),
+      githubUsername,
       passwordHash: await BCRYPT_UTILS.hashPassword(temporaryPassword),
       authProvider: 'LOCAL',
       status: 'APPROVED',
@@ -732,7 +803,7 @@ const createInvitationForEmail = async ({
           fullName: invitedUser.fullName,
           email,
           temporaryPassword,
-          loginUrl: buildLoginUrl()
+          loginUrl: buildLoginUrl(logger)
         },
         metadata: {
           eventId: getId(event),
@@ -752,7 +823,8 @@ const createInvitationForEmail = async ({
       leader,
       token,
       invitedUser,
-      email
+      email,
+      logger
     })
   })
 
@@ -837,8 +909,8 @@ export const createTeamService = ({
   logger = LOGGER
 } = {}) => {
   const listTeams = async (query = {}, actor = {}) => {
-    if (!hasCoordinatorRole(actor)) {
-      throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only coordinators can list all teams'])
+    if (!hasTeamManagementPermission(actor) && !actorHasPermission(actor, PERMISSIONS.TEAM_VIEW) && !hasMentorScopedRole(actor)) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['You do not have permission to list all teams'])
     }
 
     const { page, limit } = normalizePaginationQuery(query)
@@ -852,6 +924,12 @@ export const createTeamService = ({
       filter.trackId = query.trackId
     }
     if (query.status) filter.status = query.status
+    if (!hasCoordinatorRole(actor)) {
+      if (!actor.id) {
+        throw new ApiError(ERROR_CODES.FORBIDDEN, ['Mentor account is missing actor context'])
+      }
+      filter.mentorIds = actor.id
+    }
 
     const skip = (page - 1) * limit
     const [teams, totalItems] = await Promise.all([
@@ -969,6 +1047,7 @@ export const createTeamService = ({
             leader,
             email: member.email,
             fullName: member.fullName,
+            githubUsername: member.githubUsername,
             session,
             jobs
           })
@@ -1040,6 +1119,7 @@ export const createTeamService = ({
             leader,
             email: member.email,
             fullName: member.fullName,
+            githubUsername: member.githubUsername,
             session,
             jobs
           }))
@@ -1173,6 +1253,33 @@ export const createTeamService = ({
             joinedAt: new Date()
           }
         }, { session })
+
+        if (invitedUser.githubUsername) {
+          try {
+            const teamRepo = await mongoose.model('Repository').findOne({
+              eventId: getId(event),
+              teamId: getId(team),
+              status: 'ACTIVE'
+            }).session(session)
+
+            if (teamRepo) {
+              jobs.push({
+                kind: 'github_assign',
+                payload: {
+                  eventId: getId(event),
+                  repoName: teamRepo.repoName || teamRepo.githubRepo,
+                  githubUsername: invitedUser.githubUsername,
+                  actor: { id: getId(leader) }
+                }
+              })
+            }
+          } catch (repoError) {
+            logger.warn('Failed to check existing repository for auto collaborator assignment', {
+              teamId: getId(team),
+              error: repoError.message
+            })
+          }
+        }
 
         let updatedTeam = await repository.updateTeamById(getId(team), {
           $addToSet: { memberIds: getId(invitedUser) }
@@ -1410,7 +1517,7 @@ export const createTeamService = ({
   }
 
   const updateTeamStatus = async (teamId, payload = {}, actor = {}) => {
-    ensureCoordinator(actor)
+    ensureTeamManagementPermission(actor)
 
     return await runWithOptionalTransaction({
       repository,
@@ -1468,7 +1575,7 @@ export const createTeamService = ({
   }
 
   const updateTeamPlacement = async (teamId, payload = {}, actor = {}) => {
-    ensureCoordinator(actor)
+    ensureTeamManagementPermission(actor)
 
     return await runWithOptionalTransaction({
       repository,
@@ -1505,7 +1612,7 @@ export const createTeamService = ({
   }
 
   const getEventTeamCapacity = async (eventId, actor = {}) => {
-    ensureCoordinator(actor)
+    ensureTeamManagementPermission(actor)
     ensureObjectId(eventId, 'event id')
 
     const event = await repository.findEventById(eventId)

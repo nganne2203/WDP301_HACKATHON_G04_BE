@@ -14,7 +14,7 @@ const roleSchema = new Schema(
   { timestamps: true }
 )
 
-roleSchema.index({ code: 1 }, { sparse: true })
+roleSchema.index({ code: 1 }, { unique: true, sparse: true })
 roleSchema.index({ isActive: 1 })
 roleSchema.index({ isSystemRole: 1 })
 
