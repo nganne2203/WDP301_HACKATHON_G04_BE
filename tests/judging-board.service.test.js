@@ -4,7 +4,7 @@ import test from 'node:test'
 import ApiError from '../src/utils/ApiError.js'
 import { createJudgingBoardService } from '../src/modules/judging-boards/judging-board.service.js'
 
-test('autoAssignBoards creates boards from team boardNumber placement', async () => {
+test('previewRandomizedBoards only includes eligible teams and builds board A/B style names', async () => {
   const eventModule = await import('../src/models/event.model.js')
   const roundModule = await import('../src/models/round.model.js')
   const teamModule = await import('../src/models/team.model.js')
@@ -39,12 +39,96 @@ test('autoAssignBoards creates boards from team boardNumber placement', async ()
     deleteById: async () => null,
     findByRoundAndBoardNumber: async ({ roundId, boardNumber }) => {
       return [...storedBoards.values()].find(board => board.roundId === roundId && board.boardNumber === boardNumber) || null
-    }
+    },
+    findByRoundId: async () => [...storedBoards.values()],
+    deleteManyByRoundExcludingBoardNumbers: async () => null
   }
 
   EventModel.findById = async () => ({
     _id: '000000000000000000000101',
-    competitionConfig: { boardCount: 2, maxTeamsPerBoard: 3 }
+    competitionConfig: { boardCount: 3, maxTeamsPerBoard: 2 }
+  })
+  RoundModel.findById = async () => ({
+    _id: '000000000000000000000201',
+    eventId: '000000000000000000000101',
+    assignedTeamIds: ['000000000000000000000301', '000000000000000000000302', '000000000000000000000303']
+  })
+  TeamModel.find = () => ({
+    sort: async () => [
+      { _id: '000000000000000000000301', name: 'Team 1', status: 'CONFIRMED', trackId: '000000000000000000000401' },
+      { _id: '000000000000000000000302', name: 'Team 2', status: 'ACTIVE', trackId: '000000000000000000000402' },
+      { _id: '000000000000000000000303', name: 'Team 3', status: 'WAITING_FOR_MEMBERS', trackId: '000000000000000000000403' }
+    ]
+  })
+
+  const service = createJudgingBoardService({ repository, randomFn: () => 0 })
+
+  try {
+    const result = await service.previewRandomizedBoards({
+      eventId: '000000000000000000000101',
+      roundId: '000000000000000000000201'
+    })
+
+    assert.equal(result.eligibleTeamCount, 2)
+    assert.equal(result.ineligibleTeamCount, 1)
+    assert.equal(result.boards.length, 3)
+    assert.equal(result.boards[0].name, 'Board A')
+    assert.equal(result.boards[1].name, 'Board B')
+    assert.equal(result.boards[2].name, 'Board C')
+  } finally {
+    EventModel.findById = originalEventFindById
+    RoundModel.findById = originalRoundFindById
+    TeamModel.find = originalTeamFind
+  }
+})
+
+test('confirmRandomizedBoards persists boardNumber and placementSlot only after confirmation', async () => {
+  const eventModule = await import('../src/models/event.model.js')
+  const roundModule = await import('../src/models/round.model.js')
+  const teamModule = await import('../src/models/team.model.js')
+
+  const EventModel = eventModule.default
+  const RoundModel = roundModule.default
+  const TeamModel = teamModule.default
+
+  const originalEventFindById = EventModel.findById
+  const originalRoundFindById = RoundModel.findById
+  const originalTeamFind = TeamModel.find
+  const originalUpdateMany = TeamModel.updateMany
+  const originalFindByIdAndUpdate = TeamModel.findByIdAndUpdate
+
+  const teamState = new Map([
+    ['000000000000000000000301', { _id: '000000000000000000000301', name: 'Team 1', status: 'CONFIRMED' }],
+    ['000000000000000000000302', { _id: '000000000000000000000302', name: 'Team 2', status: 'ACTIVE' }]
+  ])
+  const storedBoards = new Map()
+  let seq = 1
+  const repository = {
+    count: async () => storedBoards.size,
+    findAll: async () => [...storedBoards.values()],
+    findById: async (id) => storedBoards.get(id) || null,
+    create: async (data) => {
+      const id = String(seq).padStart(24, '0')
+      const board = { _id: id, ...data }
+      storedBoards.set(id, board)
+      seq += 1
+      return board
+    },
+    updateById: async (id, data) => {
+      const updated = { ...(storedBoards.get(id) || {}), ...data, _id: id }
+      storedBoards.set(id, updated)
+      return updated
+    },
+    deleteById: async () => null,
+    findByRoundAndBoardNumber: async ({ roundId, boardNumber }) =>
+      [...storedBoards.values()].find(board => board.roundId === roundId && board.boardNumber === boardNumber) || null,
+    findByRoundId: async () => [...storedBoards.values()],
+    deleteManyByRoundExcludingBoardNumbers: async () => null
+  }
+
+  EventModel.findById = async () => ({
+    _id: '000000000000000000000101',
+    competitionConfig: { boardCount: 2, maxTeamsPerBoard: 1 }
   })
   RoundModel.findById = async () => ({
     _id: '000000000000000000000201',
@@ -52,27 +136,36 @@ test('autoAssignBoards creates boards from team boardNumber placement', async ()
     assignedTeamIds: ['000000000000000000000301', '000000000000000000000302']
   })
   TeamModel.find = () => ({
-    sort: async () => [
-      { _id: '000000000000000000000301', boardNumber: 1, trackId: '000000000000000000000401' },
-      { _id: '000000000000000000000302', boardNumber: 2, trackId: '000000000000000000000402' }
-    ]
+    sort: async () => [...teamState.values()]
   })
+  TeamModel.updateMany = async () => ({ acknowledged: true })
+  TeamModel.findByIdAndUpdate = async (id, data) => {
+    teamState.set(id, { ...teamState.get(id), ...data })
+    return teamState.get(id)
+  }
 
   const service = createJudgingBoardService({ repository })
 
   try {
-    const result = await service.autoAssignBoards({
+    const result = await service.confirmRandomizedBoards({
       eventId: '000000000000000000000101',
-      roundId: '000000000000000000000201'
+      roundId: '000000000000000000000201',
+      boards: [
+        { boardNumber: 1, name: 'Board A', teamIds: ['000000000000000000000301'] },
+        { boardNumber: 2, name: 'Board B', teamIds: ['000000000000000000000302'] }
+      ]
     })
 
-    assert.equal(result.totalBoards, 2)
-    assert.equal(result.boards[0].boardNumber, 1)
-    assert.equal(result.boards[1].boardNumber, 2)
+    assert.equal(result.boards.length, 2)
+    assert.equal(teamState.get('000000000000000000000301')?.boardNumber, 1)
+    assert.equal(teamState.get('000000000000000000000301')?.placementSlot, 1)
+    assert.equal(teamState.get('000000000000000000000302')?.boardNumber, 2)
   } finally {
     EventModel.findById = originalEventFindById
     RoundModel.findById = originalRoundFindById
     TeamModel.find = originalTeamFind
+    TeamModel.updateMany = originalUpdateMany
+    TeamModel.findByIdAndUpdate = originalFindByIdAndUpdate
   }
 })
 

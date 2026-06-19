@@ -16,6 +16,9 @@ export const AI_REVIEW_VALIDATION = {
   getAiReviewById: {
     params: Joi.object({ id: objectId.required() })
   },
+  redispatchAiReview: {
+    params: Joi.object({ id: objectId.required() })
+  },
   createPerPushAudit: {
     params: Joi.object({ id: objectId.required() }),
     body: Joi.object({

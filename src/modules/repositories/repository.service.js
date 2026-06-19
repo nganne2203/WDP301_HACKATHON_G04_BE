@@ -86,6 +86,31 @@ const normalizeRepository = (repository) => {
   }
 }
 
+const normalizeCommit = (commit) => {
+  if (!commit) return null
+  const plain = typeof commit.toObject === 'function'
+    ? commit.toObject({ getters: true, virtuals: false })
+    : commit
+
+  return {
+    id: plain._id?.toString() || plain.id,
+    repositoryId: plain.repositoryId?._id?.toString?.() || plain.repositoryId?.toString?.() || plain.repositoryId,
+    commitSha: plain.commitSha,
+    branch: plain.branch || null,
+    provider: plain.provider || 'GITHUB',
+    repositoryFullName: plain.repositoryFullName || null,
+    authorName: plain.authorName || null,
+    authorEmail: plain.authorEmail || null,
+    authorUsername: plain.authorUsername || null,
+    timestamp: plain.timestamp || null,
+    message: plain.message || null,
+    commitUrl: plain.commitUrl || null,
+    linesAdded: plain.linesAdded || 0,
+    linesRemoved: plain.linesRemoved || 0,
+    filesChanged: plain.filesChanged || 0
+  }
+}
+
 const buildFilter = (query = {}) => {
   const filter = {}
 
@@ -177,6 +202,28 @@ export const createRepositoryService = ({
 
   const getRepositoryById = async (id) => normalizeRepository(await ensureRepositoryExists(id))
 
+  const listRepositoryCommits = async ({ repositoryId, query = {} }) => {
+    const existingRepository = await ensureRepositoryExists(repositoryId)
+    const { page, limit } = normalizePaginationQuery(query)
+    const skip = (page - 1) * limit
+
+    const [commits, totalItems] = await Promise.all([
+      repository.listCommitsByRepository({ repositoryId, skip, limit }),
+      repository.countCommitsByRepository(repositoryId)
+    ])
+
+    return {
+      repository: normalizeRepository(existingRepository),
+      commits: commits.map(normalizeCommit),
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalItems / limit) || 1,
+        pageSize: limit,
+        totalItems
+      }
+    }
+  }
+
   const createRepository = async (payload = {}) => {
     const event = await ensureEventExists(payload.eventId)
     await ensureTeamBelongsToEvent({ eventId: event._id, teamId: payload.teamId })
@@ -238,6 +285,7 @@ export const createRepositoryService = ({
   return {
     listRepositories,
     getRepositoryById,
+    listRepositoryCommits,
     createRepository,
     updateRepository
   }

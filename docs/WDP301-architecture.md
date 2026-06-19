@@ -752,7 +752,7 @@ Handles third-party AI-assisted repository evaluation as a supporting feature.
 
 Responsibilities:
 
-- send commit diff or repository metadata to third-party AI API
+- dispatch repository, rubric, and trigger context to n8n so n8n can fetch GitHub evidence and call third-party AI APIs
 - store AI review result
 - retry failed review
 - display AI review summary
@@ -776,6 +776,37 @@ Responsibilities:
 - store external scoring API config
 
 Sensitive data should be encrypted before saving to the database.
+
+---
+
+### 11.16 Media Module
+
+Handles Supabase-backed event media upload, gallery access, tracking, moderation, and statistics.
+
+Responsibilities:
+
+- parse multipart uploads through the backend,
+- validate file extension, MIME type, and size,
+- store files in a private Supabase Storage bucket,
+- store media metadata in MongoDB,
+- generate short-lived signed URLs,
+- track upload/view/moderation/delete actions,
+- write audit logs for media actions,
+- keep Supabase service role keys encrypted and hidden from API responses.
+
+Routes:
+
+- `POST /api/media/upload`
+- `GET /api/media/my-history`
+- `GET /api/events/:id/gallery`
+- `GET /api/media/:mediaId/view-url`
+- `DELETE /api/media/:mediaId`
+- `GET /api/admin/media`
+- `PATCH /api/admin/media/:mediaId/approve`
+- `PATCH /api/admin/media/:mediaId/reject`
+- `GET /api/admin/media/statistics`
+- `GET /api/admin/media/config`
+- `PUT /api/admin/media/config`
 
 ---
 
@@ -809,6 +840,7 @@ AIReview
 AIReviewCriterion
 Notification
 Media
+MediaActivity
 AuditLog
 SystemConfig
 ```
@@ -990,8 +1022,11 @@ CLOUDINARY_API_SECRET=your_cloudinary_secret
 
 GITHUB_API_URL=https://api.github.com
 
-AI_PROVIDER=openai
-AI_API_URL=https://api.openai.com/v1
+N8N_ENABLED=true
+N8N_PER_PUSH_WEBHOOK_URL=https://n8n.example.com/webhook/per-push-audit
+N8N_TEAM_AGGREGATE_WEBHOOK_URL=https://n8n.example.com/webhook/team-aggregate-audit
+N8N_CALLBACK_SECRET=replace_me_n8n_callback_secret
+N8N_DISPATCH_MAX_RETRIES=2
 ```
 
 Important:
@@ -1009,7 +1044,7 @@ This architecture is suitable for the SEAL project because it supports:
 - scalable business logic,
 - GitHub integration,
 - webhook processing,
-- third-party AI integration,
+- n8n-orchestrated AI integration,
 - audit logging,
 - future extension.
 

@@ -110,7 +110,7 @@ const suspendUser = async (req, res, next) => {
 
 const assignRoles = async (req, res, next) => {
   try {
-    const user = await USER_SERVICE.assignRoles(req.params.id, req.body.roles)
+    const user = await USER_SERVICE.assignRoles(req.params.id, req.body.roles, req.user?.id)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Assign user roles successfully',
@@ -123,7 +123,8 @@ const assignRoles = async (req, res, next) => {
 
 const assignRolesByIds = async (req, res, next) => {
   try {
-    const user = await USER_SERVICE.assignRolesByIds(req.params.id, req.body.roleIds, req.user?.id)
+    const roleIds = req.body.roleId ? [req.body.roleId] : req.body.roleIds
+    const user = await USER_SERVICE.assignRolesByIds(req.params.id, roleIds, req.user?.id)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Assign user roles by IDs successfully',

@@ -68,44 +68,10 @@ export const QUEUE_SERVICE = {
     })
   },
 
-  async enqueueFetchCommitDiff(data) {
-    const jobId = data.deliveryId
-      ? buildQueueJobId('fetch-commit-diff', data.deliveryId)
-      : buildQueueJobId('fetch-commit-diff', data.repositoryId, data.afterCommitSha || data.headCommitSha || Date.now())
-
-    return await getGithubPushQueue().add(JOB_TYPES.FETCH_COMMIT_DIFF, data, {
-      jobId
-    })
-  },
-
-  async enqueueHourlyRepositoryScan(data = {}) {
-    const jobId = data.repositoryId
-      ? buildQueueJobId('hourly-repository-scan', data.repositoryId)
-      : buildQueueJobId('hourly-repository-scan', 'all')
-
-    return await getGithubPushQueue().add(JOB_TYPES.HOURLY_REPOSITORY_SCAN, data, {
-      jobId
-    })
-  },
-
-  async enqueueRunStaticAnalysis(data) {
-    const jobId = buildQueueJobId('run-static-analysis', data.repositoryId, data.commitSha)
-
-    return await getGithubPushQueue().add(JOB_TYPES.RUN_STATIC_ANALYSIS, data, {
-      jobId
-    })
-  },
-
-  async enqueueComputeImpactScore(data) {
-    const jobId = buildQueueJobId('compute-impact-score', data.repositoryId, data.commitSha)
-
-    return await getGithubPushQueue().add(JOB_TYPES.COMPUTE_IMPACT_SCORE, data, {
-      jobId
-    })
-  },
-
   async enqueueRunPerPushAudit(data) {
-    const jobId = buildQueueJobId('run-per-push-audit', data.repositoryId, data.commitSha)
+    const jobId = data.aiReviewId
+      ? buildQueueJobId('run-per-push-audit-review', data.aiReviewId, data.retryCount || 0, data.manualRedispatch ? 'manual' : 'auto')
+      : buildQueueJobId('run-per-push-audit', data.repositoryId, data.commitSha)
 
     return await getGithubPushQueue().add(JOB_TYPES.RUN_PER_PUSH_AUDIT, data, {
       jobId
@@ -113,7 +79,9 @@ export const QUEUE_SERVICE = {
   },
 
   async enqueueRunTeamAggregateAudit(data) {
-    const jobId = buildQueueJobId('run-team-aggregate-audit', data.repositoryId, data.batchId || 'latest')
+    const jobId = data.aiReviewId
+      ? buildQueueJobId('run-team-aggregate-audit-review', data.aiReviewId, data.retryCount || 0, data.manualRedispatch ? 'manual' : 'auto')
+      : buildQueueJobId('run-team-aggregate-audit', data.repositoryId, data.batchId || 'latest')
 
     return await getGithubPushQueue().add(JOB_TYPES.RUN_TEAM_AGGREGATE_AUDIT, data, {
       jobId

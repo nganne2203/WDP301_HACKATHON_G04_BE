@@ -5,9 +5,12 @@ const email = Joi.string().email().trim().lowercase()
 const token = Joi.string().trim().min(32).max(256)
 const teamStatus = Joi.string().trim().uppercase().valid('PENDING', 'WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED', 'REJECTED', 'ACTIVE', 'INACTIVE', 'DISQUALIFIED')
 const trackAssignmentMethod = Joi.string().trim().uppercase().valid('DRAW', 'MANUAL', 'SYSTEM')
+const githubUsername = Joi.string().trim().min(1).max(39).pattern(/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/)
+
 const invitedMember = Joi.object({
   fullName: Joi.string().trim().min(2).max(120).required(),
-  email: email.required()
+  email: email.required(),
+  githubUsername: githubUsername.required()
 })
 
 const idParam = Joi.object({

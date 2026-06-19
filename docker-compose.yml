@@ -27,6 +27,20 @@ services:
       retries: 10
       start_period: 5s
 
+  seed:
+    build:
+      context: .
+    init: true
+    restart: "no"
+    command: ["npm", "run", "db:init"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      MONGODB_URI: ${MONGODB_URI_DOCKER:-mongodb://mongo:27017/seal_db}
+
   api:
     build:
       context: .
@@ -37,18 +51,24 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     env_file:
       - .env
     environment:
       PORT: 3000
       HOSTNAME: 0.0.0.0
-      MONGODB_URI: mongodb://mongo:27017/seal_db
+      MONGODB_URI: ${MONGODB_URI_DOCKER:-mongodb://mongo:27017/seal_db}
       REDIS_URL: redis://redis:6379
-      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      APP_BASE_URL: ${APP_BASE_URL_DOCKER:-http://api:3000}
+      N8N_PER_PUSH_WEBHOOK_URL: ${N8N_PER_PUSH_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookperpush/per-push-audit}
+      N8N_TEAM_AGGREGATE_WEBHOOK_URL: ${N8N_TEAM_AGGREGATE_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookaggregate/team-aggregate-audit}
       GITHUB_WEBHOOK_CALLBACK_URL: ${GITHUB_WEBHOOK_CALLBACK_URL:-}
       READINESS_REQUIRES_REDIS: "true"
       STATIC_ANALYSIS_ESLINT_COMMAND: ${STATIC_ANALYSIS_ESLINT_COMMAND_DOCKER:-}
       STATIC_ANALYSIS_TSC_COMMAND: ${STATIC_ANALYSIS_TSC_COMMAND_DOCKER:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${API_PORT:-3000}:3000"
     healthcheck:
@@ -75,16 +95,46 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     env_file:
       - .env
     environment:
-      MONGODB_URI: mongodb://mongo:27017/seal_db
+      MONGODB_URI: ${MONGODB_URI_DOCKER:-mongodb://mongo:27017/seal_db}
       REDIS_URL: redis://redis:6379
-      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      APP_BASE_URL: ${APP_BASE_URL_DOCKER:-http://api:3000}
+      N8N_PER_PUSH_WEBHOOK_URL: ${N8N_PER_PUSH_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookperpush/per-push-audit}
+      N8N_TEAM_AGGREGATE_WEBHOOK_URL: ${N8N_TEAM_AGGREGATE_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookaggregate/team-aggregate-audit}
       GITHUB_WEBHOOK_CALLBACK_URL: ${GITHUB_WEBHOOK_CALLBACK_URL:-}
       STATIC_ANALYSIS_ESLINT_COMMAND: ${STATIC_ANALYSIS_ESLINT_COMMAND_DOCKER:-}
       STATIC_ANALYSIS_TSC_COMMAND: ${STATIC_ANALYSIS_TSC_COMMAND_DOCKER:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    init: true
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      N8N_HOST: 0.0.0.0
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL_DOCKER:-http://localhost:5678/}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GOOGLE_GEMINI_API_KEY: ${GOOGLE_GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      N8N_CALLBACK_SECRET: ${N8N_CALLBACK_SECRET}
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    volumes:
+      - n8n-data:/home/node/.n8n
 
 volumes:
   mongo-data:
   redis-data:
+  n8n-data:

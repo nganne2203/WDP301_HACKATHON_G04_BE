@@ -39,7 +39,7 @@ Authorization never checks `if (user.role === 'ADMIN')`.
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | String (unique, uppercase) | Role identifier, e.g. `ADMIN`, `JUDGE` |
-| `code` | String | Alias for name |
+| `code` | String (unique, uppercase) | Stable role code used by API clients |
 | `description` | String | Human-readable description |
 | `permissions` | ObjectId[] → Permission | Permission list (containers only) |
 | `isSystemRole` | Boolean | True for seed/built-in roles (cannot be deleted) |
@@ -63,13 +63,16 @@ req.user = {
 }
 ```
 
-`getPermissionCodes` (in `user.service.js`) unions permissions from all assigned roles:
+`getPermissionCodes` (in `user.service.js`) unions permissions from all active assigned roles and ignores inactive permissions:
 
 ```js
 const getPermissionCodes = (user) => {
   const directPermissions = user?.permissions || []
-  const rolePermissions = (user?.roles || []).flatMap(role => role.permissions || [])
-  return [...new Set([...directPermissions, ...rolePermissions].map(p => p.code || p))]
+  const activeRoles = (user?.roles || []).filter(role => role.isActive !== false)
+  const rolePermissions = activeRoles.flatMap(role => role.permissions || [])
+  return [...new Set([...directPermissions, ...rolePermissions]
+    .map(p => p.isActive === false ? null : p.code || p)
+    .filter(Boolean))]
 }
 ```
 
@@ -123,6 +126,7 @@ if (name === 'ADMIN') {
 This means:
 - Adding a new permission code to `constants/permissions.js` and re-running `npm run db:init` **automatically** grants it to ADMIN.
 - No manual database update is needed.
+- The ADMIN role's permission set cannot be modified through role-permission APIs, preventing accidental removal of admin capabilities.
 
 ---
 
@@ -147,16 +151,16 @@ This means:
 | PATCH | `/api/roles/:id` | `ROLE_UPDATE` | Update role |
 | DELETE | `/api/roles/:id` | `ROLE_DELETE` | Soft-delete (system roles are protected) |
 | GET | `/api/roles/:id/permissions` | `ROLE_VIEW` | Get permissions of a role |
-| PUT | `/api/roles/:id/permissions` | `ROLE_ASSIGN_PERMISSION` | Replace all permissions |
-| POST | `/api/roles/:id/permissions` | `ROLE_ASSIGN_PERMISSION` | Add permissions |
-| DELETE | `/api/roles/:id/permissions/:permissionId` | `ROLE_ASSIGN_PERMISSION` | Remove one permission |
+| PUT | `/api/roles/:id/permissions` | `ROLE_ASSIGN_PERMISSION` | Replace all permissions, except ADMIN |
+| POST | `/api/roles/:id/permissions` | `ROLE_ASSIGN_PERMISSION` | Add active permissions, except ADMIN |
+| DELETE | `/api/roles/:id/permissions/:permissionId` | `ROLE_ASSIGN_PERMISSION` | Remove one permission, except ADMIN |
 
 ### User Role Assignment
 
 | Method | Path | Permission Required | Description |
 |--------|------|---------------------|-------------|
 | PATCH | `/api/users/:id/roles` | `USER_ROLE_ASSIGN` | Assign roles by name (replaces) |
-| PATCH | `/api/users/:id/role` | `USER_ASSIGN_ROLE` | Assign roles by IDs (replaces) |
+| PATCH | `/api/users/:id/role` | `USER_ASSIGN_ROLE` | Assign one role by `roleId`, or roles by `roleIds` (replaces) |
 | GET | `/api/users/:id/effective-permissions` | `USER_VIEW` | Get resolved permissions |
 
 ---
@@ -197,7 +201,7 @@ The following RBAC actions are recorded in `AuditLog`:
 | `ROLE_UPDATE` | Role fields updated |
 | `ROLE_DELETE` | Role soft-deleted |
 | `ROLE_ASSIGN_PERMISSION` | Permissions added/removed/replaced on a role |
-| `USER_ASSIGN_ROLE` | User roles updated by ID |
+| `USER_ASSIGN_ROLE` | User roles updated by name or ID |
 
 Audit logs include `userId` (actor), `resourceType`, `resourceId`, and `metadata` with before/after state.
 
@@ -225,6 +229,8 @@ GET /api/roles?limit=100
 
 ```
 PATCH /api/users/:id/role
+Body: { "roleId": "<roleObjectId>" }
+# or
 Body: { "roleIds": ["<roleObjectId>"] }
 ```
 
@@ -269,4 +275,4 @@ System roles (`ADMIN`, `COORDINATOR`, `JUDGE`, `MENTOR`, `SPEAKER`, `USER`, `PAR
 
 Attempting to delete or rename a system role returns `403 FORBIDDEN`.
 
-Non-system (custom) roles can be soft-deleted — they are marked `isActive: false` and excluded from normal queries.
+Non-system (custom) roles can be soft-deleted only when they are not assigned to users. Deleted roles are marked `isActive: false`; inactive roles cannot be assigned and do not contribute effective permissions.

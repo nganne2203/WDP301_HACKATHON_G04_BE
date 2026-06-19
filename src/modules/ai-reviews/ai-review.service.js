@@ -1,12 +1,16 @@
 import Joi from 'joi'
 
 import { AI_REVIEW_REPOSITORY } from './ai-review.repository.js'
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES, AUDIT_RESULTS } from '#constants/audit.js'
 import { JOB_TYPES } from '#constants/queue.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
+import { AUDIT_LOG_SERVICE } from '#modules/audit-logs/audit-log.service.js'
 import ApiError from '#utils/ApiError.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { QUEUE_SERVICE } from '#services/queue.service.js'
-import { AI_RUNTIME_SERVICE } from '#services/ai-runtime.service.js'
+import { N8N_SERVICE } from '#services/n8n.service.js'
+import { env } from '#configs/environment.js'
+import { LOGGER } from '#utils/logger.js'
 
 const FORBIDDEN_FIELDS = new Set([
   'suggestedScore',
@@ -20,9 +24,11 @@ const FORBIDDEN_FIELDS = new Set([
 const qualitativeLevel = Joi.string().valid('EXCELLENT', 'GOOD', 'FAIR', 'AVERAGE', 'WEAK', 'NOT_ENOUGH_EVIDENCE')
 const severity = Joi.string().valid('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')
 
+const AI_REVIEW_REDISPATCHABLE_STATUSES = new Set(['FAILED', 'RETRY_PENDING', 'MANUAL_REDISPATCH_REQUIRED'])
+
 const aiReviewOutputSchema = Joi.object({
   reviewKind: Joi.string().valid('PER_PUSH_TECHNICAL_AUDIT', 'TEAM_AGGREGATE_TECHNICAL_AUDIT').required(),
-  status: Joi.string().valid('DONE', 'FALLBACK').required(),
+  status: Joi.string().valid('DONE').required(),
   isScoreBased: Joi.boolean().valid(false).required(),
   isFinalDecision: Joi.boolean().valid(false).required(),
   overallPicture: Joi.object({
@@ -155,6 +161,8 @@ const normalizeAiReview = (aiReview) => {
     provider: plain.provider || null,
     modelName: plain.modelName || plain.model || null,
     promptVersion: plain.promptVersion || null,
+    retryCount: Number(plain.retryCount || 0),
+    lastError: plain.lastError || null,
     requestedAt: plain.requestedAt || null,
     completedAt: plain.completedAt || null,
     normalizedOutput: plain.normalizedOutput || null
@@ -184,218 +192,27 @@ const safeJsonParse = (text) => {
   return JSON.parse(jsonCandidate)
 }
 
-const detectTechStack = ({ repository, commitDiff }) => {
-  const stack = {
-    frontend: [],
-    backend: [],
-    database: [],
-    ai: [],
-    retrieval: [],
-    testing: []
-  }
+const buildRubricContext = ({ rubric, criteria }) => {
+  if (!rubric) return null
 
-  for (const file of ensureArray(commitDiff?.files)) {
-    const filePath = file.filePath || ''
-    if (/react|vue|angular|next/i.test(filePath)) stack.frontend.push(filePath)
-    if (/src\/modules|src\/services|server|express/i.test(filePath)) stack.backend.push(filePath)
-    if (/prisma|mongoose|sql|migration|schema/i.test(filePath)) stack.database.push(filePath)
-    if (/openai|langchain|rag|embedding|vector/i.test(filePath)) stack.ai.push(filePath)
-    if (/retrieve|search|vector|index/i.test(filePath)) stack.retrieval.push(filePath)
-    if (/test|spec|__tests__/i.test(filePath)) stack.testing.push(filePath)
-  }
-
-  for (const key of Object.keys(stack)) {
-    stack[key] = [...new Set(stack[key].map(item => item.split('/')[0] === 'src' ? item : item))]
-  }
-
-  if (repository?.githubRepo && stack.backend.length === 0) {
-    stack.backend.push(repository.githubRepo)
-  }
-
-  return stack
-}
-
-const buildPerPushPromptInput = ({
-  repository,
-  commit,
-  commitDiff,
-  changedContexts,
-  staticResults,
-  impactDecision,
-  rubric,
-  criteria
-}) => {
-  const cleanDiffSummary = {
-    totalFiles: commitDiff?.totalFiles || 0,
-    includedFiles: commitDiff?.includedFiles || 0,
-    excludedFiles: commitDiff?.excludedFiles || 0,
-    totalCleanPatchSize: commitDiff?.totalCleanPatchSize || 0,
-    files: ensureArray(commitDiff?.files).map(file => ({
-      filePath: file.filePath,
-      status: file.status,
-      language: file.language,
-      patchSummary: file.patchSummary,
-      cleanPatch: file.cleanPatch,
-      excludedReason: file.excludedReason || null,
-      isExcluded: Boolean(file.isExcluded)
+  return {
+    id: rubric._id?.toString?.() || rubric.id,
+    title: rubric.title,
+    description: rubric.description,
+    totalScore: rubric.totalScore,
+    criteria: criteria.map((criterion, index) => ({
+      id: criterion._id?.toString?.() || criterion.id,
+      name: criterion.name,
+      description: criterion.description,
+      maxScore: criterion.maxScore,
+      weight: criterion.weight,
+      judgeOnly: Boolean(criterion.judgeOnly),
+      aiSupportForAudit: criterion.aiSupportForAudit !== false,
+      aiInstruction: criterion.aiInstruction || null,
+      order: index
     }))
   }
-
-  return {
-    reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
-    eventContext: repository?.event || null,
-    roundContext: repository?.round || null,
-    repositoryContext: {
-      id: repository?.id,
-      repositoryFullName: repository?.repositoryFullName,
-      team: repository?.team || null,
-      defaultBranch: repository?.defaultBranch
-    },
-    commitMetadata: commit ? {
-      commitSha: commit.commitSha,
-      branch: commit.branch,
-      authorName: commit.authorName,
-      authorEmail: commit.authorEmail,
-      authorUsername: commit.authorUsername,
-      timestamp: commit.timestamp,
-      message: commit.message,
-      commitUrl: commit.commitUrl,
-      linesAdded: commit.linesAdded,
-      linesRemoved: commit.linesRemoved,
-      filesChanged: commit.filesChanged
-    } : null,
-    diffSummary: cleanDiffSummary,
-    changedCodeContext: changedContexts,
-    staticAnalysisSummary: staticResults,
-    impactDecision,
-    rubricContext: rubric ? {
-      id: rubric._id?.toString?.() || rubric.id,
-      title: rubric.title,
-      description: rubric.description,
-      totalScore: rubric.totalScore,
-      criteria: criteria.map((criterion, index) => ({
-        id: criterion._id?.toString?.() || criterion.id,
-        name: criterion.name,
-        description: criterion.description,
-        maxScore: criterion.maxScore,
-        weight: criterion.weight,
-        judgeOnly: Boolean(criterion.judgeOnly),
-        aiSupportForAudit: criterion.aiSupportForAudit !== false,
-        aiInstruction: criterion.aiInstruction || null,
-        order: index
-      }))
-    } : null,
-    requiredOutputSchema: 'PHASE_8_AI_TECHNICAL_AUDITOR_V1'
-  }
 }
-
-const buildAggregatePromptInput = ({
-  repository,
-  commits,
-  commitDiffs,
-  staticResultsByCommit,
-  impactDecisions,
-  existingPerPushReviews,
-  rubric,
-  criteria
-}) => {
-  return {
-    reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
-    eventContext: repository?.event || null,
-    roundContext: repository?.round || null,
-    repositoryContext: {
-      id: repository?.id,
-      repositoryFullName: repository?.repositoryFullName,
-      team: repository?.team || null,
-      defaultBranch: repository?.defaultBranch
-    },
-    commitHistorySummary: commits.map(commit => ({
-      commitSha: commit.commitSha,
-      timestamp: commit.timestamp,
-      message: commit.message,
-      authorName: commit.authorName,
-      linesAdded: commit.linesAdded,
-      linesRemoved: commit.linesRemoved,
-      filesChanged: commit.filesChanged
-    })),
-    currentRepositorySnapshotSummary: commitDiffs.map(diff => ({
-      headCommitSha: diff.headCommitSha,
-      totalFiles: diff.totalFiles,
-      includedFiles: diff.includedFiles,
-      excludedFiles: diff.excludedFiles,
-      patchSummary: ensureArray(diff.files).map(file => ({
-        filePath: file.filePath,
-        patchSummary: file.patchSummary
-      }))
-    })),
-    aggregateStaticAnalysis: {
-      byCommit: staticResultsByCommit,
-      impactDecisions
-    },
-    priorPushReviews: existingPerPushReviews.map(review => ({
-      id: review._id?.toString?.() || review.id,
-      status: review.status,
-      summary: review.overallSummary || review.summary,
-      needsHumanReview: Boolean(review.needsHumanReview),
-      commitSha: review.commitSha
-    })),
-    rubricContext: rubric ? {
-      id: rubric._id?.toString?.() || rubric.id,
-      title: rubric.title,
-      description: rubric.description,
-      totalScore: rubric.totalScore,
-      criteria: criteria.map((criterion, index) => ({
-        id: criterion._id?.toString?.() || criterion.id,
-        name: criterion.name,
-        description: criterion.description,
-        maxScore: criterion.maxScore,
-        weight: criterion.weight,
-        judgeOnly: Boolean(criterion.judgeOnly),
-        aiSupportForAudit: criterion.aiSupportForAudit !== false,
-        aiInstruction: criterion.aiInstruction || null,
-        order: index
-      }))
-    } : null,
-    aggregateReportContract: {
-      historicalSynthesis: 'Summarize technical evolution across the commit history.',
-      currentTechnicalSnapshot: 'Describe the current architecture/code health snapshot from the recent evidence.',
-      riskSummary: 'List the most important technical risks with severity and short summary.',
-      judgeDashboardSummary: 'Provide a short judge-facing headline, top concerns, and follow-up focus areas.'
-    },
-    requiredOutputSchema: 'PHASE_8_AI_TECHNICAL_AUDITOR_V1'
-  }
-}
-
-const buildFallbackOutput = ({ reviewKind, impactDecision, reason }) => ({
-  reviewKind,
-  status: 'FALLBACK',
-  isScoreBased: false,
-  isFinalDecision: false,
-  overallPicture: {
-    pushSummary: reason || 'AI audit unavailable or malformed. Human review required.',
-    significantChange: impactDecision ? impactDecision.impactLevel !== 'LOW' : null,
-    changeImpactLevel: impactDecision?.impactLevel || 'UNKNOWN',
-    mainAffectedAreas: []
-  },
-  techStackDetected: {
-    frontend: [],
-    backend: [],
-    database: [],
-    ai: [],
-    retrieval: [],
-    testing: []
-  },
-  technicalFindings: [],
-  rubricAwareComments: [],
-  suggestedTestCases: [],
-  suggestedJudgeQuestions: [],
-  costControlNotes: {
-    llmCallReason: reason || 'AI provider unavailable',
-    skippedFiles: [],
-    tokenSavingStrategy: ['Fallback output used']
-  },
-  needsHumanReview: true
-})
 
 const enrichCanonicalAggregateOutput = ({ reviewKind, normalizedOutput }) => {
   if (reviewKind !== 'TEAM_AGGREGATE_TECHNICAL_AUDIT') {
@@ -442,13 +259,13 @@ const enrichCanonicalAggregateOutput = ({ reviewKind, normalizedOutput }) => {
 export const createAiReviewService = ({
   repository = AI_REVIEW_REPOSITORY,
   queueService = QUEUE_SERVICE,
-  llmService = AI_RUNTIME_SERVICE,
   scoreSheetRepository = {
     async touch() {}
   },
   rankingRepository = {
     async touch() {}
-  }
+  },
+  auditLogService = AUDIT_LOG_SERVICE
 } = {}) => {
   void scoreSheetRepository
   void rankingRepository
@@ -515,93 +332,209 @@ export const createAiReviewService = ({
     }
   }
 
-  const validateAndNormalizeAiOutput = async ({ rawResponse, reviewKind, impactDecision }) => {
-    const tryNormalize = async (candidate) => {
-      const parsed = safeJsonParse(candidate)
-      const sanitized = forbiddenFieldSanitizer(parsed)
-      const { error, value } = aiReviewOutputSchema.validate(sanitized, {
-        abortEarly: false,
-        stripUnknown: true
+  const validateAndNormalizeAiOutput = async ({ rawResponse, reviewKind }) => {
+    const parsed = safeJsonParse(rawResponse)
+    const sanitized = forbiddenFieldSanitizer(parsed)
+    const { error, value } = aiReviewOutputSchema.validate(sanitized, {
+      abortEarly: false,
+      stripUnknown: true
+    })
+    if (error) {
+      throw new Error(error.details.map(detail => detail.message).join('; '))
+    }
+
+    return {
+      rawResponse,
+      normalizedOutput: enrichCanonicalAggregateOutput({
+        reviewKind,
+        normalizedOutput: value
+      }),
+      usedFallback: false
+    }
+  }
+
+  const getMaxDispatchRetries = () => {
+    const configured = Number(env.n8n?.dispatchMaxRetries ?? 2)
+    if (Number.isNaN(configured)) return 2
+    return Math.max(0, configured)
+  }
+
+  const buildAiReviewCallbackUrl = (aiReviewId) => {
+    return `${String(env.server.publicUrl || '').replace(/\/$/, '')}/api/ai-reviews/${aiReviewId}/callback`
+  }
+
+  const enqueueAiReviewRedispatch = async ({ aiReview, requestedBy, manualRedispatch = false }) => {
+    const payload = {
+      repositoryId: aiReview.repositoryId?._id?.toString?.() || aiReview.repositoryId?.toString?.() || aiReview.repositoryId,
+      requestedBy,
+      aiReviewId: aiReview._id?.toString?.() || aiReview.id,
+      retryCount: Number(aiReview.retryCount || 0),
+      manualRedispatch
+    }
+
+    if (aiReview.reviewKind === 'PER_PUSH_TECHNICAL_AUDIT') {
+      payload.commitSha = aiReview.commitSha || null
+      await queueService.enqueueRunPerPushAudit(payload)
+      return JOB_TYPES.RUN_PER_PUSH_AUDIT
+    }
+
+    payload.batchId = aiReview.batchId || null
+    await queueService.enqueueRunTeamAggregateAudit(payload)
+    return JOB_TYPES.RUN_TEAM_AGGREGATE_AUDIT
+  }
+
+  const dispatchAiReviewToN8n = async ({ aiReview, promptInput }) => {
+    if (!env.n8n?.enabled) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['n8n integration must be enabled for AI reviews'])
+    }
+
+    const callbackUrl = buildAiReviewCallbackUrl(aiReview._id?.toString?.() || aiReview.id)
+    const aiReviewId = aiReview._id?.toString?.() || aiReview.id
+
+    if (aiReview.reviewKind === 'PER_PUSH_TECHNICAL_AUDIT') {
+      await N8N_SERVICE.triggerPerPushAudit({
+        reviewContext: promptInput,
+        aiReviewId,
+        callbackUrl
       })
-      if (error) {
-        throw new Error(error.details.map(detail => detail.message).join('; '))
+      return
+    }
+
+    await N8N_SERVICE.triggerTeamAggregateAudit({
+      reviewContext: promptInput,
+      aiReviewId,
+      callbackUrl
+    })
+  }
+
+  const handleDispatchFailure = async ({
+    aiReview,
+    requestedBy,
+    errorMessage,
+    failureStage,
+    repositoryId,
+    manualRedispatch = false
+  }) => {
+    const nextRetryCount = Number(aiReview.retryCount || 0) + 1
+    const shouldAutoRetry = !manualRedispatch && nextRetryCount <= getMaxDispatchRetries()
+    const nextStatus = shouldAutoRetry ? 'RETRY_PENDING' : 'MANUAL_REDISPATCH_REQUIRED'
+
+    const updatedAiReview = await repository.updateAiReviewById(aiReview._id || aiReview.id, {
+      status: nextStatus,
+      retryCount: nextRetryCount,
+      lastError: errorMessage,
+      completedAt: shouldAutoRetry ? null : new Date()
+    })
+
+    let queuedJobType = null
+    if (shouldAutoRetry) {
+      queuedJobType = await enqueueAiReviewRedispatch({
+        aiReview: updatedAiReview,
+        requestedBy,
+        manualRedispatch: false
+      })
+    }
+
+    writeAiAudit({
+      userId: requestedBy,
+      action: AUDIT_ACTIONS.AI_REVIEW_FAILED,
+      review: normalizeAiReview(updatedAiReview),
+      repositoryId,
+      result: AUDIT_RESULTS.FAILURE,
+      errorMessage,
+      metadata: {
+        failureStage,
+        queuedJobType,
+        autoRetryScheduled: shouldAutoRetry,
+        manualRedispatchRequired: !shouldAutoRetry
       }
+    })
+
+    return {
+      review: normalizeAiReview(updatedAiReview),
+      failed: !shouldAutoRetry,
+      retryScheduled: shouldAutoRetry,
+      queuedJobType
+    }
+  }
+
+  const redispatchAiReview = async ({ aiReviewId, requestedBy, manualRedispatch = false }) => {
+    const existingAiReview = await repository.findAiReviewById(aiReviewId)
+    if (!existingAiReview) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['AI review not found'])
+    }
+
+    if (!AI_REVIEW_REDISPATCHABLE_STATUSES.has(existingAiReview.status)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['AI review is not eligible for redispatch'])
+    }
+
+    const repositoryId = existingAiReview.repositoryId?._id?.toString?.() || existingAiReview.repositoryId?.toString?.() || existingAiReview.repositoryId
+    const updatedAiReview = await repository.updateAiReviewById(existingAiReview._id || existingAiReview.id, {
+      status: 'PENDING',
+      completedAt: null,
+      lastError: null
+    })
+
+    try {
+      await dispatchAiReviewToN8n({
+        aiReview: updatedAiReview,
+        promptInput: updatedAiReview.promptInput
+      })
+
+      writeAiAudit({
+        userId: requestedBy,
+        action: AUDIT_ACTIONS.AI_REVIEW_REQUESTED,
+        review: normalizeAiReview(updatedAiReview),
+        repositoryId,
+        metadata: {
+          redispatched: true,
+          manualRedispatch
+        }
+      })
 
       return {
-        rawResponse: candidate,
-        normalizedOutput: enrichCanonicalAggregateOutput({
-          reviewKind,
-          normalizedOutput: value
-        }),
-        usedFallback: false
+        review: normalizeAiReview(updatedAiReview),
+        pending: true,
+        redispatched: true
       }
-    }
-
-    try {
-      return await tryNormalize(rawResponse)
-    } catch (firstError) {
-      try {
-        const repaired = await llmService.repairJson({
-          rawResponse,
-          schemaName: 'PHASE_8_AI_TECHNICAL_AUDITOR_V1',
-          reviewKind
-        })
-        return await tryNormalize(repaired)
-      } catch {
-        return {
-          rawResponse,
-          normalizedOutput: enrichCanonicalAggregateOutput({
-            reviewKind,
-            normalizedOutput: buildFallbackOutput({
-              reviewKind,
-              impactDecision,
-              reason: `Fallback used because AI output was invalid: ${firstError.message}`
-            })
-          }),
-          usedFallback: true
-        }
-      }
-    }
-  }
-
-  const buildGeneratedErrorFallback = ({ error }) => ({
-    rawResponse: '',
-    modelName: null,
-    tokenUsage: null,
-    provider: null,
-    errorMessage: error.message
-  })
-
-  const callAuditGenerator = async ({ reviewKind, promptInput }) => {
-    try {
-      return await llmService.generateAudit({
-        reviewKind,
-        promptInput
-      })
     } catch (error) {
-      return buildGeneratedErrorFallback({ error })
+      return await handleDispatchFailure({
+        aiReview: updatedAiReview,
+        requestedBy,
+        errorMessage: error.message,
+        failureStage: manualRedispatch ? 'MANUAL_REDISPATCH' : 'AUTO_RETRY_DISPATCH',
+        repositoryId,
+        manualRedispatch
+      })
     }
   }
 
-  const buildPerPushEvidence = async ({ repositoryId, commitSha }) => {
+  const writeAiAudit = ({ userId, action, review, repositoryId, result = AUDIT_RESULTS.SUCCESS, errorMessage = null, metadata = {} }) => {
+    auditLogService.createAuditLog({
+      userId,
+      action,
+      entityType: AUDIT_ENTITY_TYPES.AI_REVIEW,
+      entityId: review?.id || review?._id || null,
+      resourceType: AUDIT_ENTITY_TYPES.AI_REVIEW,
+      resourceId: review?.id || review?._id || null,
+      result,
+      errorMessage,
+      sourceModule: 'ai-reviews',
+      description: `${action} for repository ${repositoryId}`,
+      metadata: {
+        repositoryId,
+        reviewKind: review?.reviewKind,
+        status: review?.status,
+        commitSha: review?.commitSha,
+        ...metadata
+      }
+    }).catch(() => {})
+  }
+
+  const loadRepositoryAuditContext = async ({ repositoryId }) => {
     const existingRepository = await repository.findRepositoryById(repositoryId)
     if (!existingRepository) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Repository not found'])
     const normalizedRepository = normalizeRepository(existingRepository)
-    const targetCommitSha = commitSha || normalizedRepository.lastProcessedCommitSha || normalizedRepository.latestCommitSha
-    if (!targetCommitSha) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['commitSha is required when repository has no processed commit'])
-    }
-
-    const [commit, commitDiff, staticResults, changedContexts, impactDecision] = await Promise.all([
-      repository.findCommitByRepositoryAndSha({ repositoryId, commitSha: targetCommitSha }),
-      repository.findCommitDiffByRepositoryAndHeadSha({ repositoryId, headCommitSha: targetCommitSha }),
-      repository.listStaticAnalysisResultsByRepositoryAndCommit({ repositoryId, commitSha: targetCommitSha }),
-      repository.listChangedCodeContextsByRepositoryAndCommit({ repositoryId, commitSha: targetCommitSha }),
-      repository.findImpactDecisionByRepositoryAndCommit({ repositoryId, commitSha: targetCommitSha })
-    ])
-
-    if (!commitDiff) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Commit diff not found'])
-    if (!impactDecision) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Impact decision not found'])
 
     let rubric = null
     let criteria = []
@@ -615,76 +548,101 @@ export const createAiReviewService = ({
 
     return {
       repository: normalizedRepository,
-      commit,
-      commitDiff,
-      staticResults,
-      changedContexts,
-      impactDecision,
       rubric,
-      criteria,
-      promptInput: buildPerPushPromptInput({
-        repository: normalizedRepository,
-        commit,
-        commitDiff,
-        changedContexts,
-        staticResults,
-        impactDecision,
-        rubric,
-        criteria
-      })
+      criteria
     }
   }
 
-  const buildAggregateEvidence = async ({ repositoryId }) => {
-    const existingRepository = await repository.findRepositoryById(repositoryId)
-    if (!existingRepository) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Repository not found'])
-    const normalizedRepository = normalizeRepository(existingRepository)
-
-    const [commits, commitDiffs, impactDecisions, existingPerPushReviews] = await Promise.all([
-      repository.findLatestCommitsByRepository({ repositoryId, limit: 10 }),
-      repository.findLatestCommitDiffsByRepository({ repositoryId, limit: 10 }),
-      repository.listImpactDecisionsByRepository({ repositoryId, limit: 20 }),
-      repository.listAiReviewsByRepository({ repositoryId, skip: 0, limit: 20 })
-    ])
-
-    const staticResultsByCommit = []
-    for (const commit of commits) {
-      staticResultsByCommit.push({
-        commitSha: commit.commitSha,
-        results: await repository.listStaticAnalysisResultsByRepositoryAndCommit({
-          repositoryId,
-          commitSha: commit.commitSha
-        })
-      })
+  const resolvePerPushCommitSha = ({ repository: normalizedRepository, commitSha }) => {
+    const targetCommitSha = commitSha || normalizedRepository.lastProcessedCommitSha || normalizedRepository.latestCommitSha
+    if (!targetCommitSha) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['commitSha is required when repository has no tracked commit'])
     }
+    return targetCommitSha
+  }
 
-    let rubric = null
-    let criteria = []
-    const rubricId = normalizedRepository.round?.rubricId || existingRepository.roundId?.rubricId
-    if (rubricId) {
-      rubric = await repository.findRubricById(rubricId)
-      if (rubric) criteria = await repository.findCriteriaByRubricId(rubric._id || rubric.id)
-    }
-
+  const buildPerPushDispatchPayload = ({
+    normalizedRepository,
+    rubric,
+    criteria,
+    commitSha,
+    branch = null,
+    beforeCommitSha = null,
+    deliveryId = null,
+    deliveryEventId = null,
+    triggerSource = 'manual'
+  }) => {
     return {
-      repository: normalizedRepository,
-      commits,
-      commitDiffs,
-      staticResultsByCommit,
-      impactDecisions,
-      rubric,
-      criteria,
-      existingPerPushReviews: existingPerPushReviews.filter(review => review.reviewKind === 'PER_PUSH_TECHNICAL_AUDIT'),
-      promptInput: buildAggregatePromptInput({
-        repository: normalizedRepository,
-        commits,
-        commitDiffs,
-        staticResultsByCommit,
-        impactDecisions,
-        existingPerPushReviews: existingPerPushReviews.filter(review => review.reviewKind === 'PER_PUSH_TECHNICAL_AUDIT'),
-        rubric,
-        criteria
-      })
+      reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+      eventContext: normalizedRepository.event || null,
+      roundContext: normalizedRepository.round || null,
+      repositoryContext: {
+        id: normalizedRepository.id,
+        repositoryFullName: normalizedRepository.repositoryFullName,
+        githubOwner: normalizedRepository.githubOwner,
+        githubRepo: normalizedRepository.githubRepo,
+        defaultBranch: normalizedRepository.defaultBranch,
+        latestCommitSha: normalizedRepository.latestCommitSha,
+        lastProcessedCommitSha: normalizedRepository.lastProcessedCommitSha,
+        team: normalizedRepository.team || null
+      },
+      triggerContext: {
+        source: triggerSource,
+        deliveryId,
+        deliveryEventId,
+        branch: branch || normalizedRepository.defaultBranch || null,
+        beforeCommitSha,
+        afterCommitSha: commitSha,
+        commitSha
+      },
+      rubricContext: buildRubricContext({ rubric, criteria }),
+      requiredOutputSchema: 'PHASE_8_AI_TECHNICAL_AUDITOR_V1',
+      callbackContract: {
+        acceptedStatuses: ['success', 'error'],
+        requiredCallbackFields: ['aiReviewId', 'status'],
+        optionalCallbackFields: ['rawResponse', 'modelName', 'provider', 'tokenUsage', 'errorMessage', 'commits']
+      }
+    }
+  }
+
+  const buildAggregateDispatchPayload = ({
+    normalizedRepository,
+    rubric,
+    criteria,
+    batchId = null,
+    triggerSource = 'manual'
+  }) => {
+    return {
+      reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
+      eventContext: normalizedRepository.event || null,
+      roundContext: normalizedRepository.round || null,
+      repositoryContext: {
+        id: normalizedRepository.id,
+        repositoryFullName: normalizedRepository.repositoryFullName,
+        githubOwner: normalizedRepository.githubOwner,
+        githubRepo: normalizedRepository.githubRepo,
+        defaultBranch: normalizedRepository.defaultBranch,
+        latestCommitSha: normalizedRepository.latestCommitSha,
+        lastProcessedCommitSha: normalizedRepository.lastProcessedCommitSha,
+        team: normalizedRepository.team || null
+      },
+      aggregateContext: {
+        source: triggerSource,
+        batchId
+      },
+      rubricContext: buildRubricContext({ rubric, criteria }),
+      aggregateReportContract: {
+        historicalSynthesis: 'Summarize technical evolution across the commit history.',
+        currentTechnicalSnapshot: 'Describe the current architecture and code health snapshot.',
+        riskSummary: 'List the most important technical risks with severity and short summary.',
+        judgeDashboardSummary: 'Provide a short judge-facing headline, top concerns, and follow-up focus areas.'
+      },
+      requiredOutputSchema: 'PHASE_8_AI_TECHNICAL_AUDITOR_V1',
+      callbackContract: {
+        acceptedStatuses: ['success', 'error'],
+        requiredCallbackFields: ['aiReviewId', 'status'],
+        optionalCallbackFields: ['rawResponse', 'modelName', 'provider', 'tokenUsage', 'errorMessage', 'commits']
+      }
     }
   }
 
@@ -731,119 +689,94 @@ export const createAiReviewService = ({
     }
   }
 
-  const createPerPushAudit = async ({ repositoryId, commitSha, requestedBy }) => {
-    const evidence = await buildPerPushEvidence({ repositoryId, commitSha })
-    const reviewStatus = evidence.impactDecision.decision
-
-    if (reviewStatus === 'SKIP_LLM' || reviewStatus === 'BATCH_HOURLY_AUDIT') {
-      const aiReview = await repository.createAiReview({
-        eventId: evidence.repository.eventId,
-        teamId: evidence.repository.teamId,
-        roundId: evidence.repository.roundId || undefined,
-        repositoryId,
-        commitId: evidence.commit?._id || undefined,
-        commitDiffId: evidence.commitDiff?._id || undefined,
-        impactDecisionId: evidence.impactDecision?._id || evidence.impactDecision?.id || undefined,
-        reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
-        status: 'SKIPPED',
-        isScoreBased: false,
-        isFinalDecision: false,
-        needsHumanReview: false,
-        summary: `Per-push AI audit skipped because impact decision is ${reviewStatus}`,
-        overallSummary: `Per-push AI audit skipped because impact decision is ${reviewStatus}`,
-        commitSha: evidence.commit?.commitSha || evidence.commitDiff?.headCommitSha,
-        promptInput: evidence.promptInput,
-        normalizedOutput: buildFallbackOutput({
-          reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
-          impactDecision: evidence.impactDecision,
-          reason: `AI audit skipped because impact decision is ${reviewStatus}`
-        }),
-        requestedBy,
-        requestedAt: new Date(),
-        completedAt: new Date()
-      })
-
-      return {
-        review: normalizeAiReview(await repository.findAiReviewById(aiReview._id)),
-        skipped: true
-      }
+  const createPerPushAudit = async ({
+    repositoryId,
+    commitSha,
+    requestedBy,
+    aiReviewId = null,
+    manualRedispatch = false,
+    branch = null,
+    beforeCommitSha = null,
+    deliveryId = null,
+    deliveryEventId = null,
+    source = 'manual'
+  }) => {
+    if (aiReviewId) {
+      return await redispatchAiReview({ aiReviewId, requestedBy, manualRedispatch })
     }
 
+    const context = await loadRepositoryAuditContext({ repositoryId })
+    const targetCommitSha = resolvePerPushCommitSha({
+      repository: context.repository,
+      commitSha
+    })
+    const promptInput = buildPerPushDispatchPayload({
+      normalizedRepository: context.repository,
+      rubric: context.rubric,
+      criteria: context.criteria,
+      commitSha: targetCommitSha,
+      branch,
+      beforeCommitSha,
+      deliveryId,
+      deliveryEventId,
+      triggerSource: source
+    })
+
     const aiReview = await repository.createAiReview({
-      eventId: evidence.repository.eventId,
-      teamId: evidence.repository.teamId,
-      roundId: evidence.repository.roundId || undefined,
+      eventId: context.repository.eventId,
+      teamId: context.repository.teamId,
+      roundId: context.repository.roundId || undefined,
       repositoryId,
-      commitId: evidence.commit?._id || undefined,
-      commitDiffId: evidence.commitDiff?._id || undefined,
-      impactDecisionId: evidence.impactDecision?._id || evidence.impactDecision?.id || undefined,
       reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
       status: 'PENDING',
       isScoreBased: false,
       isFinalDecision: false,
-      needsHumanReview: Boolean(evidence.impactDecision.needsHumanReview),
-      commitSha: evidence.commit?.commitSha || evidence.commitDiff?.headCommitSha,
-      promptInput: evidence.promptInput,
+      needsHumanReview: false,
+      commitSha: targetCommitSha,
+      promptInput,
       requestedBy,
       requestedAt: new Date()
     })
 
-    const generated = await callAuditGenerator({
-      reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
-      promptInput: evidence.promptInput
-    })
+    try {
+      await dispatchAiReviewToN8n({
+        aiReview,
+        promptInput
+      })
 
-    const rawResponse = generated.rawResponse || ''
-    const normalized = await validateAndNormalizeAiOutput({
-      rawResponse,
-      reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
-      impactDecision: evidence.impactDecision
-    })
-
-    await persistStructuredArtifacts({
-      aiReviewId: aiReview._id,
-      normalizedOutput: normalized.normalizedOutput,
-      criteria: evidence.criteria
-    })
-
-    const updatedAiReview = await repository.updateAiReviewById(aiReview._id, {
-      provider: generated.provider || null,
-      model: generated.modelName || null,
-      modelName: generated.modelName || null,
-      status: normalized.usedFallback ? 'FALLBACK' : 'COMPLETED',
-      summary: normalized.normalizedOutput.overallPicture?.pushSummary || '',
-      overallSummary: normalized.normalizedOutput.overallPicture?.pushSummary || '',
-      techStackDetected: detectTechStack({
-        repository: evidence.repository,
-        commitDiff: evidence.commitDiff
-      }),
-      riskSummary: ensureArray(normalized.normalizedOutput.technicalFindings).map(finding => ({
-        severity: finding.severity,
-        title: finding.title
-      })),
-      promptVersion: 'v1',
-      promptInput: evidence.promptInput,
-      rawResponse: normalized.rawResponse,
-      normalizedOutput: normalized.normalizedOutput,
-      tokenUsage: generated.tokenUsage || null,
-      needsHumanReview: Boolean(normalized.normalizedOutput.needsHumanReview || evidence.impactDecision.needsHumanReview),
-      completedAt: new Date(),
-      lastError: generated.errorMessage || null
-    })
-
-    return {
-      review: normalizeAiReview(updatedAiReview),
-      skipped: false
+      return {
+        review: normalizeAiReview(aiReview),
+        skipped: false,
+        pending: true
+      }
+    } catch (error) {
+      return await handleDispatchFailure({
+        aiReview,
+        requestedBy,
+        errorMessage: error.message,
+        failureStage: 'N8N_TRIGGER',
+        repositoryId
+      })
     }
   }
 
-  const createTeamAggregateAudit = async ({ repositoryId, batchId, requestedBy }) => {
-    const evidence = await buildAggregateEvidence({ repositoryId })
+  const createTeamAggregateAudit = async ({ repositoryId, batchId, requestedBy, aiReviewId = null, manualRedispatch = false }) => {
+    if (aiReviewId) {
+      return await redispatchAiReview({ aiReviewId, requestedBy, manualRedispatch })
+    }
+
+    const context = await loadRepositoryAuditContext({ repositoryId })
+    const promptInput = buildAggregateDispatchPayload({
+      normalizedRepository: context.repository,
+      rubric: context.rubric,
+      criteria: context.criteria,
+      batchId
+    })
 
     const aiReview = await repository.createAiReview({
-      eventId: evidence.repository.eventId,
-      teamId: evidence.repository.teamId,
-      roundId: evidence.repository.roundId || undefined,
+      eventId: context.repository.eventId,
+      teamId: context.repository.teamId,
+      roundId: context.repository.roundId || undefined,
       repositoryId,
       reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
       status: 'PENDING',
@@ -851,69 +784,192 @@ export const createAiReviewService = ({
       isFinalDecision: false,
       needsHumanReview: false,
       batchId: batchId || undefined,
-      promptInput: evidence.promptInput,
+      promptInput,
       requestedBy,
       requestedAt: new Date()
     })
 
-    const generated = await callAuditGenerator({
-      reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
-      promptInput: evidence.promptInput
-    })
-
-    const normalized = await validateAndNormalizeAiOutput({
-      rawResponse: generated.rawResponse || '',
-      reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
-      impactDecision: evidence.impactDecisions[0] || null
-    })
-
-    await persistStructuredArtifacts({
-      aiReviewId: aiReview._id,
-      normalizedOutput: normalized.normalizedOutput,
-      criteria: evidence.criteria
-    })
-
-    const updatedAiReview = await repository.updateAiReviewById(aiReview._id, {
-      provider: generated.provider || null,
-      model: generated.modelName || null,
-      modelName: generated.modelName || null,
-      status: normalized.usedFallback ? 'FALLBACK' : 'COMPLETED',
-      summary: normalized.normalizedOutput.overallPicture?.pushSummary || '',
-      overallSummary: normalized.normalizedOutput.overallPicture?.pushSummary || '',
-      techStackDetected: detectTechStack({
-        repository: evidence.repository,
-        commitDiff: evidence.commitDiffs[0] || null
-      }),
-      riskSummary: ensureArray(normalized.normalizedOutput.technicalFindings).map(finding => ({
-        severity: finding.severity,
-        title: finding.title
-      })),
-      promptVersion: 'v1',
-      promptInput: evidence.promptInput,
-      rawResponse: normalized.rawResponse,
-      normalizedOutput: normalized.normalizedOutput,
-      tokenUsage: generated.tokenUsage || null,
-      needsHumanReview: Boolean(normalized.normalizedOutput.needsHumanReview),
-      completedAt: new Date(),
-      lastError: generated.errorMessage || null
-    })
-
-    return {
-      review: normalizeAiReview(updatedAiReview)
+    try {
+      await dispatchAiReviewToN8n({
+        aiReview,
+        promptInput
+      })
+      return {
+        review: normalizeAiReview(aiReview),
+        pending: true
+      }
+    } catch (error) {
+      return await handleDispatchFailure({
+        aiReview,
+        requestedBy,
+        errorMessage: error.message,
+        failureStage: 'N8N_TRIGGER',
+        repositoryId
+      })
     }
   }
 
+  const handleAuditCallback = async ({
+    aiReviewId,
+    status,
+    rawResponse,
+    modelName,
+    provider,
+    tokenUsage,
+    errorMessage,
+    commits
+  }) => {
+    LOGGER.info('Handling AI review audit callback from n8n', { aiReviewId, status })
+
+    const aiReview = await repository.findAiReviewById(aiReviewId)
+    if (!aiReview) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['AI review record not found'])
+    }
+
+    if (aiReview.status !== 'PENDING') {
+      LOGGER.warn('AI review record is not in PENDING status, ignoring callback', {
+        aiReviewId,
+        currentStatus: aiReview.status
+      })
+      return normalizeAiReview(aiReview)
+    }
+
+    const requestedBy = aiReview.requestedBy
+    const repositoryId = aiReview.repositoryId
+
+    const existingRepository = await repository.findRepositoryById(repositoryId)
+    let criteria = []
+    const rubricId = existingRepository?.roundId?.rubricId || existingRepository?.round?.rubricId
+    if (rubricId) {
+      const rubric = await repository.findRubricById(rubricId)
+      if (rubric) {
+        criteria = await repository.findCriteriaByRubricId(rubric._id || rubric.id)
+      }
+    }
+
+    if (status === 'success' && rawResponse) {
+      if (Array.isArray(commits)) {
+        for (const commitData of commits) {
+          await repository.upsertCommit({
+            repositoryId,
+            commitSha: commitData.commitSha,
+            data: {
+              branch: commitData.branch || 'main',
+              authorName: commitData.authorName || 'unknown',
+              authorEmail: commitData.authorEmail || '',
+              authorUsername: commitData.authorUsername || '',
+              timestamp: commitData.timestamp || new Date().toISOString(),
+              message: commitData.message || '',
+              linesAdded: commitData.linesAdded || 0,
+              linesRemoved: commitData.linesRemoved || 0,
+              filesChanged: commitData.filesChanged || 0
+            }
+          })
+        }
+      }
+
+      try {
+        const normalized = await validateAndNormalizeAiOutput({
+          rawResponse,
+          reviewKind: aiReview.reviewKind
+        })
+
+        await persistStructuredArtifacts({
+          aiReviewId: aiReview._id,
+          normalizedOutput: normalized.normalizedOutput,
+          criteria
+        })
+
+        const updatedAiReview = await repository.updateAiReviewById(aiReview._id, {
+          provider: provider || 'google',
+          model: modelName || null,
+          modelName: modelName || null,
+          status: 'COMPLETED',
+          summary: normalized.normalizedOutput.overallPicture?.pushSummary || '',
+          overallSummary: normalized.normalizedOutput.overallPicture?.pushSummary || '',
+          techStackDetected: normalized.normalizedOutput.techStackDetected || null,
+          riskSummary: ensureArray(normalized.normalizedOutput.technicalFindings).map(finding => ({
+            severity: finding.severity,
+            title: finding.title
+          })),
+          promptVersion: 'v1',
+          rawResponse: normalized.rawResponse,
+          normalizedOutput: normalized.normalizedOutput,
+          tokenUsage: tokenUsage || null,
+          needsHumanReview: Boolean(normalized.normalizedOutput.needsHumanReview || aiReview.needsHumanReview),
+          completedAt: new Date(),
+          lastError: null
+        })
+
+        writeAiAudit({
+          userId: requestedBy,
+          action: AUDIT_ACTIONS.AI_REVIEW_COMPLETED,
+          review: normalizeAiReview(updatedAiReview),
+          repositoryId,
+          result: AUDIT_RESULTS.SUCCESS
+        })
+
+        return normalizeAiReview(updatedAiReview)
+      } catch (error) {
+        const updatedAiReview = await repository.updateAiReviewById(aiReview._id, {
+          provider: provider || 'google',
+          model: modelName || null,
+          modelName: modelName || null,
+          rawResponse: rawResponse || ''
+        })
+
+        return (await handleDispatchFailure({
+          aiReview: updatedAiReview,
+          requestedBy,
+          errorMessage: error.message,
+          failureStage: 'CALLBACK_NORMALIZATION',
+          repositoryId
+        })).review
+      }
+    }
+
+    LOGGER.warn('n8n callback reported an error, scheduling retry or manual redispatch', {
+      aiReviewId,
+      errorMessage
+    })
+
+    return (await handleDispatchFailure({
+      aiReview,
+      requestedBy,
+      errorMessage: errorMessage || 'n8n callback reported failure',
+      failureStage: 'N8N_CALLBACK',
+      repositoryId
+    })).review
+  }
+
   const requestPerPushAudit = async ({ repositoryId, commitSha, requestedBy }) => {
-    const evidence = await buildPerPushEvidence({ repositoryId, commitSha })
+    const context = await loadRepositoryAuditContext({ repositoryId })
+    const targetCommitSha = resolvePerPushCommitSha({
+      repository: context.repository,
+      commitSha
+    })
+
     await queueService.enqueueRunPerPushAudit({
       repositoryId,
-      commitSha: evidence.commit?.commitSha || evidence.commitDiff?.headCommitSha,
+      commitSha: targetCommitSha,
       requestedBy
+    })
+
+    writeAiAudit({
+      userId: requestedBy,
+      action: AUDIT_ACTIONS.AI_REVIEW_REQUESTED,
+      repositoryId,
+      review: {
+        reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+        commitSha: targetCommitSha,
+        status: 'QUEUED'
+      },
+      metadata: { queuedJobType: JOB_TYPES.RUN_PER_PUSH_AUDIT }
     })
 
     return {
       repositoryId,
-      commitSha: evidence.commit?.commitSha || evidence.commitDiff?.headCommitSha,
+      commitSha: targetCommitSha,
       queuedJobType: JOB_TYPES.RUN_PER_PUSH_AUDIT
     }
   }
@@ -928,10 +984,58 @@ export const createAiReviewService = ({
       requestedBy
     })
 
+    writeAiAudit({
+      userId: requestedBy,
+      action: AUDIT_ACTIONS.AI_REVIEW_REQUESTED,
+      repositoryId,
+      review: {
+        reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
+        status: 'QUEUED'
+      },
+      metadata: { queuedJobType: JOB_TYPES.RUN_TEAM_AGGREGATE_AUDIT, batchId }
+    })
+
     return {
       repositoryId,
       batchId: batchId || null,
       queuedJobType: JOB_TYPES.RUN_TEAM_AGGREGATE_AUDIT
+    }
+  }
+
+  const requestAiReviewRedispatch = async ({ aiReviewId, requestedBy }) => {
+    const aiReview = await repository.findAiReviewById(aiReviewId)
+    if (!aiReview) throw new ApiError(ERROR_CODES.NOT_FOUND, ['AI review not found'])
+    if (!AI_REVIEW_REDISPATCHABLE_STATUSES.has(aiReview.status)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['AI review is not eligible for redispatch'])
+    }
+
+    const updatedAiReview = await repository.updateAiReviewById(aiReview._id || aiReview.id, {
+      status: 'RETRY_PENDING',
+      completedAt: null,
+      lastError: null
+    })
+
+    const queuedJobType = await enqueueAiReviewRedispatch({
+      aiReview: updatedAiReview,
+      requestedBy,
+      manualRedispatch: true
+    })
+
+    writeAiAudit({
+      userId: requestedBy,
+      action: AUDIT_ACTIONS.AI_REVIEW_REQUESTED,
+      review: normalizeAiReview(updatedAiReview),
+      repositoryId: updatedAiReview.repositoryId?._id?.toString?.() || updatedAiReview.repositoryId?.toString?.() || updatedAiReview.repositoryId,
+      metadata: {
+        queuedJobType,
+        manualRedispatch: true
+      }
+    })
+
+    return {
+      aiReviewId: updatedAiReview._id?.toString?.() || updatedAiReview.id,
+      queuedJobType,
+      review: normalizeAiReview(updatedAiReview)
     }
   }
 
@@ -973,14 +1077,16 @@ export const createAiReviewService = ({
     getAiReviewById,
     requestPerPushAudit,
     requestTeamAggregateAudit,
+    requestAiReviewRedispatch,
     createPerPushAudit,
     createTeamAggregateAudit,
+    redispatchAiReview,
+    handleAuditCallback,
     getTeamAiAuditSummary,
     queuePerPushAudit,
     queueTeamAggregateAudit,
     processPerPushAuditJob: createPerPushAudit,
     processTeamAggregateAuditJob: createTeamAggregateAudit,
-    buildPerPushEvidence,
     validateAndNormalizeAiOutput
   }
 }

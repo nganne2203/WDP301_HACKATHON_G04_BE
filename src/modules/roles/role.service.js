@@ -42,8 +42,25 @@ const ensureRoleExists = async (id) => {
 }
 
 const ensureNotSystemRole = (role, action = 'modify') => {
-  if (SYSTEM_ROLE_NAMES.has(role.name)) {
+  if (role.isSystemRole || SYSTEM_ROLE_NAMES.has(role.name)) {
     throw new ApiError(ERROR_CODES.FORBIDDEN, [`Cannot ${action} system role "${role.name}"`])
+  }
+}
+
+const ensureNotAdminRole = (role, action = 'modify permissions for') => {
+  if (role.name === 'ADMIN') {
+    throw new ApiError(ERROR_CODES.FORBIDDEN, [`Cannot ${action} the ADMIN role`])
+  }
+}
+
+const ensureRoleCodeAvailable = async (code, currentRoleId = null) => {
+  if (!code) return
+
+  const normalizedCode = code.toUpperCase().trim()
+  const existing = await ROLE_REPOSITORY.findByCode(normalizedCode)
+  const existingId = existing?._id?.toString?.() || existing?.id
+  if (existing && existingId !== currentRoleId?.toString?.() && existingId !== currentRoleId) {
+    throw new ApiError(ERROR_CODES.CONFLICT, [`Role code "${normalizedCode}" already exists`])
   }
 }
 
@@ -77,11 +94,14 @@ const getRoleById = async (id) => {
 
 const createRole = async (payload = {}, actorId = null) => {
   const name = payload.name.toUpperCase().trim()
+  const code = (payload.code || name).toUpperCase().trim()
 
   const existing = await ROLE_REPOSITORY.findByName(name)
   if (existing) {
     throw new ApiError(ERROR_CODES.CONFLICT, [`Role "${name}" already exists`])
   }
+
+  await ensureRoleCodeAvailable(code)
 
   let permissionIds = []
   if (payload.permissions && payload.permissions.length > 0) {
@@ -89,12 +109,15 @@ const createRole = async (payload = {}, actorId = null) => {
     if (permissions.length !== payload.permissions.length) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more permission IDs are invalid'])
     }
+    if (permissions.some(permission => permission.isActive === false)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more permissions are inactive'])
+    }
     permissionIds = permissions.map(p => p._id)
   }
 
   const created = await ROLE_REPOSITORY.create({
     name,
-    code: payload.code || name,
+    code,
     description: payload.description,
     permissions: permissionIds,
     isSystemRole: false,
@@ -123,6 +146,11 @@ const updateRole = async (id, payload = {}, actorId = null) => {
   const updateData = {}
   for (const field of allowedFields) {
     if (payload[field] !== undefined) updateData[field] = payload[field]
+  }
+
+  if (updateData.code !== undefined) {
+    updateData.code = updateData.code.toUpperCase().trim()
+    await ensureRoleCodeAvailable(updateData.code, id)
   }
 
   if (payload.name !== undefined) {
@@ -160,6 +188,11 @@ const deleteRole = async (id, actorId = null) => {
   const role = await ensureRoleExists(id)
   ensureNotSystemRole(role, 'delete')
 
+  const assignedUserCount = await ROLE_REPOSITORY.countUsersByRoleId(id)
+  if (assignedUserCount > 0) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Cannot delete role assigned to ${assignedUserCount} user(s)`])
+  }
+
   await ROLE_REPOSITORY.softDeleteById(id)
 
   if (actorId) {
@@ -186,10 +219,14 @@ const getRolePermissions = async (id) => {
 
 const setRolePermissions = async (id, permissionIds = [], actorId = null) => {
   const role = await ensureRoleExists(id)
+  ensureNotAdminRole(role, 'replace permissions for')
 
   const permissions = await PERMISSION_REPOSITORY.findByIds(permissionIds)
   if (permissions.length !== permissionIds.length) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more permission IDs are invalid'])
+  }
+  if (permissions.some(permission => permission.isActive === false)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more permissions are inactive'])
   }
 
   const before = (role.permissions || []).map(p => (p._id || p).toString())
@@ -219,10 +256,14 @@ const setRolePermissions = async (id, permissionIds = [], actorId = null) => {
 
 const addPermissionsToRole = async (id, permissionIds = [], actorId = null) => {
   const role = await ensureRoleExists(id)
+  ensureNotAdminRole(role, 'add permissions to')
 
   const permissions = await PERMISSION_REPOSITORY.findByIds(permissionIds)
   if (permissions.length !== permissionIds.length) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more permission IDs are invalid'])
+  }
+  if (permissions.some(permission => permission.isActive === false)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more permissions are inactive'])
   }
 
   const existingIds = new Set((role.permissions || []).map(p => (p._id || p).toString()))
@@ -255,6 +296,7 @@ const addPermissionsToRole = async (id, permissionIds = [], actorId = null) => {
 const removePermissionFromRole = async (id, permissionId, actorId = null) => {
   ensureObjectId(permissionId, 'permissionId')
   const role = await ensureRoleExists(id)
+  ensureNotAdminRole(role, 'remove permissions from')
 
   const existingIds = (role.permissions || []).map(p => (p._id || p).toString())
   const filtered = existingIds.filter(pid => pid !== permissionId)
