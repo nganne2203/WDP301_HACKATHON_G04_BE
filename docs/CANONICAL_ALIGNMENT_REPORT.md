@@ -77,12 +77,9 @@ GitHub webhook
 -> signature verification  
 -> webhook event persistence  
 -> queue/worker  
--> commit retrieval  
--> diff preprocessing  
--> static analysis  
--> AST extraction  
--> impact scoring  
--> per-push or aggregate AI audit  
+-> create pending AI review  
+-> dispatch lightweight context to n8n  
+-> n8n retrieves GitHub evidence and orchestrates AI  
 -> JSON validation/repair  
 -> persistence  
 -> judge dashboard support
@@ -119,11 +116,8 @@ The backend must not call LLM directly inside the webhook request.
 - repository lifecycle as a first-class internal domain
 - webhook receiver
 - queue/worker
-- commit ingestion
-- diff preprocessing
-- static analysis persistence
-- AST extraction layer
-- impact scoring
+- commit ingestion from n8n callback coverage
+- aggregate AI operational hardening
 - per-push AI audit runtime flow
 - team aggregate AI audit runtime flow
 - submissions
@@ -134,8 +128,7 @@ The backend must not call LLM directly inside the webhook request.
 
 ### 4.4 Still misaligned
 
-- AI schema usage still carries scoring-oriented legacy fields
-- source still lacks the canonical asynchronous AI pipeline
+- AI schema usage still carries a few historical compatibility traces
 - ranking/finalist generation is not yet implemented as event-rule-driven services
 - audit log integration is still incomplete
 
@@ -147,8 +140,8 @@ The backend must not call LLM directly inside the webhook request.
 | Participants | Real event actor lifecycle | API foundation exists | Partially aligned |
 | Teams | Event-aware membership and placement | Invitation + placement + capacity now exist | Strongly improved |
 | Rounds/judging boards | Real operational judging flow | Models only | Missing |
-| GitHub lifecycle | Config + webhook + commits + audit pipeline | Config and repo utilities only | Partial |
-| AI Technical Auditor | Async, evidence-first, non-scoring | Legacy schema + no runtime pipeline | Misaligned |
+| GitHub lifecycle | Config + webhook + queued AI dispatch | Webhook, queue, worker, and n8n dispatch exist | Improved, partial |
+| AI Technical Auditor | Async, evidence-first, non-scoring | Async n8n-first runtime exists | Improved, partial |
 | Official scoring | Judge-driven only | Not implemented yet as full flow | Pending |
 | Rankings/results | Event-rule-driven | Not implemented yet as full flow | Pending |
 | Audit logs | Usable and searchable | Incomplete wiring | Misaligned |
@@ -162,29 +155,18 @@ The system should support two AI review kinds:
 - `PER_PUSH_TECHNICAL_AUDIT`
 - `TEAM_AGGREGATE_TECHNICAL_AUDIT`
 
-### 6.2 Mandatory preprocessing before LLM
+### 6.2 Preprocessing ownership in the new runtime
 
-Before any AI call, the pipeline should support:
+With the current Flow B runtime, preprocessing before the LLM is owned by **n8n**, not by the backend.
+
+The runtime should support:
 
 - commit metadata retrieval
 - changed file retrieval
 - diff cleaning
 - generated/binary file filtering
 - secret redaction
-- static analysis summary
-- changed code context extraction
-- impact scoring
-
-### 6.3 Decision model for AI usage
-
-The system should not call LLM for every change.
-
-Canonical decision levels:
-
-- `LOW`: skip LLM
-- `MEDIUM`: batch into hourly review
-- `HIGH`: run per-push audit
-- `CRITICAL`: run urgent audit and flag for human review
+- optional static or rule-based checks inside n8n
 
 ### 6.4 Forbidden AI output fields
 
@@ -235,12 +217,12 @@ Canonical requirement:
 - raw-body signature verification
 - webhook event persistence
 - queue and worker
-- commit and diff storage
-- scheduler-driven repository scan
+- pending AI review creation
+- n8n dispatch and callback persistence
 
 Current state:
 
-- webhook/worker pipeline does not exist yet
+- webhook/worker pipeline exists and dispatches minimal context to n8n
 
 ### C. AI review domain
 

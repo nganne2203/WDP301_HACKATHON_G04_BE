@@ -51,7 +51,7 @@ export const createOperationsService = ({
       }
     }
 
-    const [participants, teams, submissions, repositories, pendingAiReviews, fallbackAiReviews] = await Promise.all([
+    const [participants, teams, submissions, repositories, pendingAiReviews, failedAiReviews, retryPendingAiReviews, manualRedispatchRequiredAiReviews] = await Promise.all([
       participantModel.countDocuments(eventId ? { eventId } : {}),
       teamModel.countDocuments(eventId ? { eventId } : {}),
       submissionModel.countDocuments(baseFilter),
@@ -62,7 +62,15 @@ export const createOperationsService = ({
       }),
       aiReviewModel.countDocuments({
         ...aiReviewFilter,
-        status: 'FALLBACK'
+        status: 'FAILED'
+      }),
+      aiReviewModel.countDocuments({
+        ...aiReviewFilter,
+        status: 'RETRY_PENDING'
+      }),
+      aiReviewModel.countDocuments({
+        ...aiReviewFilter,
+        status: 'MANUAL_REDISPATCH_REQUIRED'
       })
     ])
 
@@ -77,7 +85,9 @@ export const createOperationsService = ({
         submissions,
         repositories,
         pendingAiReviews,
-        fallbackAiReviews,
+        failedAiReviews,
+        retryPendingAiReviews,
+        manualRedispatchRequiredAiReviews,
         failedJobs: Number(queueSummary.counts?.failed || 0)
       },
       queue: queueSummary

@@ -1,6 +1,7 @@
 import Joi from 'joi'
 
 const objectId = Joi.string().hex().length(24)
+const githubUsername = Joi.string().trim().min(1).max(39).pattern(/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/)
 
 const idParam = Joi.object({
   id: objectId.required()
@@ -24,7 +25,8 @@ const updateProfile = {
     fullName: Joi.string().trim().min(2).max(120),
     avatarUrl: Joi.string().uri().allow('', null),
     phone: Joi.string().trim().max(30).allow('', null),
-    bio: Joi.string().trim().max(500).allow('', null)
+    bio: Joi.string().trim().max(500).allow('', null),
+    githubUsername: githubUsername.allow('', null)
   }).min(1)
 }
 
@@ -42,6 +44,7 @@ const createUser = {
     avatarUrl: Joi.string().uri().allow('', null),
     phone: Joi.string().trim().max(30).allow('', null),
     bio: Joi.string().trim().max(500).allow('', null),
+    githubUsername: githubUsername.allow('', null),
     studentType: Joi.when('roles', {
       is: Joi.array().has(Joi.string().valid('USER', 'PARTICIPANT')),
       then: Joi.string().trim().uppercase().valid('FPT', 'EXTERNAL').required(),

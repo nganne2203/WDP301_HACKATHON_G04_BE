@@ -200,8 +200,33 @@ const ensureBoardCapacity = ({ teamIds = [], maxTeams }) => {
   }
 }
 
+const ELIGIBLE_TEAM_STATUSES = new Set(['CONFIRMED', 'ACTIVE'])
+
+const buildBoardLabel = (boardNumber) => {
+  let value = Number(boardNumber || 0)
+  if (value <= 0) return String(boardNumber || '')
+
+  let label = ''
+  while (value > 0) {
+    value -= 1
+    label = String.fromCharCode(65 + (value % 26)) + label
+    value = Math.floor(value / 26)
+  }
+  return label
+}
+
+const shuffleItems = (items, randomFn = Math.random) => {
+  const copied = [...items]
+  for (let index = copied.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(randomFn() * (index + 1))
+    ;[copied[index], copied[swapIndex]] = [copied[swapIndex], copied[index]]
+  }
+  return copied
+}
+
 export const createJudgingBoardService = ({
-  repository = JUDGING_BOARD_REPOSITORY
+  repository = JUDGING_BOARD_REPOSITORY,
+  randomFn = Math.random
 } = {}) => {
   const ensureBoardExists = async (id) => {
     ensureObjectId(id)
@@ -289,57 +314,195 @@ export const createJudgingBoardService = ({
     await repository.deleteById(id)
   }
 
-  const autoAssignBoards = async ({ eventId, roundId }) => {
+  const getRandomizationContext = async ({ eventId, roundId }) => {
     const event = await ensureEventExists(eventId)
     const round = await ensureRoundBelongsToEvent({ eventId: event._id, roundId })
-    const boardCount = event.competitionConfig?.boardCount || event.competitionConfig?.trackCount || 0
+    const boardCount = Number(event.competitionConfig?.boardCount || event.competitionConfig?.trackCount || 0)
     if (!boardCount) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Event competitionConfig.boardCount is required for auto assignment'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Event competitionConfig.boardCount is required for board randomization'])
     }
 
-    const teams = await Team.find({
-      _id: { $in: round.assignedTeamIds || [] }
-    }).sort({ boardNumber: 1, placementSlot: 1, createdAt: 1 })
+    const assignedTeamIds = (round.assignedTeamIds || []).map(value => value.toString())
+    const roundTeams = await Team.find({
+      _id: { $in: assignedTeamIds }
+    }).sort({ createdAt: 1, name: 1 })
 
-    const teamsByBoard = new Map()
-    for (const team of teams) {
-      const boardNumber = team.boardNumber || 1
-      if (boardNumber > boardCount) {
-        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned team boardNumber exceeds event boardCount'])
+    const eligibleTeams = roundTeams.filter(team => ELIGIBLE_TEAM_STATUSES.has(team.status))
+    const ineligibleTeams = roundTeams.filter(team => !ELIGIBLE_TEAM_STATUSES.has(team.status))
+    const configuredMaxTeamsPerBoard = Number(event.competitionConfig?.maxTeamsPerBoard || 0) || null
+    const derivedMaxTeamsPerBoard = eligibleTeams.length > 0
+      ? Math.ceil(eligibleTeams.length / boardCount)
+      : configuredMaxTeamsPerBoard || 0
+    const maxTeamsPerBoard = configuredMaxTeamsPerBoard || derivedMaxTeamsPerBoard || 0
+
+    if (maxTeamsPerBoard && eligibleTeams.length > boardCount * maxTeamsPerBoard) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Eligible teams exceed configured board capacity'])
+    }
+
+    return {
+      event,
+      round,
+      boardCount,
+      maxTeamsPerBoard,
+      eligibleTeams,
+      ineligibleTeams
+    }
+  }
+
+  const buildBoardPlan = async ({ eventId, roundId, randomize = true, predefinedBoards = null }) => {
+    const context = await getRandomizationContext({ eventId, roundId })
+    const existingBoards = await repository.findByRoundId(roundId)
+    const normalizedExistingBoards = existingBoards.map(normalizeBoard)
+
+    let boardPlans
+    if (predefinedBoards) {
+      boardPlans = predefinedBoards.map(board => ({
+        boardNumber: board.boardNumber,
+        boardLabel: buildBoardLabel(board.boardNumber),
+        name: board.name || `Board ${buildBoardLabel(board.boardNumber)}`,
+        maxTeams: context.maxTeamsPerBoard,
+        judgeIds: normalizedExistingBoards.find(item => item.boardNumber === board.boardNumber)?.judgeIds || [],
+        teams: (board.teamIds || [])
+          .map(teamId => context.eligibleTeams.find(team => team._id.toString() === teamId))
+          .filter(Boolean)
+          .map((team, index) => ({
+            ...normalizeTeam(team),
+            placementSlot: index + 1
+          })),
+        teamIds: board.teamIds || []
+      }))
+    } else {
+      const shuffledTeams = randomize ? shuffleItems(context.eligibleTeams, randomFn) : [...context.eligibleTeams]
+      boardPlans = Array.from({ length: context.boardCount }, (_, index) => {
+        const boardNumber = index + 1
+        const boardLabel = buildBoardLabel(boardNumber)
+        const start = index * context.maxTeamsPerBoard
+        const end = start + context.maxTeamsPerBoard
+        const boardTeams = shuffledTeams.slice(start, end)
+        const existingBoard = normalizedExistingBoards.find(item => item.boardNumber === boardNumber)
+
+        return {
+          boardNumber,
+          boardLabel,
+          name: `Board ${boardLabel}`,
+          maxTeams: context.maxTeamsPerBoard,
+          judgeIds: existingBoard?.judgeIds || [],
+          teams: boardTeams.map((team, teamIndex) => ({
+            ...normalizeTeam(team),
+            placementSlot: teamIndex + 1
+          })),
+          teamIds: boardTeams.map(team => team._id.toString())
+        }
+      })
+    }
+
+    return {
+      ...context,
+      boards: boardPlans,
+      existingBoards: normalizedExistingBoards
+    }
+  }
+
+  const previewRandomizedBoards = async ({ eventId, roundId }) => {
+    const result = await buildBoardPlan({ eventId, roundId, randomize: true })
+
+    return {
+      event: normalizeEvent(result.event),
+      round: normalizeRound(result.round),
+      boardCount: result.boardCount,
+      maxTeamsPerBoard: result.maxTeamsPerBoard,
+      eligibleTeamCount: result.eligibleTeams.length,
+      ineligibleTeamCount: result.ineligibleTeams.length,
+      boards: result.boards
+    }
+  }
+
+  const confirmRandomizedBoards = async ({ eventId, roundId, boards }) => {
+    const result = await buildBoardPlan({ eventId, roundId, randomize: false, predefinedBoards: boards })
+    const eligibleIds = new Set(result.eligibleTeams.map(team => team._id.toString()))
+    const submittedIds = result.boards.flatMap(board => board.teamIds)
+
+    if (new Set(submittedIds).size !== submittedIds.length) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Randomized board confirmation contains duplicate team assignments'])
+    }
+    if (submittedIds.length !== eligibleIds.size) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Randomized board confirmation must include every eligible team exactly once'])
+    }
+    for (const teamId of submittedIds) {
+      if (!eligibleIds.has(teamId)) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Randomized board confirmation includes a team that is not eligible'])
       }
-      const current = teamsByBoard.get(boardNumber) || []
-      current.push(team)
-      teamsByBoard.set(boardNumber, current)
     }
 
-    const createdOrUpdatedBoards = []
-    for (let boardNumber = 1; boardNumber <= boardCount; boardNumber += 1) {
-      const boardTeams = teamsByBoard.get(boardNumber) || []
-      const trackId = boardTeams[0]?.trackId || round.trackId || null
-      const maxTeams = boardTeams.length || event.competitionConfig?.maxTeamsPerBoard || 10
-      const existingBoard = await repository.findByRoundAndBoardNumber({ roundId, boardNumber })
+    await Team.updateMany(
+      { _id: { $in: (result.round.assignedTeamIds || []).map(value => value.toString()) } },
+      { $unset: { boardNumber: 1, placementSlot: 1 } }
+    )
+
+    for (const board of result.boards) {
+      for (const [index, teamId] of board.teamIds.entries()) {
+        await Team.findByIdAndUpdate(teamId, {
+          boardNumber: board.boardNumber,
+          placementSlot: index + 1
+        })
+      }
+    }
+
+    const confirmedBoards = []
+    for (const board of result.boards) {
+      const existingBoard = await repository.findByRoundAndBoardNumber({
+        roundId,
+        boardNumber: board.boardNumber
+      })
 
       const payload = {
         eventId,
         roundId,
-        trackId: trackId || undefined,
-        name: `Board ${boardNumber}`,
-        boardNumber,
-        teamIds: boardTeams.map(team => team._id),
-        maxTeams,
-        status: boardTeams.length > 0 ? 'ASSIGNED' : 'DRAFT'
+        trackId: undefined,
+        name: board.name,
+        boardNumber: board.boardNumber,
+        teamIds: board.teamIds,
+        judgeIds: (existingBoard?.judgeIds || []).map(judge => judge._id?.toString?.() || judge.toString?.() || judge),
+        maxTeams: board.maxTeams,
+        status: board.teamIds.length > 0 ? 'ASSIGNED' : 'DRAFT'
       }
 
-      const board = existingBoard
+      const savedBoard = existingBoard
         ? await repository.updateById(existingBoard._id.toString(), payload)
         : await repository.create(payload)
 
-      createdOrUpdatedBoards.push(normalizeBoard(await repository.findById(board._id)))
+      confirmedBoards.push(normalizeBoard(await repository.findById(savedBoard._id)))
     }
 
+    await repository.deleteManyByRoundExcludingBoardNumbers({
+      roundId,
+      boardNumbers: result.boards.map(board => board.boardNumber)
+    })
+
     return {
-      totalBoards: createdOrUpdatedBoards.length,
-      boards: createdOrUpdatedBoards
+      event: normalizeEvent(result.event),
+      round: normalizeRound(result.round),
+      boardCount: result.boardCount,
+      confirmedTeamCount: result.eligibleTeams.length,
+      boards: confirmedBoards
+    }
+  }
+
+  const autoAssignBoards = async ({ eventId, roundId }) => {
+    const preview = await previewRandomizedBoards({ eventId, roundId })
+    const confirmed = await confirmRandomizedBoards({
+      eventId,
+      roundId,
+      boards: preview.boards.map(board => ({
+        boardNumber: board.boardNumber,
+        name: board.name,
+        teamIds: board.teamIds
+      }))
+    })
+
+    return {
+      totalBoards: confirmed.boards.length,
+      boards: confirmed.boards
     }
   }
 
@@ -349,6 +512,8 @@ export const createJudgingBoardService = ({
     createBoard,
     updateBoard,
     deleteBoard,
+    previewRandomizedBoards,
+    confirmRandomizedBoards,
     autoAssignBoards
   }
 }

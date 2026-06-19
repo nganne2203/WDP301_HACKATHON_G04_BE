@@ -26,6 +26,20 @@ router.post(
 )
 
 router.post(
+  '/randomize-preview',
+  permissionMiddleware(PERMISSIONS.JUDGING_ASSIGN),
+  validationHandlingMiddleware(JUDGING_BOARD_VALIDATION.randomizePreview),
+  JUDGING_BOARD_CONTROLLER.randomizePreview
+)
+
+router.post(
+  '/confirm-randomization',
+  permissionMiddleware(PERMISSIONS.JUDGING_ASSIGN),
+  validationHandlingMiddleware(JUDGING_BOARD_VALIDATION.confirmRandomization),
+  JUDGING_BOARD_CONTROLLER.confirmRandomization
+)
+
+router.post(
   '/auto-assign',
   permissionMiddleware(PERMISSIONS.JUDGING_ASSIGN),
   validationHandlingMiddleware(JUDGING_BOARD_VALIDATION.autoAssignBoards),

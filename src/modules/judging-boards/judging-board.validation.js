@@ -55,6 +55,27 @@ const autoAssignBoards = {
   })
 }
 
+const boardPlanItem = Joi.object({
+  boardNumber: Joi.number().integer().min(1).required(),
+  name: Joi.string().trim().min(2).max(200).required(),
+  teamIds: Joi.array().items(objectId).unique().required()
+})
+
+const randomizePreview = {
+  body: Joi.object({
+    eventId: objectId.required(),
+    roundId: objectId.required()
+  })
+}
+
+const confirmRandomization = {
+  body: Joi.object({
+    eventId: objectId.required(),
+    roundId: objectId.required(),
+    boards: Joi.array().items(boardPlanItem).min(1).required()
+  })
+}
+
 const getBoardById = {
   params: idParam
 }
@@ -64,5 +85,7 @@ export const JUDGING_BOARD_VALIDATION = {
   createBoard,
   updateBoard,
   autoAssignBoards,
+  randomizePreview,
+  confirmRandomization,
   getBoardById
 }

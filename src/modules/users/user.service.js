@@ -12,7 +12,7 @@ import { EMAIL_TEMPLATE_KEYS } from '#modules/notifications/email-templates.js'
 import { AUDIT_LOG_SERVICE } from '#modules/audit-logs/audit-log.service.js'
 import { env } from '#configs/environment.js'
 
-const PROFILE_FIELDS = ['fullName', 'avatarUrl', 'phone', 'bio']
+const PROFILE_FIELDS = ['fullName', 'avatarUrl', 'phone', 'bio', 'githubUsername']
 const ALLOWED_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED']
 const EMAIL_NOTIFICATION_STATUSES = ['APPROVED', 'REJECTED']
 const PARTICIPANT_ROLES = ['USER', 'PARTICIPANT']
@@ -127,6 +127,7 @@ const normalizeUser = (user) => {
     avatarUrl: plainUser.avatarUrl,
     phone: plainUser.phone,
     bio: plainUser.bio,
+    githubUsername: plainUser.githubUsername,
     studentType: plainUser.studentType,
     studentId: plainUser.studentId,
     schoolName: plainUser.schoolName,
@@ -264,6 +265,7 @@ const createUser = async (payload = {}, actor = {}) => {
     roles: roles.map(role => role._id),
     phone: payload.phone,
     bio: payload.bio,
+    githubUsername: payload.githubUsername,
     avatarUrl: payload.avatarUrl,
     studentType: payload.studentType,
     studentId: payload.studentId,

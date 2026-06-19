@@ -171,6 +171,22 @@ const listSuggestedJudgeQuestions = async (aiReviewId) => {
   return await SuggestedJudgeQuestion.find({ aiReviewId }).sort({ priority: -1, createdAt: 1 })
 }
 
+const upsertCommit = async ({ repositoryId, commitSha, data }) => {
+  return await Commit.findOneAndUpdate(
+    { repositoryId, commitSha },
+    { $set: { repositoryId, commitSha, ...data } },
+    { upsert: true, new: true }
+  )
+}
+
+const upsertCommitDiff = async ({ repositoryId, headCommitSha, data }) => {
+  return await CommitDiff.findOneAndUpdate(
+    { repositoryId, headCommitSha },
+    { $set: { repositoryId, headCommitSha, ...data } },
+    { upsert: true, new: true }
+  )
+}
+
 export const AI_REVIEW_REPOSITORY = {
   findRepositoryById,
   findTeamById,
@@ -200,5 +216,7 @@ export const AI_REVIEW_REPOSITORY = {
   listAiReviewCriteria,
   listTechnicalFindings,
   listSuggestedTestCases,
-  listSuggestedJudgeQuestions
+  listSuggestedJudgeQuestions,
+  upsertCommit,
+  upsertCommitDiff
 }

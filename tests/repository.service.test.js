@@ -26,6 +26,8 @@ test('createRepository stores a linked repository and listRepositories filters b
     },
     findById: async (id) => stored.get(id) || null,
     findByTeamId: async (teamId) => [...stored.values()].find(item => item.teamId === teamId) || null,
+    listCommitsByRepository: async () => [],
+    countCommitsByRepository: async () => 0,
     create: async (data) => {
       const id = String(seq).padStart(24, '0')
       seq += 1
@@ -89,6 +91,8 @@ test('createRepository rejects linking the same team twice', async () => {
     findAll: async () => [],
     findById: async () => null,
     findByTeamId: async () => ({ _id: '000000000000000000000901', teamId: '000000000000000000000201' }),
+    listCommitsByRepository: async () => [],
+    countCommitsByRepository: async () => 0,
     create: async (data) => data,
     updateById: async () => null
   }
@@ -115,4 +119,37 @@ test('createRepository rejects linking the same team twice', async () => {
     EventModel.findById = originalEventFindById
     TeamModel.findById = originalTeamFindById
   }
+})
+
+test('listRepositoryCommits returns stored commit history for a repository', async () => {
+  const repository = {
+    count: async () => 1,
+    findAll: async () => [],
+    findById: async (id) => id === '000000000000000000000111'
+      ? { _id: id, repositoryFullName: 'seal-org/team-alpha', githubOwner: 'seal-org', githubRepo: 'team-alpha', defaultBranch: 'main' }
+      : null,
+    findByTeamId: async () => null,
+    listCommitsByRepository: async () => [{
+      _id: '000000000000000000000211',
+      repositoryId: '000000000000000000000111',
+      commitSha: 'abc123',
+      branch: 'main',
+      authorName: 'Dev A',
+      message: 'Initial review trigger',
+      filesChanged: 3
+    }],
+    countCommitsByRepository: async () => 1,
+    create: async () => null,
+    updateById: async () => null
+  }
+
+  const service = createRepositoryService({ repository })
+  const result = await service.listRepositoryCommits({
+    repositoryId: '000000000000000000000111',
+    query: { page: 1, limit: 10 }
+  })
+
+  assert.equal(result.repository.repositoryFullName, 'seal-org/team-alpha')
+  assert.equal(result.commits.length, 1)
+  assert.equal(result.commits[0].commitSha, 'abc123')
 })

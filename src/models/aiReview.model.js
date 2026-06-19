@@ -28,7 +28,7 @@ const aiReviewSchema = new Schema(
     batchId: { type: String, trim: true },
     status: {
       type: String,
-      enum: ['PENDING', 'SKIPPED', 'COMPLETED', 'FAILED', 'FALLBACK'],
+      enum: ['PENDING', 'SKIPPED', 'COMPLETED', 'FAILED', 'RETRY_PENDING', 'MANUAL_REDISPATCH_REQUIRED'],
       default: 'PENDING'
     },
     isScoreBased: { type: Boolean, default: false },

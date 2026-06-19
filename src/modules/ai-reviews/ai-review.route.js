@@ -9,6 +9,11 @@ import { validationHandlingMiddleware } from '#middlewares/validationHandlingMid
 
 const router = Router()
 
+router.post(
+  '/:id/callback',
+  AI_REVIEW_CONTROLLER.handleCallback
+)
+
 router.use(authorizationMiddleware)
 
 router.get(
@@ -16,6 +21,13 @@ router.get(
   permissionMiddleware(PERMISSIONS.AI_REVIEW_VIEW),
   validationHandlingMiddleware(AI_REVIEW_VALIDATION.getAiReviewById),
   AI_REVIEW_CONTROLLER.getAiReviewById
+)
+
+router.post(
+  '/:id/redispatch',
+  permissionMiddleware(PERMISSIONS.AI_REVIEW_TRIGGER),
+  validationHandlingMiddleware(AI_REVIEW_VALIDATION.redispatchAiReview),
+  AI_REVIEW_CONTROLLER.redispatchAiReview
 )
 
 export default router

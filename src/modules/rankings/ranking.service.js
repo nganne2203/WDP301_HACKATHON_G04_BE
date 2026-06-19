@@ -5,6 +5,7 @@ import { AUDIT_LOG_REPOSITORY } from '#modules/audit-logs/audit-log.repository.j
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
+import { LOGGER } from '#utils/logger.js'
 import Event from '#models/event.model.js'
 import Repository from '#models/repository.model.js'
 import Round from '#models/round.model.js'
@@ -379,7 +380,7 @@ export const createRankingService = ({
     }
   }
 
-  const applyRepositoryAccessAction = async ({ eventId, roundId, teamIds = [], action, publishedAt }) => {
+  const applyRepositoryAccessAction = async ({ eventId, roundId, teamIds = [], action, publishedAt }, actor = {}) => {
     if (action === 'NONE' || teamIds.length === 0) {
       return {
         action: 'NONE',
@@ -405,6 +406,48 @@ export const createRankingService = ({
       }
 
     const result = await repositoryModel.updateMany(filter, update)
+
+    if (action === 'REVOKE' && typeof repositoryModel.find === 'function') {
+      try {
+        const repos = await repositoryModel.find(filter)
+        const { GITHUB_REPOSITORY } = await import('#modules/github/github.repository.js')
+        const { GITHUB_SERVICE } = await import('#modules/github/github.service.js')
+
+        for (const repo of repos) {
+          const repoName = repo.repoName || repo.githubRepo
+          if (!repoName) continue
+
+          try {
+            const usernames = await GITHUB_REPOSITORY.findTeamMembersGithubUsernames(repo.teamId)
+            for (const username of usernames) {
+              try {
+                await GITHUB_SERVICE.revokeCollaborator({
+                  eventId,
+                  repoName,
+                  username
+                }, actor)
+              } catch (err) {
+                LOGGER.warn('Failed to revoke collaborator on GitHub during result publication', {
+                  repoName,
+                  username,
+                  error: err.message
+                })
+              }
+            }
+          } catch (err) {
+            LOGGER.error('Failed to resolve usernames or revoke collaborators for repository', {
+              repoId: repo._id,
+              error: err.message
+            })
+          }
+        }
+      } catch (importErr) {
+        LOGGER.error('Failed to import GitHub modules for collaborator revocation', {
+          error: importErr.message
+        })
+      }
+    }
+
     return {
       action,
       affectedRepositories: result.modifiedCount || result.matchedCount || 0
@@ -439,7 +482,7 @@ export const createRankingService = ({
       teamIds,
       action: repositoryAccessAction,
       publishedAt
-    })
+    }, actor)
 
     await auditLogRepository.create({
       userId: actor.id || null,
