@@ -216,6 +216,21 @@ export const createGithubService = ({
     }
   }
 
+  const getTokenForN8nDispatch = async ({ eventId } = {}) => {
+    if (eventId) {
+      try {
+        const config = await loadOperationalConfig({ eventId })
+        if (config.token) return config.token
+      } catch (error) {
+        if (!env.github.token) throw error
+      }
+    }
+
+    if (env.github.token) return env.github.token
+
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['GitHub token is not configured for n8n dispatch'])
+  }
+
   const requestGithub = async ({ method, path, token, body }) => {
     return await githubClient({ method, path, token, body })
   }
@@ -840,6 +855,7 @@ export const createGithubService = ({
 
   return {
     getConfig,
+    getTokenForN8nDispatch,
     saveConfig,
     testConnection,
     createRepository,

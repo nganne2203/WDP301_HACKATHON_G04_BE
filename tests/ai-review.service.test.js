@@ -3,6 +3,14 @@ import test from 'node:test'
 
 import { env } from '../src/configs/environment.js'
 import { createAiReviewService } from '../src/modules/ai-reviews/ai-review.service.js'
+import { createN8nService } from '../src/services/n8n.service.js'
+import { ENCRYPTION_UTILS } from '../src/utils/encryption.util.js'
+
+const TEST_GITHUB_TOKEN_AES_KEY = Buffer.alloc(32, 7).toString('base64')
+
+const createTestN8nService = () => createN8nService({
+  githubTokenProvider: async () => 'github_pat_test_secret'
+})
 
 const createAiReviewRepository = () => {
   const repositories = new Map()
@@ -330,20 +338,28 @@ const validAggregateAiResponse = JSON.stringify({
 const withN8nEnv = async (fn, { dispatchMaxRetries = 1 } = {}) => {
   const originalN8n = env.n8n
   const originalPublicUrl = env.server.publicUrl
+  const originalGithubToken = env.github.token
+  const originalGithubTokenAesKey = env.security.githubTokenAesKey
   env.n8n = {
     enabled: true,
     perPushWebhookUrl: 'https://n8n.test/per-push',
+    aggregateWebhookUrl: 'https://n8n.test/aggregate',
     teamAggregateWebhookUrl: 'https://n8n.test/aggregate',
     callbackSecret: 'secret-key',
-    dispatchMaxRetries
+    dispatchMaxRetries,
+    dispatchTimeoutMs: 1000
   }
   env.server.publicUrl = 'https://seal.example.com'
+  env.github.token = 'github_pat_test_secret'
+  env.security.githubTokenAesKey = TEST_GITHUB_TOKEN_AES_KEY
 
   try {
     await fn()
   } finally {
     env.n8n = originalN8n
     env.server.publicUrl = originalPublicUrl
+    env.github.token = originalGithubToken
+    env.security.githubTokenAesKey = originalGithubTokenAesKey
   }
 }
 
@@ -384,7 +400,9 @@ test('createPerPushAudit triggers n8n webhook and returns PENDING when enabled',
 
     let triggeredPayload = null
     const originalFetch = globalThis.fetch
-    globalThis.fetch = async (_url, options) => {
+    let triggeredUrl = null
+    globalThis.fetch = async (url, options) => {
+      triggeredUrl = url
       triggeredPayload = JSON.parse(options.body)
       return {
         ok: true,
@@ -394,7 +412,7 @@ test('createPerPushAudit triggers n8n webhook and returns PENDING when enabled',
     }
 
     try {
-      const service = createAiReviewService({ repository })
+      const service = createAiReviewService({ repository, n8nService: createTestN8nService() })
       const result = await service.createPerPushAudit({
         repositoryId,
         commitSha,
@@ -403,9 +421,14 @@ test('createPerPushAudit triggers n8n webhook and returns PENDING when enabled',
 
       assert.equal(result.pending, true)
       assert.equal(result.review.status, 'PENDING')
+      assert.equal(triggeredUrl, 'https://n8n.test/per-push')
       assert.equal(triggeredPayload.aiReviewId, result.review.id)
       assert.equal(triggeredPayload.reviewKind, 'PER_PUSH_TECHNICAL_AUDIT')
       assert.equal(triggeredPayload.callbackUrl, `https://seal.example.com/api/ai-reviews/${result.review.id}/callback`)
+      assert.equal(typeof triggeredPayload.encryptedGithubToken, 'string')
+      assert.equal(ENCRYPTION_UTILS.decryptGithubTokenFromN8nPayload(triggeredPayload.encryptedGithubToken), 'github_pat_test_secret')
+      assert.equal(Object.hasOwn(triggeredPayload, 'githubToken'), false)
+      assert.equal(JSON.stringify(triggeredPayload).includes('github_pat_test_secret'), false)
       assert.equal(triggeredPayload.context.triggerContext.commitSha, commitSha)
       assert.equal(triggeredPayload.context.repositoryContext.repositoryFullName, 'seal-org/team-alpha')
     } finally {
@@ -429,6 +452,7 @@ test('createPerPushAudit marks review RETRY_PENDING and queues retry if n8n trig
     try {
       const service = createAiReviewService({
         repository,
+        n8nService: createTestN8nService(),
         queueService: {
           enqueueRunPerPushAudit: async (payload) => {
             queuedJobs.push(payload)
@@ -637,6 +661,7 @@ test('manual redispatch failure returns review to MANUAL_REDISPATCH_REQUIRED wit
     try {
       const service = createAiReviewService({
         repository,
+        n8nService: createTestN8nService(),
         queueService: {
           enqueueRunPerPushAudit: async () => {
             throw new Error('should not auto retry manual redispatch')
@@ -665,15 +690,21 @@ test('createTeamAggregateAudit triggers n8n webhook and handleAuditCallback comp
       impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
     })
 
+    let triggeredUrl = null
+    let triggeredPayload = null
     const originalFetch = globalThis.fetch
-    globalThis.fetch = async () => ({
+    globalThis.fetch = async (url, options) => {
+      triggeredUrl = url
+      triggeredPayload = JSON.parse(options.body)
+      return {
       ok: true,
       status: 202,
       async text() { return 'Accepted' }
-    })
+      }
+    }
 
     try {
-      const service = createAiReviewService({ repository })
+      const service = createAiReviewService({ repository, n8nService: createTestN8nService() })
       const created = await service.createTeamAggregateAudit({
         repositoryId,
         requestedBy: 'user-1'
@@ -681,6 +712,12 @@ test('createTeamAggregateAudit triggers n8n webhook and handleAuditCallback comp
 
       assert.equal(created.pending, true)
       assert.equal(created.review.status, 'PENDING')
+      assert.equal(triggeredUrl, 'https://n8n.test/aggregate')
+      assert.equal(triggeredPayload.reviewKind, 'TEAM_AGGREGATE_TECHNICAL_AUDIT')
+      assert.equal(typeof triggeredPayload.encryptedGithubToken, 'string')
+      assert.equal(ENCRYPTION_UTILS.decryptGithubTokenFromN8nPayload(triggeredPayload.encryptedGithubToken), 'github_pat_test_secret')
+      assert.equal(Object.hasOwn(triggeredPayload, 'githubToken'), false)
+      assert.equal(JSON.stringify(triggeredPayload).includes('github_pat_test_secret'), false)
 
       const completed = await service.handleAuditCallback({
         aiReviewId: created.review.id,
