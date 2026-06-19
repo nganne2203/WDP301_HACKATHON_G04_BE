@@ -1,3 +1,5 @@
+import mongoose from 'mongoose'
+
 import { GITHUB_REPOSITORY } from './github.repository.js'
 import ApiError from '#utils/ApiError.js'
 import { env } from '#configs/environment.js'

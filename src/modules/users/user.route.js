@@ -68,6 +68,13 @@ const router = Router()
  *           nullable: true
  *           maxLength: 500
  *           example: I build hackathon projects.
+ *         githubUsername:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 39
+ *           pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$'
+ *           example: octocat
  *     CreateUserRequest:
  *       type: object
  *       required: [email, password, fullName, roles]
@@ -98,6 +105,13 @@ const router = Router()
  *           type: string
  *           enum: [PENDING, APPROVED, REJECTED, SUSPENDED]
  *           default: PENDING
+ *         githubUsername:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 39
+ *           pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$'
+ *           example: octocat
  *         studentType:
  *           type: string
  *           enum: [FPT, EXTERNAL]

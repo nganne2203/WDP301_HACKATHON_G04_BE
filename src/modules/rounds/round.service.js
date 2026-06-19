@@ -103,6 +103,7 @@ const normalizeJudge = (judge) => {
     id: judge._id?.toString() || judge.id,
     fullName: judge.fullName,
     email: judge.email,
+    githubUsername: judge.githubUsername,
     status: judge.status
   }
 }

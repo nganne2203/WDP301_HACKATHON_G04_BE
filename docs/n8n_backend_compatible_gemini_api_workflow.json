@@ -1,5 +1,5 @@
 {
-  "name": "WDP301 Backend Compatible AI Audit",
+  "name": "WDP301 Backend Compatible AI Audit - Gemini API Key",
   "nodes": [
     {
       "parameters": {
@@ -14,7 +14,7 @@
         -240
       ],
       "id": "8c3083c2-0f09-4f0f-927a-52dfd3e95f11",
-      "name": "Webhook Per Push"
+      "name": "WebhookPerPush"
     },
     {
       "parameters": {
@@ -143,7 +143,7 @@
     },
     {
       "parameters": {
-        "url": "https://api.openai.com/v1/chat/completions",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{$env.GEMINI_MODEL || 'gemini-2.5-flash'}}:generateContent?key={{$env.GOOGLE_GEMINI_API_KEY}}",
         "method": "POST",
         "sendHeaders": true,
         "headerParameters": {
@@ -151,16 +151,12 @@
             {
               "name": "Content-Type",
               "value": "application/json"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{$env.OPENAI_API_KEY}}"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"response_format\": { \"type\": \"json_object\" },\n  \"temperature\": 0.2,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a precise technical audit assistant. Return valid JSON only, with no markdown.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": $json.prompt\n    }\n  ]\n}",
+        "jsonBody": "={\n  \"systemInstruction\": {\n    \"parts\": [\n      {\n        \"text\": \"You are a precise technical audit assistant. Return valid JSON only, with no markdown.\"\n      }\n    ]\n  },\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        {\n          \"text\": $json.prompt\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.2,\n    \"responseMimeType\": \"application/json\"\n  }\n}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -170,12 +166,12 @@
         -240
       ],
       "id": "7fd49b84-61b8-4630-ba4d-4ef8331ff660",
-      "name": "OpenAI Per Push",
+      "name": "Gemini Per Push",
       "onError": "continueErrorOutput"
     },
     {
       "parameters": {
-        "jsCode": "const content = $json.choices?.[0]?.message?.content;\nif (!content) {\n  throw new Error('OpenAI response did not contain message.content');\n}\n\nconst ctx = $('Build Per Push Prompt').item.json;\nreturn [{\n  aiReviewId: ctx.aiReviewId,\n  callbackUrl: ctx.callbackUrl,\n  status: 'success',\n  rawResponse: typeof content === 'string' ? content : JSON.stringify(content),\n  modelName: 'gpt-4o-mini',\n  provider: 'openai'\n}];"
+        "jsCode": "const content = $json.candidates?.[0]?.content?.parts\n  ?.map((part) => part.text || '')\n  .join('')\n  .trim();\n\nif (!content) {\n  throw new Error('Gemini response did not contain candidates[0].content.parts[].text');\n}\n\nlet normalizedContent = content;\n\n// Defensive cleanup in case the model still wraps JSON in markdown fences.\nif (normalizedContent.startsWith('```')) {\n  normalizedContent = normalizedContent\n    .replace(/^```(?:json)?\\s*/i, '')\n    .replace(/\\s*```$/i, '')\n    .trim();\n}\n\n// Validate that Backend receives a JSON string, not a loose object or markdown.\ntry {\n  JSON.parse(normalizedContent);\n} catch (error) {\n  throw new Error(`Gemini returned malformed JSON: ${error.message}`);\n}\n\nconst ctx = $('Build Per Push Prompt').item.json;\nconst usage = $json.usageMetadata || {};\n\nreturn [{\n  aiReviewId: ctx.aiReviewId,\n  callbackUrl: ctx.callbackUrl,\n  status: 'success',\n  rawResponse: normalizedContent,\n  modelName: $env.GEMINI_MODEL || 'gemini-2.5-flash',\n  provider: 'google-gemini',\n  tokenUsage: {\n    inputTokens: usage.promptTokenCount || null,\n    outputTokens: usage.candidatesTokenCount || null,\n    totalTokens: usage.totalTokenCount || null\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -206,7 +202,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"status\": $json.status,\n  \"rawResponse\": $json.rawResponse,\n  \"modelName\": $json.modelName,\n  \"provider\": $json.provider\n}",
+        "jsonBody": "={{ {\n  \"status\": $json.status,\n  \"rawResponse\": $json.rawResponse,\n  \"modelName\": $json.modelName,\n  \"provider\": $json.provider,\n  \"tokenUsage\": $json.tokenUsage\n} }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -250,7 +246,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"status\": $json.status,\n  \"errorMessage\": $json.errorMessage\n}",
+        "jsonBody": "={{ {\n  \"status\": $json.status,\n  \"errorMessage\": $json.errorMessage\n} }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -275,7 +271,7 @@
         224
       ],
       "id": "d79f878e-a02d-44db-8fd1-e81f3a3c78b8",
-      "name": "Webhook Aggregate"
+      "name": "WebhookAggregate"
     },
     {
       "parameters": {
@@ -374,7 +370,7 @@
     },
     {
       "parameters": {
-        "url": "https://api.openai.com/v1/chat/completions",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{$env.GEMINI_MODEL || 'gemini-2.5-flash'}}:generateContent?key={{$env.GOOGLE_GEMINI_API_KEY}}",
         "method": "POST",
         "sendHeaders": true,
         "headerParameters": {
@@ -382,16 +378,12 @@
             {
               "name": "Content-Type",
               "value": "application/json"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{$env.OPENAI_API_KEY}}"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"response_format\": { \"type\": \"json_object\" },\n  \"temperature\": 0.2,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a precise technical audit assistant. Return valid JSON only, with no markdown.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": $json.prompt\n    }\n  ]\n}",
+        "jsonBody": "={\n  \"systemInstruction\": {\n    \"parts\": [\n      {\n        \"text\": \"You are a precise technical audit assistant. Return valid JSON only, with no markdown.\"\n      }\n    ]\n  },\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        {\n          \"text\": $json.prompt\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.2,\n    \"responseMimeType\": \"application/json\"\n  }\n}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -401,12 +393,12 @@
         224
       ],
       "id": "86916476-ecfa-4378-b839-67d3b9aa791b",
-      "name": "OpenAI Aggregate",
+      "name": "Gemini Aggregate",
       "onError": "continueErrorOutput"
     },
     {
       "parameters": {
-        "jsCode": "const content = $json.choices?.[0]?.message?.content;\nif (!content) {\n  throw new Error('OpenAI response did not contain message.content');\n}\n\nconst ctx = $('Build Aggregate Prompt').item.json;\nreturn [{\n  aiReviewId: ctx.aiReviewId,\n  callbackUrl: ctx.callbackUrl,\n  status: 'success',\n  rawResponse: typeof content === 'string' ? content : JSON.stringify(content),\n  modelName: 'gpt-4o-mini',\n  provider: 'openai'\n}];"
+        "jsCode": "const content = $json.candidates?.[0]?.content?.parts\n  ?.map((part) => part.text || '')\n  .join('')\n  .trim();\n\nif (!content) {\n  throw new Error('Gemini response did not contain candidates[0].content.parts[].text');\n}\n\nlet normalizedContent = content;\n\n// Defensive cleanup in case the model still wraps JSON in markdown fences.\nif (normalizedContent.startsWith('```')) {\n  normalizedContent = normalizedContent\n    .replace(/^```(?:json)?\\s*/i, '')\n    .replace(/\\s*```$/i, '')\n    .trim();\n}\n\n// Validate that Backend receives a JSON string, not a loose object or markdown.\ntry {\n  JSON.parse(normalizedContent);\n} catch (error) {\n  throw new Error(`Gemini returned malformed JSON: ${error.message}`);\n}\n\nconst ctx = $('Build Aggregate Prompt').item.json;\nconst usage = $json.usageMetadata || {};\n\nreturn [{\n  aiReviewId: ctx.aiReviewId,\n  callbackUrl: ctx.callbackUrl,\n  status: 'success',\n  rawResponse: normalizedContent,\n  modelName: $env.GEMINI_MODEL || 'gemini-2.5-flash',\n  provider: 'google-gemini',\n  tokenUsage: {\n    inputTokens: usage.promptTokenCount || null,\n    outputTokens: usage.candidatesTokenCount || null,\n    totalTokens: usage.totalTokenCount || null\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -437,7 +429,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"status\": $json.status,\n  \"rawResponse\": $json.rawResponse,\n  \"modelName\": $json.modelName,\n  \"provider\": $json.provider\n}",
+        "jsonBody": "={{ {\n  \"status\": $json.status,\n  \"rawResponse\": $json.rawResponse,\n  \"modelName\": $json.modelName,\n  \"provider\": $json.provider,\n  \"tokenUsage\": $json.tokenUsage\n} }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -481,7 +473,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"status\": $json.status,\n  \"errorMessage\": $json.errorMessage\n}",
+        "jsonBody": "={{ {\n  \"status\": $json.status,\n  \"errorMessage\": $json.errorMessage\n} }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -496,7 +488,7 @@
   ],
   "pinData": {},
   "connections": {
-    "Webhook Per Push": {
+    "WebhookPerPush": {
       "main": [
         [
           {
@@ -540,25 +532,7 @@
       "main": [
         [
           {
-            "node": "OpenAI Per Push",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Format Per Push Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "OpenAI Per Push": {
-      "main": [
-        [
-          {
-            "node": "Format Per Push Success",
+            "node": "Gemini Per Push",
             "type": "main",
             "index": 0
           }
@@ -601,7 +575,7 @@
         ]
       ]
     },
-    "Webhook Aggregate": {
+    "WebhookAggregate": {
       "main": [
         [
           {
@@ -645,25 +619,7 @@
       "main": [
         [
           {
-            "node": "OpenAI Aggregate",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Format Aggregate Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "OpenAI Aggregate": {
-      "main": [
-        [
-          {
-            "node": "Format Aggregate Success",
+            "node": "Gemini Aggregate",
             "type": "main",
             "index": 0
           }
@@ -705,19 +661,55 @@
           }
         ]
       ]
+    },
+    "Gemini Per Push": {
+      "main": [
+        [
+          {
+            "node": "Format Per Push Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Per Push Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Format Aggregate Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Aggregate Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
     "saveManualExecutions": true,
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": ""
   },
-  "versionId": "2a360d8b-239a-42be-82e2-4cdd357f4e02",
+  "versionId": "d2d311a9-51bb-474d-b4c7-60356cf23dca",
   "meta": {
-    "templateCredsSetupCompleted": true
+    "templateCredsSetupCompleted": false
   },
-  "id": "wdp301-backend-compatible-ai-audit",
+  "id": "g0YoCnoZZtAU3pRs",
   "tags": []
 }

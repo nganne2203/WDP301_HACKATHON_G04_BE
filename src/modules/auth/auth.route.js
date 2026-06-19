@@ -104,6 +104,10 @@ const router = Router()
  *           type: string
  *           nullable: true
  *           example: Full-stack developer
+ *         githubUsername:
+ *           type: string
+ *           nullable: true
+ *           example: octocat
  *         studentType:
  *           type: string
  *           nullable: true
@@ -169,7 +173,7 @@ const router = Router()
  *           example: null
  *     RegisterRequest:
  *       type: object
- *       required: [email, password, fullName, studentType, studentId]
+ *       required: [email, password, fullName, githubUsername, studentType, studentId]
  *       properties:
  *         email:
  *           type: string
@@ -185,6 +189,12 @@ const router = Router()
  *           minLength: 2
  *           maxLength: 120
  *           example: New User
+ *         githubUsername:
+ *           type: string
+ *           minLength: 1
+ *           maxLength: 39
+ *           pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$'
+ *           example: octocat
  *         studentType:
  *           type: string
  *           enum: [FPT, EXTERNAL]

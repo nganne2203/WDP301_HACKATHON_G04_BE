@@ -184,6 +184,7 @@ const normalizeUserSummary = (user) => {
     id: getId(plainUser._id) || plainUser.id,
     email: plainUser.email,
     fullName: plainUser.fullName,
+    githubUsername: plainUser.githubUsername,
     status: plainUser.status,
     mustChangePassword: Boolean(plainUser.mustChangePassword)
   }
@@ -755,7 +756,7 @@ const createInvitationForEmail = async ({
     })
 
     if (!invitedUser.githubUsername && githubUsername) {
-      await User.findByIdAndUpdate(invitedUser._id, { githubUsername }, { session })
+      invitedUser = await repository.updateUserById(invitedUser._id, { githubUsername }, { session })
     }
   } else {
     const blockingInvitation = await repository.findBlockingInvitation({
@@ -1269,7 +1270,7 @@ export const createTeamService = ({
                   eventId: getId(event),
                   repoName: teamRepo.repoName || teamRepo.githubRepo,
                   githubUsername: invitedUser.githubUsername,
-                  actor: { id: getId(leader) }
+                  actor: { id: getId(team.leaderId) }
                 }
               })
             }
