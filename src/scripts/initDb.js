@@ -651,7 +651,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'ELIGIBLE',
       checkInStatus: 'NOT_CHECKED_IN',
       githubAccessStatus: 'NOT_GRANTED',
-      status: 'REGISTERED',
+      status: 'INVITED',
       joinedAt: addTime(now, { days: -4 })
     }),
     upsertOne(Participant, { eventId: registrationEvent._id, userId: registrationAcceptedB._id }, {
@@ -690,7 +690,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'PENDING',
       checkInStatus: 'NOT_CHECKED_IN',
       githubAccessStatus: 'NOT_GRANTED',
-      status: 'REGISTERED',
+      status: 'INVITED',
       joinedAt: addTime(now, { days: -1 })
     }),
     upsertOne(Participant, { eventId: registrationEvent._id, userId: rejectedLead._id }, {
@@ -715,7 +715,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'ELIGIBLE',
       checkInStatus: 'NOT_CHECKED_IN',
       githubAccessStatus: 'NOT_GRANTED',
-      status: 'REGISTERED',
+      status: 'INVITED',
       joinedAt: addTime(now, { hours: -12 })
     }),
     upsertOne(Participant, { eventId: registrationEvent._id, userId: invitedParticipantUser._id }, {
@@ -956,7 +956,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'ELIGIBLE',
       checkInStatus: 'NOT_CHECKED_IN',
       githubAccessStatus: 'REVOKED',
-      status: 'REGISTERED',
+      status: 'INVITED',
       joinedAt: addTime(now, { days: -9 })
     })
   ])
@@ -1568,7 +1568,7 @@ const seedSampleData = async () => {
     const assignedMentorIds = track._id.equals(trackA._id)
       ? [mentorUser._id]
       : [mentorUser._id, speakerUser._id]
-    const team = await upsertOne(Team, { eventId: event._id, name: teamName }, {
+    let team = await upsertOne(Team, { eventId: event._id, name: teamName }, {
       eventId: event._id,
       trackId: track._id,
       mentorIds: assignedMentorIds,
@@ -1623,6 +1623,11 @@ const seedSampleData = async () => {
       members.push(user)
       participantRecords.push(participant)
     }
+
+    team = await upsertOne(Team, { _id: team._id }, {
+      leaderId: members[0]?._id,
+      memberIds: members.map((member) => member._id)
+    })
 
     teamRecords.push({ team, track, members, preliminaryScore, preliminaryRank, isFinalist })
   }
