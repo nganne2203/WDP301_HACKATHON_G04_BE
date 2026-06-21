@@ -66,7 +66,8 @@ const normalizeScoreSheet = (scoreSheet) => {
       ? {
         id: plainScoreSheet.judgeId._id?.toString() || plainScoreSheet.judgeId.id,
         fullName: plainScoreSheet.judgeId.fullName,
-        email: plainScoreSheet.judgeId.email
+        email: plainScoreSheet.judgeId.email,
+        githubUsername: plainScoreSheet.judgeId.githubUsername
       }
       : null,
     board: plainScoreSheet.boardId && typeof plainScoreSheet.boardId === 'object'

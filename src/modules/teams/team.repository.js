@@ -23,9 +23,9 @@ const populateRoles = [
 const teamPopulate = [
   { path: 'eventId', select: 'title status registrationStart registrationEnd registrationClosedAt registrationCloseReason minTeamMembers maxTeamMembers maxTeams totalFinalistSlots competitionConfig' },
   { path: 'trackId', select: 'code name type maxTeams status' },
-  { path: 'leaderId', select: 'email fullName status roles', populate: populateRoles[0] },
-  { path: 'memberIds', select: 'email fullName status roles', populate: populateRoles[0] },
-  { path: 'mentorIds', select: 'email fullName status roles', populate: populateRoles[0] }
+  { path: 'leaderId', select: 'email fullName githubUsername status roles', populate: populateRoles[0] },
+  { path: 'memberIds', select: 'email fullName githubUsername status roles', populate: populateRoles[0] },
+  { path: 'mentorIds', select: 'email fullName githubUsername status roles', populate: populateRoles[0] }
 ]
 
 const withSession = (query, session) => {
@@ -172,6 +172,16 @@ const createUser = async (data, { session } = {}) => {
   return await findUserById(user._id)
 }
 
+const updateUserById = async (id, data, { session } = {}) => {
+  return await withSession(
+    User.findByIdAndUpdate(id, data, {
+      new: true,
+      runValidators: true
+    }).populate(populateRoles),
+    session
+  )
+}
+
 const findRoleByName = async (name, { session } = {}) => {
   return await withSession(Role.findOne({ name: String(name).toUpperCase() }), session)
 }
@@ -252,6 +262,7 @@ export const TEAM_REPOSITORY = {
   findUserById,
   findUserByEmail,
   createUser,
+  updateUserById,
   findRoleByName,
   createInvitation,
   findInvitationByTokenHash,
