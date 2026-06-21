@@ -6,6 +6,7 @@ import { EMAIL_SERVICE } from '#modules/notifications/email.service.js'
 import { EMAIL_TEMPLATE_KEYS } from '#modules/notifications/email-templates.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 import { env } from '#configs/environment.js'
+import User from '#models/user.model.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
@@ -35,9 +36,17 @@ export const INVITATION_STATUSES = {
 
 const CONFIRMED_TEAM_STATUSES = [TEAM_STATUSES.CONFIRMED, TEAM_STATUSES.ACTIVE]
 const OPEN_TEAM_STATUSES = [TEAM_STATUSES.PENDING, TEAM_STATUSES.WAITING_FOR_MEMBERS, TEAM_STATUSES.WAITLISTED]
-const ACTIVE_PARTICIPANT_STATUSES = ['INVITED', 'REGISTERED', 'ACTIVE']
+const ACTIVE_PARTICIPANT_STATUSES = ['INVITED', 'ACTIVE']
 const COORDINATOR_ROLES = ['ADMIN', 'COORDINATOR', 'EVENT_COORDINATOR']
 const MENTOR_SCOPED_ROLES = ['MENTOR', 'SPEAKER']
+const EVENT_STATUSES = {
+  OPEN_REGISTRATION: 'OPEN_REGISTRATION',
+  REGISTRATION_CLOSED: 'REGISTRATION_CLOSED'
+}
+const REGISTRATION_CLOSE_REASONS = {
+  CAPACITY_REACHED: 'CAPACITY_REACHED',
+  REGISTRATION_ENDED: 'REGISTRATION_ENDED'
+}
 
 const getId = (value) => {
   return value?._id?.toString?.() || value?.id || value?.toString?.()
@@ -103,7 +112,7 @@ export const normalizeInvitationMembers = ({ members = [], emails = [] } = {}) =
 }
 
 export const isRegistrationOpen = (event, now = new Date()) => {
-  if (!event || event.status !== 'OPEN_REGISTRATION') return false
+  if (!event || event.status !== EVENT_STATUSES.OPEN_REGISTRATION) return false
 
   if (event.registrationStart && now < new Date(event.registrationStart)) return false
   if (event.registrationEnd && now > new Date(event.registrationEnd)) return false
@@ -113,6 +122,36 @@ export const isRegistrationOpen = (event, now = new Date()) => {
 
 const getMaxTeams = (event) => {
   return event?.maxTeams || 30
+}
+
+const getRegistrationClosure = ({ event, confirmedCount = null, now = new Date() }) => {
+  if (!event || event.status !== EVENT_STATUSES.OPEN_REGISTRATION) return null
+
+  if (event.registrationEnd && now > new Date(event.registrationEnd)) {
+    return {
+      status: EVENT_STATUSES.REGISTRATION_CLOSED,
+      registrationClosedAt: now,
+      registrationCloseReason: REGISTRATION_CLOSE_REASONS.REGISTRATION_ENDED
+    }
+  }
+
+  if (confirmedCount !== null && confirmedCount >= getMaxTeams(event)) {
+    return {
+      status: EVENT_STATUSES.REGISTRATION_CLOSED,
+      registrationClosedAt: now,
+      registrationCloseReason: REGISTRATION_CLOSE_REASONS.CAPACITY_REACHED
+    }
+  }
+
+  return null
+}
+
+const syncEventRegistrationStatus = async ({ repository, event, session, confirmedCount = null, now = new Date() }) => {
+  const closure = getRegistrationClosure({ event, confirmedCount, now })
+  if (!closure) return event
+
+  const updatedEvent = await repository.updateEventById(getId(event), closure, { session })
+  return updatedEvent || event
 }
 
 const getFrontendUrl = (path, logger = LOGGER) => {
@@ -202,6 +241,8 @@ const normalizeEventSummary = (event) => {
     status: plainEvent.status,
     registrationStart: plainEvent.registrationStart,
     registrationEnd: plainEvent.registrationEnd,
+    registrationClosedAt: plainEvent.registrationClosedAt,
+    registrationCloseReason: plainEvent.registrationCloseReason,
     minTeamMembers: plainEvent.minTeamMembers,
     maxTeamMembers: plainEvent.maxTeamMembers,
     maxTeams: getMaxTeams(plainEvent),
@@ -319,12 +360,6 @@ const hasCoordinatorRole = (actor = {}) => {
   return (actor.roles || []).some(role => COORDINATOR_ROLES.includes(String(role).toUpperCase()))
 }
 
-const ensureCoordinator = (actor = {}) => {
-  if (!hasCoordinatorRole(actor)) {
-    throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only coordinators can perform this action'])
-  }
-}
-
 const hasTeamManagementPermission = (actor = {}) => {
   return actorHasPermission(actor, PERMISSIONS.TEAM_UPDATE)
 }
@@ -390,6 +425,27 @@ const ensureConfirmedSlotsNotFull = async ({ event, repository, session }) => {
   if (confirmedCount >= getMaxTeams(event)) {
     throw new ApiError(ERROR_CODES.CONFLICT, ['The required number of confirmed teams has already been reached'])
   }
+}
+
+const loadEventForRegistration = async ({ repository, eventId, session }) => {
+  let event = await repository.findEventById(eventId, { session })
+  if (!event) {
+    throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+  }
+
+  const confirmedCount = await repository.countTeams({
+    eventId: getId(event),
+    status: { $in: CONFIRMED_TEAM_STATUSES }
+  }, { session })
+
+  event = await syncEventRegistrationStatus({
+    repository,
+    event,
+    session,
+    confirmedCount
+  })
+
+  return { event, confirmedCount }
 }
 
 const getCompetitionConfig = (event = {}) => {
@@ -977,8 +1033,11 @@ export const createTeamService = ({
       repository,
       logger,
       work: async (session) => {
-        const event = await repository.findEventById(payload.eventId, { session })
-        if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+        const { event } = await loadEventForRegistration({
+          repository,
+          eventId: payload.eventId,
+          session
+        })
         ensureEventOpen(event)
         await ensureConfirmedSlotsNotFull({ event, repository, session })
         await ensureTrackBelongsToEvent({
@@ -1070,6 +1129,16 @@ export const createTeamService = ({
             allowWaitlist: true
           })
 
+          await syncEventRegistrationStatus({
+            repository,
+            event,
+            session,
+            confirmedCount: await repository.countTeams({
+              eventId: getId(event),
+              status: { $in: CONFIRMED_TEAM_STATUSES }
+            }, { session })
+          })
+
           // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
         }
 
@@ -1093,7 +1162,11 @@ export const createTeamService = ({
         ensureTeamLeader(team, actor)
         ensureTeamIsNotRejected(team)
 
-        const event = await repository.findEventById(getId(team.eventId), { session })
+        const { event } = await loadEventForRegistration({
+          repository,
+          eventId: getId(team.eventId),
+          session
+        })
         ensureEventOpen(event)
         await ensureConfirmedSlotsNotFull({ event, repository, session })
 
@@ -1149,9 +1222,13 @@ export const createTeamService = ({
         const team = await repository.findTeamById(invitation.teamId, { session })
         if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
 
-        const event = await repository.findEventById(invitation.eventId, { session })
+        const { event } = await loadEventForRegistration({
+          repository,
+          eventId: invitation.eventId,
+          session
+        })
         const invitedUser = await repository.findUserById(invitation.invitedUserId, { session })
-        if (!event || !invitedUser) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Invitation target not found'])
+        if (!invitedUser) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Invitation target not found'])
         ensureEventOpen(event)
 
         if (invitation.status === INVITATION_STATUSES.ACCEPTED) {
@@ -1332,6 +1409,13 @@ export const createTeamService = ({
                 jobs
               })
             }
+
+            await syncEventRegistrationStatus({
+              repository,
+              event,
+              session,
+              confirmedCount: confirmedCountBeforeUpdate + 1
+            })
           }
         }
 
@@ -1464,7 +1548,11 @@ export const createTeamService = ({
           throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only declined invitations can be replaced'])
         }
 
-        const event = await repository.findEventById(getId(team.eventId), { session })
+        const { event } = await loadEventForRegistration({
+          repository,
+          eventId: getId(team.eventId),
+          session
+        })
         ensureEventOpen(event)
         await ensureConfirmedSlotsNotFull({ event, repository, session })
 
@@ -1555,6 +1643,17 @@ export const createTeamService = ({
             trackAssignmentMethod: payload.trackId || getId(updatedTeam.trackId) ? 'MANUAL' : 'SYSTEM',
             session,
             allowWaitlist: true
+          })
+
+          const confirmedCount = await repository.countTeams({
+            eventId: getId(event),
+            status: { $in: CONFIRMED_TEAM_STATUSES }
+          }, { session })
+          await syncEventRegistrationStatus({
+            repository,
+            event,
+            session,
+            confirmedCount
           })
 
           // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.

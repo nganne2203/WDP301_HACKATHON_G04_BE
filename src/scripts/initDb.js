@@ -651,7 +651,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'ELIGIBLE',
       checkInStatus: 'NOT_CHECKED_IN',
       githubAccessStatus: 'NOT_GRANTED',
-      status: 'REGISTERED',
+      status: 'INVITED',
       joinedAt: addTime(now, { days: -4 })
     }),
     upsertOne(Participant, { eventId: registrationEvent._id, userId: registrationAcceptedB._id }, {
@@ -690,7 +690,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'PENDING',
       checkInStatus: 'NOT_CHECKED_IN',
       githubAccessStatus: 'NOT_GRANTED',
-      status: 'REGISTERED',
+      status: 'INVITED',
       joinedAt: addTime(now, { days: -1 })
     }),
     upsertOne(Participant, { eventId: registrationEvent._id, userId: rejectedLead._id }, {
@@ -715,7 +715,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'ELIGIBLE',
       checkInStatus: 'NOT_CHECKED_IN',
       githubAccessStatus: 'NOT_GRANTED',
-      status: 'REGISTERED',
+      status: 'INVITED',
       joinedAt: addTime(now, { hours: -12 })
     }),
     upsertOne(Participant, { eventId: registrationEvent._id, userId: invitedParticipantUser._id }, {
@@ -795,37 +795,37 @@ const seedRuntimeDevScenarios = async ({
     }))
   ])
 
-  const registrationPendingMedia = await upsertOne(Media, { storagePath: `events/${registrationEvent._id}/users/${registrationLead._id}/runtime-pending-ui.png` }, {
+  const registrationPendingMedia = await upsertOne(Media, { title: 'Pending UI capture' }, {
     eventId: registrationEvent._id,
     uploadedBy: registrationLead._id,
     teamId: readyTeam._id,
     title: 'Pending UI capture',
     description: 'Pending media moderation scenario for admin media screen.',
     mediaType: 'IMAGE',
-    storageProvider: 'SUPABASE',
+    storageProvider: 'CLOUDINARY',
     bucketName: 'event-media',
-    storagePath: `events/${registrationEvent._id}/users/${registrationLead._id}/runtime-pending-ui.png`,
-    fileUrl: `https://example.supabase.co/storage/v1/object/event-media/events/${registrationEvent._id}/users/${registrationLead._id}/runtime-pending-ui.png`,
-    originalFileName: 'runtime-pending-ui.png',
-    mimeType: 'image/png',
+    storagePath: 'handbag-feedbacks/deavtm4rhgfyqvoo6hsm',
+    fileUrl: 'https://res.cloudinary.com/dlpuoczic/image/upload/v1772767781/handbag-feedbacks/deavtm4rhgfyqvoo6hsm.jpg',
+    originalFileName: 'pending-ui-capture.jpg',
+    mimeType: 'image/jpeg',
     fileSize: 2048,
-    fileExtension: 'png',
+    fileExtension: 'jpg',
     tags: ['runtime', 'pending', 'ui'],
     status: 'PENDING',
     uploadedAt: addTime(now, { hours: -4 })
   })
 
-  const registrationRejectedMedia = await upsertOne(Media, { storagePath: `events/${registrationEvent._id}/users/${waitingLead._id}/runtime-rejected-spec.pdf` }, {
+  const registrationRejectedMedia = await upsertOne(Media, { title: 'Rejected specification' }, {
     eventId: registrationEvent._id,
     uploadedBy: waitingLead._id,
     teamId: waitingTeam._id,
     title: 'Rejected specification',
     description: 'Rejected media moderation scenario.',
     mediaType: 'DOCUMENT',
-    storageProvider: 'SUPABASE',
+    storageProvider: 'CLOUDINARY',
     bucketName: 'event-media',
-    storagePath: `events/${registrationEvent._id}/users/${waitingLead._id}/runtime-rejected-spec.pdf`,
-    fileUrl: `https://example.supabase.co/storage/v1/object/event-media/events/${registrationEvent._id}/users/${waitingLead._id}/runtime-rejected-spec.pdf`,
+    storagePath: 'samples/coffee',
+    fileUrl: 'https://res.cloudinary.com/dlpuoczic/image/upload/v1769832940/samples/coffee.jpg',
     originalFileName: 'runtime-rejected-spec.pdf',
     mimeType: 'application/pdf',
     fileSize: 4096,
@@ -956,7 +956,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'ELIGIBLE',
       checkInStatus: 'NOT_CHECKED_IN',
       githubAccessStatus: 'REVOKED',
-      status: 'REGISTERED',
+      status: 'INVITED',
       joinedAt: addTime(now, { days: -9 })
     })
   ])
@@ -1568,7 +1568,7 @@ const seedSampleData = async () => {
     const assignedMentorIds = track._id.equals(trackA._id)
       ? [mentorUser._id]
       : [mentorUser._id, speakerUser._id]
-    const team = await upsertOne(Team, { eventId: event._id, name: teamName }, {
+    let team = await upsertOne(Team, { eventId: event._id, name: teamName }, {
       eventId: event._id,
       trackId: track._id,
       mentorIds: assignedMentorIds,
@@ -1623,6 +1623,11 @@ const seedSampleData = async () => {
       members.push(user)
       participantRecords.push(participant)
     }
+
+    team = await upsertOne(Team, { _id: team._id }, {
+      leaderId: members[0]?._id,
+      memberIds: members.map((member) => member._id)
+    })
 
     teamRecords.push({ team, track, members, preliminaryScore, preliminaryRank, isFinalist })
   }
@@ -2111,17 +2116,17 @@ const seedSampleData = async () => {
     metadata: { eventId: event._id }
   })
 
-  const seedMediaStoragePath = `events/${event._id}/users/${coordinatorUser._id}/seed-seal-fall-2025-awards.jpg`
-  const seedMedia = await upsertOne(Media, { storagePath: seedMediaStoragePath }, {
+  const seedMediaStoragePath = 'samples/landscapes/beach-boat'
+  const seedMedia = await upsertOne(Media, { title: 'SEAL Hackathon Fall 2025 award ceremony' }, {
     eventId: event._id,
     uploadedBy: coordinatorUser._id,
     title: 'SEAL Hackathon Fall 2025 award ceremony',
     description: 'Award ceremony gallery item for the seeded event.',
     mediaType: 'IMAGE',
-    storageProvider: 'SUPABASE',
+    storageProvider: 'CLOUDINARY',
     bucketName: 'event-media',
     storagePath: seedMediaStoragePath,
-    fileUrl: `https://example.supabase.co/storage/v1/object/event-media/${seedMediaStoragePath}`,
+    fileUrl: 'https://res.cloudinary.com/dlpuoczic/image/upload/v1769832930/samples/landscapes/beach-boat.jpg',
     originalFileName: 'seal-fall-2025-awards.jpg',
     mimeType: 'image/jpeg',
     fileSize: 1024,
@@ -2176,8 +2181,9 @@ const seedSampleData = async () => {
   })
 
   await Promise.all([
-    ['media.storage_provider', 'SUPABASE'],
+    ['media.storage_provider', 'CLOUDINARY'],
     ['media.supabase_bucket', 'event-media'],
+    ['media.cloudinary_folder', 'event-media'],
     ['media.bucket_visibility', 'private'],
     ['media.max_image_size_mb', 10],
     ['media.max_video_size_mb', 200],

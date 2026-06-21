@@ -380,7 +380,7 @@ components:
           enum: [NOT_GRANTED, GRANTED, REVOKED]
         status:
           type: string
-          enum: [INVITED, REGISTERED, ACTIVE, WITHDRAWN]
+          enum: [INVITED, ACTIVE, WITHDRAWN]
     TeamCreateRequest:
       type: object
       description: Create a team and optionally seed invitation emails in the same request.
@@ -1562,7 +1562,7 @@ paths:
               chapterName: SE1701
               teamRole: MEMBER
               githubAccessStatus: NOT_GRANTED
-              status: REGISTERED
+              status: INVITED
       responses:
         '201':
           description: Participant created

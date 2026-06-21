@@ -36,8 +36,8 @@ const participantSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['INVITED', 'REGISTERED', 'ACTIVE', 'WITHDRAWN'],
-      default: 'REGISTERED'
+      enum: ['INVITED', 'ACTIVE', 'WITHDRAWN'],
+      default: 'INVITED'
     },
     joinedAt: { type: Date }
   },

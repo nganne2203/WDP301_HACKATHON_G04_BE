@@ -1,3 +1,5 @@
+import crypto from 'node:crypto'
+
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 
@@ -27,6 +29,10 @@ const getStorageError = (data, fallback) => {
   return data.message || data.error || fallback
 }
 
+const createBadRequest = (message) => {
+  return new ApiError(ERROR_CODES.BAD_REQUEST, [message])
+}
+
 export const createSupabaseStorageClient = ({ fetchImpl = globalThis.fetch } = {}) => {
   if (!fetchImpl) {
     throw new Error('Fetch API is not available in this Node.js runtime')
@@ -45,9 +51,7 @@ export const createSupabaseStorageClient = ({ fetchImpl = globalThis.fetch } = {
 
     const data = await parseResponseBody(response)
     if (!response.ok) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [
-        `Supabase Storage error (${response.status}): ${getStorageError(data, response.statusText)}`
-      ])
+      throw createBadRequest(`Supabase Storage error (${response.status}): ${getStorageError(data, response.statusText)}`)
     }
 
     return { data, status: response.status }
@@ -64,7 +68,8 @@ export const createSupabaseStorageClient = ({ fetchImpl = globalThis.fetch } = {
     })
 
     return {
-      fileUrl: `${trimTrailingSlash(supabaseUrl)}/storage/v1/object/${encodeURIComponent(bucket)}/${encodeStoragePath(storagePath)}`
+      fileUrl: `${trimTrailingSlash(supabaseUrl)}/storage/v1/object/${encodeURIComponent(bucket)}/${encodeStoragePath(storagePath)}`,
+      storagePath
     }
   }
 
@@ -80,7 +85,7 @@ export const createSupabaseStorageClient = ({ fetchImpl = globalThis.fetch } = {
 
     const signedPath = data?.signedURL || data?.signedUrl || data?.url
     if (!signedPath) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Supabase did not return a signed URL'])
+      throw createBadRequest('Supabase did not return a signed URL')
     }
 
     const signedUrl = String(signedPath).startsWith('http')
@@ -111,4 +116,132 @@ export const createSupabaseStorageClient = ({ fetchImpl = globalThis.fetch } = {
   }
 }
 
+const CLOUDINARY_RESOURCE_TYPE_MAP = {
+  IMAGE: 'image',
+  VIDEO: 'video',
+  DOCUMENT: 'raw'
+}
+
+const createCloudinarySignature = (params, apiSecret) => {
+  const payload = Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&')
+
+  return crypto
+    .createHash('sha1')
+    .update(`${payload}${apiSecret}`)
+    .digest('hex')
+}
+
+export const createCloudinaryStorageClient = ({ fetchImpl = globalThis.fetch } = {}) => {
+  if (!fetchImpl) {
+    throw new Error('Fetch API is not available in this Node.js runtime')
+  }
+
+  const uploadObject = async ({
+    cloudName,
+    apiKey,
+    apiSecret,
+    folder,
+    storagePath,
+    buffer,
+    mimeType,
+    mediaType
+  }) => {
+    const timestamp = Math.floor(Date.now() / 1000)
+    const publicId = storagePath.replace(/\.[^.]+$/, '')
+    const resourceType = CLOUDINARY_RESOURCE_TYPE_MAP[mediaType] || 'raw'
+    const paramsToSign = {
+      folder,
+      public_id: publicId,
+      timestamp
+    }
+    const signature = createCloudinarySignature(paramsToSign, apiSecret)
+    const form = new FormData()
+
+    form.set('file', new Blob([buffer], { type: mimeType }))
+    form.set('api_key', apiKey)
+    form.set('timestamp', String(timestamp))
+    form.set('signature', signature)
+    form.set('public_id', publicId)
+    if (folder) form.set('folder', folder)
+
+    const response = await fetchImpl(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
+      method: 'POST',
+      body: form
+    })
+
+    const data = await parseResponseBody(response)
+    if (!response.ok) {
+      throw createBadRequest(`Cloudinary upload error (${response.status}): ${getStorageError(data, response.statusText)}`)
+    }
+
+    if (!data?.secure_url || !data?.public_id) {
+      throw createBadRequest('Cloudinary did not return an uploaded file URL')
+    }
+
+    return {
+      fileUrl: data.secure_url,
+      storagePath: data.public_id,
+      resourceType: data.resource_type || resourceType
+    }
+  }
+
+  const createSignedUrl = async ({ fileUrl, expiresIn }) => {
+    if (!fileUrl) {
+      throw createBadRequest('Cloudinary file URL is not available for this media item')
+    }
+
+    return {
+      signedUrl: fileUrl,
+      expiresIn
+    }
+  }
+
+  const deleteObject = async ({
+    cloudName,
+    apiKey,
+    apiSecret,
+    storagePath,
+    mediaType
+  }) => {
+    const timestamp = Math.floor(Date.now() / 1000)
+    const resourceType = CLOUDINARY_RESOURCE_TYPE_MAP[mediaType] || 'raw'
+    const paramsToSign = {
+      invalidate: true,
+      public_id: storagePath,
+      timestamp
+    }
+    const signature = createCloudinarySignature(paramsToSign, apiSecret)
+    const form = new FormData()
+
+    form.set('public_id', storagePath)
+    form.set('api_key', apiKey)
+    form.set('timestamp', String(timestamp))
+    form.set('signature', signature)
+    form.set('invalidate', 'true')
+
+    const response = await fetchImpl(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/destroy`, {
+      method: 'POST',
+      body: form
+    })
+
+    const data = await parseResponseBody(response)
+    if (!response.ok) {
+      throw createBadRequest(`Cloudinary delete error (${response.status}): ${getStorageError(data, response.statusText)}`)
+    }
+
+    return data
+  }
+
+  return {
+    uploadObject,
+    createSignedUrl,
+    deleteObject
+  }
+}
+
 export const SUPABASE_STORAGE = createSupabaseStorageClient()
+export const CLOUDINARY_STORAGE = createCloudinaryStorageClient()
