@@ -21,7 +21,7 @@ const populateRoles = [
 ]
 
 const teamPopulate = [
-  { path: 'eventId', select: 'title status registrationStart registrationEnd minTeamMembers maxTeamMembers maxTeams totalFinalistSlots competitionConfig' },
+  { path: 'eventId', select: 'title status registrationStart registrationEnd registrationClosedAt registrationCloseReason minTeamMembers maxTeamMembers maxTeams totalFinalistSlots competitionConfig' },
   { path: 'trackId', select: 'code name type maxTeams status' },
   { path: 'leaderId', select: 'email fullName status roles', populate: populateRoles[0] },
   { path: 'memberIds', select: 'email fullName status roles', populate: populateRoles[0] },
@@ -38,6 +38,16 @@ const createSession = async () => {
 
 const findEventById = async (id, { session } = {}) => {
   return await withSession(Event.findById(id), session)
+}
+
+const updateEventById = async (id, data, { session } = {}) => {
+  return await withSession(
+    Event.findByIdAndUpdate(id, data, {
+      new: true,
+      runValidators: true
+    }),
+    session
+  )
 }
 
 const findTracksByEvent = async (eventId, { session } = {}) => {
@@ -226,6 +236,7 @@ const updateInvitations = async (filter, data, { session } = {}) => {
 export const TEAM_REPOSITORY = {
   createSession,
   findEventById,
+  updateEventById,
   findTracksByEvent,
   findTrackById,
   countTeams,

@@ -1,7 +1,7 @@
 import Joi from 'joi'
 
 const objectId = Joi.string().hex().length(24)
-const eventStatus = Joi.string().trim().uppercase().valid('DRAFT', 'OPEN_REGISTRATION', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED')
+const eventStatus = Joi.string().trim().uppercase().valid('DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED')
 const season = Joi.string().trim().uppercase().valid('SPRING', 'SUMMER', 'FALL')
 const rankingScope = Joi.string().trim().uppercase().valid('TEAM', 'CHAPTER', 'INDIVIDUAL')
 const finalistSelectionMode = Joi.string().trim().uppercase().valid('FIXED_PER_BOARD', 'TOP_PER_BOARD_WITH_WILDCARD', 'OVERALL_SCORE', 'CUSTOM')
