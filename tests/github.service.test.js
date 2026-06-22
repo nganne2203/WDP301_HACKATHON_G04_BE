@@ -110,6 +110,38 @@ test('GitHub config is stored safely and does not expose token', async () => {
   assert.equal(repository.configs.get(secondEventConfigKey).value.organizationName, 'seal-org-event-2')
 })
 
+test('n8n dispatch token resolver prefers stored event token over env fallback', async () => {
+  const repository = createRepository()
+  const originalGithubToken = env.github.token
+  env.github.token = 'env-fallback-token'
+
+  await repository.upsertConfig({
+    key: eventConfigKey,
+    value: {
+      eventId: EVENT_ID,
+      organizationName: 'seal-org',
+      ownerUsername: 'owner-user',
+      enabled: true,
+      tokenEncrypted: 'encrypted:stored-event-token'
+    },
+    isEncrypted: true
+  })
+
+  try {
+    const service = createGithubService({
+      repository,
+      encryption: createEncryption(),
+      githubClient: async () => ({ data: {}, status: 200 }),
+      logger: createLogger()
+    })
+
+    assert.equal(await service.getTokenForN8nDispatch({ eventId: EVENT_ID }), 'stored-event-token')
+    assert.equal(await service.getTokenForN8nDispatch({ eventId: SECOND_EVENT_ID }), 'env-fallback-token')
+  } finally {
+    env.github.token = originalGithubToken
+  }
+})
+
 test('createRepository calls GitHub org repos API with auto_init', async () => {
   const repository = createRepository()
   await repository.upsertConfig({

@@ -6,7 +6,7 @@ const eligibilityStatus = Joi.string().trim().uppercase().valid('PENDING', 'ELIG
 const activity = Joi.string().trim().uppercase().valid('WORKSHOP', 'OPENING', 'TEAM_MEETING', 'CODING', 'PRESENTATION', 'CLOSING')
 const checkInStatus = Joi.string().trim().uppercase().valid('NOT_CHECKED_IN', 'CHECKED_IN')
 const githubAccessStatus = Joi.string().trim().uppercase().valid('NOT_GRANTED', 'GRANTED', 'REVOKED')
-const participantStatus = Joi.string().trim().uppercase().valid('INVITED', 'REGISTERED', 'ACTIVE', 'WITHDRAWN')
+const participantStatus = Joi.string().trim().uppercase().valid('INVITED', 'ACTIVE', 'WITHDRAWN')
 
 const idParam = Joi.object({
   id: objectId.required()
@@ -40,7 +40,7 @@ const createParticipant = {
     attendedActivities: Joi.array().items(activity).unique().default([]),
     checkInStatus: checkInStatus.default('NOT_CHECKED_IN'),
     githubAccessStatus: githubAccessStatus.default('NOT_GRANTED'),
-    status: participantStatus.default('REGISTERED'),
+    status: participantStatus.default('INVITED'),
     joinedAt: Joi.date().iso()
   })
 }

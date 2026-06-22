@@ -21,11 +21,11 @@ const populateRoles = [
 ]
 
 const teamPopulate = [
-  { path: 'eventId', select: 'title status registrationStart registrationEnd minTeamMembers maxTeamMembers maxTeams totalFinalistSlots competitionConfig' },
+  { path: 'eventId', select: 'title status registrationStart registrationEnd registrationClosedAt registrationCloseReason minTeamMembers maxTeamMembers maxTeams totalFinalistSlots competitionConfig' },
   { path: 'trackId', select: 'code name type maxTeams status' },
-  { path: 'leaderId', select: 'email fullName status roles', populate: populateRoles[0] },
-  { path: 'memberIds', select: 'email fullName status roles', populate: populateRoles[0] },
-  { path: 'mentorIds', select: 'email fullName status roles', populate: populateRoles[0] }
+  { path: 'leaderId', select: 'email fullName githubUsername status roles', populate: populateRoles[0] },
+  { path: 'memberIds', select: 'email fullName githubUsername status roles', populate: populateRoles[0] },
+  { path: 'mentorIds', select: 'email fullName githubUsername status roles', populate: populateRoles[0] }
 ]
 
 const withSession = (query, session) => {
@@ -38,6 +38,16 @@ const createSession = async () => {
 
 const findEventById = async (id, { session } = {}) => {
   return await withSession(Event.findById(id), session)
+}
+
+const updateEventById = async (id, data, { session } = {}) => {
+  return await withSession(
+    Event.findByIdAndUpdate(id, data, {
+      new: true,
+      runValidators: true
+    }),
+    session
+  )
 }
 
 const findTracksByEvent = async (eventId, { session } = {}) => {
@@ -92,7 +102,7 @@ const findTeamForUserInEvent = async ({ eventId, userId }, { session } = {}) => 
     Participant.findOne({
       eventId,
       userId,
-      status: { $in: ['INVITED', 'REGISTERED', 'ACTIVE'] }
+      status: { $in: ['INVITED', 'ACTIVE'] }
     }),
     session
   )
@@ -122,7 +132,7 @@ const updateTeamById = async (id, data, { session } = {}) => {
 
 const findParticipantsByTeam = async (teamId, { session } = {}) => {
   return await withSession(
-    Participant.find({ teamId, status: { $in: ['REGISTERED', 'ACTIVE'] } })
+    Participant.find({ teamId, status: { $in: ['INVITED', 'ACTIVE'] } })
       .populate({ path: 'userId', select: 'email fullName status roles', populate: populateRoles[0] })
       .sort({ teamRole: -1, createdAt: 1 }),
     session
@@ -160,6 +170,16 @@ const createUser = async (data, { session } = {}) => {
 
   const user = await User.create(data)
   return await findUserById(user._id)
+}
+
+const updateUserById = async (id, data, { session } = {}) => {
+  return await withSession(
+    User.findByIdAndUpdate(id, data, {
+      new: true,
+      runValidators: true
+    }).populate(populateRoles),
+    session
+  )
 }
 
 const findRoleByName = async (name, { session } = {}) => {
@@ -226,6 +246,7 @@ const updateInvitations = async (filter, data, { session } = {}) => {
 export const TEAM_REPOSITORY = {
   createSession,
   findEventById,
+  updateEventById,
   findTracksByEvent,
   findTrackById,
   countTeams,
@@ -241,6 +262,7 @@ export const TEAM_REPOSITORY = {
   findUserById,
   findUserByEmail,
   createUser,
+  updateUserById,
   findRoleByName,
   createInvitation,
   findInvitationByTokenHash,

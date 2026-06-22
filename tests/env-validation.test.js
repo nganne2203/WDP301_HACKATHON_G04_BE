@@ -73,3 +73,44 @@ test('environment validation returns warnings in non-strict mode', () => {
   assert.match(result.warnings[0], /REDIS_URL is not configured/)
   assert.match(result.warnings[1], /APP_BASE_URL or SERVER_PUBLIC_URL is not configured/)
 })
+
+test('environment validation requires base64 32-byte GitHub token AES key when n8n is enabled', () => {
+  assert.throws(
+    () => validateRuntimeEnvironment({
+      runtime: 'api',
+      config: createConfig({
+        n8n: {
+          enabled: true,
+          perPushWebhookUrl: 'https://n8n.test/per-push',
+          aggregateWebhookUrl: 'https://n8n.test/aggregate',
+          callbackSecret: 'secret',
+          dispatchMaxRetries: 1
+        },
+        security: {
+          tokenEncryptionSecret: 'encryption-secret-123',
+          githubTokenAesKey: 'not-a-32-byte-key'
+        }
+      })
+    }),
+    /GITHUB_TOKEN_AES_KEY must be a base64 encoded 32-byte key/
+  )
+
+  const result = validateRuntimeEnvironment({
+    runtime: 'api',
+    config: createConfig({
+      n8n: {
+        enabled: true,
+        perPushWebhookUrl: 'https://n8n.test/per-push',
+        aggregateWebhookUrl: 'https://n8n.test/aggregate',
+        callbackSecret: 'secret',
+        dispatchMaxRetries: 1
+      },
+      security: {
+        tokenEncryptionSecret: 'encryption-secret-123',
+        githubTokenAesKey: Buffer.alloc(32, 3).toString('base64')
+      }
+    })
+  })
+
+  assert.equal(result.errors.length, 0)
+})

@@ -74,11 +74,14 @@ export const env = {
   n8n: {
     enabled: parseBoolean(process.env.N8N_ENABLED, false),
     perPushWebhookUrl: process.env.N8N_PER_PUSH_WEBHOOK_URL,
-    teamAggregateWebhookUrl: process.env.N8N_TEAM_AGGREGATE_WEBHOOK_URL,
+    aggregateWebhookUrl: process.env.N8N_AGGREGATE_WEBHOOK_URL || process.env.N8N_TEAM_AGGREGATE_WEBHOOK_URL,
+    teamAggregateWebhookUrl: process.env.N8N_AGGREGATE_WEBHOOK_URL || process.env.N8N_TEAM_AGGREGATE_WEBHOOK_URL,
     callbackSecret: process.env.N8N_CALLBACK_SECRET,
-    dispatchMaxRetries: parseNumber(process.env.N8N_DISPATCH_MAX_RETRIES) ?? 2
+    dispatchMaxRetries: parseNumber(process.env.N8N_DISPATCH_MAX_RETRIES) ?? 2,
+    dispatchTimeoutMs: parseNumber(process.env.N8N_DISPATCH_TIMEOUT_MS) ?? 15000
   },
   github: {
+    token: process.env.GITHUB_TOKEN,
     webhookSecret: process.env.GITHUB_WEBHOOK_SECRET,
     webhookCallbackUrl: process.env.GITHUB_WEBHOOK_CALLBACK_URL,
     webhookEvents: process.env.GITHUB_WEBHOOK_EVENTS?.split(',').map(value => value.trim()).filter(Boolean) || ['push']
@@ -90,6 +93,7 @@ export const env = {
     concurrency: parseNumber(process.env.WORKER_CONCURRENCY) || 3
   },
   security: {
-    tokenEncryptionSecret: process.env.TOKEN_ENCRYPTION_SECRET
+    tokenEncryptionSecret: process.env.GITHUB_TOKEN_DECRYPTION_KEY,
+    githubTokenAesKey: process.env.GITHUB_TOKEN_AES_KEY
   }
 }

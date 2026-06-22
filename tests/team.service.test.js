@@ -293,6 +293,40 @@ test('createTeam enforces event max team size from invited members', async () =>
   )
 })
 
+test('createTeam auto-closes registration when confirmed team capacity is already reached', async () => {
+  const event = {
+    _id: 'event-1',
+    title: 'SEAL Hackathon',
+    status: 'OPEN_REGISTRATION',
+    minTeamMembers: 3,
+    maxTeamMembers: 5,
+    maxTeams: 2
+  }
+  const updates = []
+  const repository = {
+    createSession,
+    findEventById: async () => event,
+    countTeams: async () => 2,
+    updateEventById: async (id, data) => {
+      updates.push({ id, data })
+      return { ...event, ...data, _id: id }
+    }
+  }
+
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.createTeam({ eventId: 'event-1', name: 'Late Team' }, { id: 'leader-1' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Event registration is not open')
+  )
+
+  assert.equal(updates.length, 1)
+  assert.equal(updates[0].data.status, 'REGISTRATION_CLOSED')
+  assert.equal(updates[0].data.registrationCloseReason, 'CAPACITY_REACHED')
+})
+
 test('updateTeamStatus confirms a team and auto-assigns the next available placement slot', async () => {
   const event = {
     _id: '000000000000000000000501',

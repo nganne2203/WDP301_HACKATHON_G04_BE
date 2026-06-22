@@ -7,7 +7,7 @@ import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 
-const EVENT_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED']
+const EVENT_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED']
 const RANKING_SCOPES = ['TEAM', 'CHAPTER', 'INDIVIDUAL']
 const FINALIST_SELECTION_MODES = ['FIXED_PER_BOARD', 'TOP_PER_BOARD_WITH_WILDCARD', 'OVERALL_SCORE', 'CUSTOM']
 const EVENT_FIELDS = [
@@ -225,6 +225,8 @@ const normalizeEvent = (event) => {
     theme: plainEvent.theme,
     registrationStart: plainEvent.registrationStart,
     registrationEnd: plainEvent.registrationEnd,
+    registrationClosedAt: plainEvent.registrationClosedAt,
+    registrationCloseReason: plainEvent.registrationCloseReason,
     startDate: plainEvent.startDate,
     endDate: plainEvent.endDate,
     maxTeams: plainEvent.maxTeams,
@@ -296,6 +298,12 @@ const createEventService = ({
 
     const event = await repository.create({
       ...normalizedPayload,
+      ...(normalizedPayload.status === 'OPEN_REGISTRATION'
+        ? {
+          registrationClosedAt: null,
+          registrationCloseReason: null
+        }
+        : {}),
       createdBy: actor.id
     })
 
@@ -320,6 +328,18 @@ const createEventService = ({
     ensureCompetitionRule(competitionConfig)
 
     const normalizedPayload = syncLegacyEventFields(safePayload, competitionConfig, existingEvent)
+    if (normalizedPayload.status === 'OPEN_REGISTRATION') {
+      normalizedPayload.registrationClosedAt = null
+      normalizedPayload.registrationCloseReason = null
+    } else if (
+      normalizedPayload.status === 'REGISTRATION_CLOSED' &&
+      !existingEvent.registrationClosedAt &&
+      !normalizedPayload.registrationClosedAt
+    ) {
+      normalizedPayload.registrationClosedAt = new Date()
+      normalizedPayload.registrationCloseReason = existingEvent.registrationCloseReason || 'MANUALLY_CLOSED'
+    }
+
     const event = await repository.updateById(id, normalizedPayload)
     return normalizeEvent(event)
   }
@@ -330,7 +350,16 @@ const createEventService = ({
     }
 
     ensureObjectId(id)
-    const event = await repository.updateById(id, { status })
+    const updatePayload = { status }
+    if (status === 'OPEN_REGISTRATION') {
+      updatePayload.registrationClosedAt = null
+      updatePayload.registrationCloseReason = null
+    } else if (status === 'REGISTRATION_CLOSED') {
+      updatePayload.registrationClosedAt = new Date()
+      updatePayload.registrationCloseReason = 'MANUALLY_CLOSED'
+    }
+
+    const event = await repository.updateById(id, updatePayload)
     if (!event) {
       throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
     }

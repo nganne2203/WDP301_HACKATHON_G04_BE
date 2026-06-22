@@ -1008,7 +1008,8 @@ JWT_SECRET=your_jwt_secret
 JWT_EXPIRES_IN=7d
 REFRESH_TOKEN_SECRET=your_refresh_secret
 REFRESH_TOKEN_EXPIRES_IN=30d
-TOKEN_ENCRYPTION_SECRET=your_32_byte_or_longer_secret
+GITHUB_TOKEN_DECRYPTION_KEY=your_legacy_stored_token_secret
+GITHUB_TOKEN_AES_KEY=base64_encoded_32_byte_key_for_n8n_dispatch
 
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
@@ -1024,9 +1025,10 @@ GITHUB_API_URL=https://api.github.com
 
 N8N_ENABLED=true
 N8N_PER_PUSH_WEBHOOK_URL=https://n8n.example.com/webhook/per-push-audit
-N8N_TEAM_AGGREGATE_WEBHOOK_URL=https://n8n.example.com/webhook/team-aggregate-audit
+N8N_AGGREGATE_WEBHOOK_URL=https://n8n.example.com/webhook/team-aggregate-audit
 N8N_CALLBACK_SECRET=replace_me_n8n_callback_secret
 N8N_DISPATCH_MAX_RETRIES=2
+N8N_DISPATCH_TIMEOUT_MS=15000
 ```
 
 Important:

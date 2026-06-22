@@ -85,6 +85,7 @@ const normalizeUser = (user) => {
     id: user._id?.toString() || user.id,
     fullName: user.fullName,
     email: user.email,
+    githubUsername: user.githubUsername,
     status: user.status,
     studentId: user.studentId,
     studentType: user.studentType,

@@ -259,6 +259,7 @@ const enrichCanonicalAggregateOutput = ({ reviewKind, normalizedOutput }) => {
 export const createAiReviewService = ({
   repository = AI_REVIEW_REPOSITORY,
   queueService = QUEUE_SERVICE,
+  n8nService = N8N_SERVICE,
   scoreSheetRepository = {
     async touch() {}
   },
@@ -392,18 +393,20 @@ export const createAiReviewService = ({
     const aiReviewId = aiReview._id?.toString?.() || aiReview.id
 
     if (aiReview.reviewKind === 'PER_PUSH_TECHNICAL_AUDIT') {
-      await N8N_SERVICE.triggerPerPushAudit({
+      await n8nService.triggerPerPushAudit({
         reviewContext: promptInput,
         aiReviewId,
-        callbackUrl
+        callbackUrl,
+        eventId: aiReview.eventId?._id?.toString?.() || aiReview.eventId?.toString?.() || aiReview.eventId
       })
       return
     }
 
-    await N8N_SERVICE.triggerTeamAggregateAudit({
+    await n8nService.triggerTeamAggregateAudit({
       reviewContext: promptInput,
       aiReviewId,
-      callbackUrl
+      callbackUrl,
+      eventId: aiReview.eventId?._id?.toString?.() || aiReview.eventId?.toString?.() || aiReview.eventId
     })
   }
 
