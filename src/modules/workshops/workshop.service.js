@@ -133,7 +133,8 @@ const normalizeUserSummary = (user) => {
   return {
     id: user._id?.toString() || user.id,
     fullName: user.fullName,
-    email: user.email
+    email: user.email,
+    githubUsername: user.githubUsername
   }
 }
 

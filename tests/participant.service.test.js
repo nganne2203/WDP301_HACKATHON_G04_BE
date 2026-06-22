@@ -31,7 +31,7 @@ const createRepository = () => {
         attendedActivities: [],
         checkInStatus: 'NOT_CHECKED_IN',
         githubAccessStatus: 'NOT_GRANTED',
-        status: 'REGISTERED',
+        status: 'INVITED',
         ...data,
         _id: id
       }
@@ -71,7 +71,7 @@ test('createParticipant lets a user register themselves for an event', async () 
   assert.equal(participant.userId, '000000000000000000000301')
   assert.equal(participant.eventId, '000000000000000000000201')
   assert.equal(participant.consentMediaUse, true)
-  assert.equal(participant.status, 'REGISTERED')
+  assert.equal(participant.status, 'INVITED')
 })
 
 test('createParticipant rejects registering another user without approver permission', async () => {

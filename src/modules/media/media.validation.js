@@ -101,9 +101,14 @@ const statistics = {
 
 const config = {
   body: Joi.object({
-    supabaseUrl: Joi.string().trim().uri().required(),
+    provider: Joi.string().trim().uppercase().valid('SUPABASE', 'CLOUDINARY').default('CLOUDINARY'),
+    supabaseUrl: Joi.string().trim().uri().allow('', null),
     serviceRoleKey: Joi.string().trim().allow('', null),
     bucket: Joi.string().trim().min(1).max(120).default('event-media'),
+    cloudinaryCloudName: Joi.string().trim().allow('', null),
+    cloudinaryApiKey: Joi.string().trim().allow('', null),
+    cloudinaryApiSecret: Joi.string().trim().allow('', null),
+    cloudinaryFolder: Joi.string().trim().min(1).max(120).default('event-media'),
     visibility: Joi.string().trim().valid('private').default('private'),
     maxImageSizeMb: Joi.number().integer().min(1).max(100).default(10),
     maxVideoSizeMb: Joi.number().integer().min(1).max(500).default(200),
@@ -111,6 +116,23 @@ const config = {
     allowedImageTypes: Joi.array().items(Joi.string().trim().lowercase()).min(1).default(['jpg', 'jpeg', 'png', 'webp']),
     allowedVideoTypes: Joi.array().items(Joi.string().trim().lowercase()).min(1).default(['mp4', 'mov', 'webm']),
     allowedDocumentTypes: Joi.array().items(Joi.string().trim().lowercase()).min(1).default(['pdf', 'doc', 'docx', 'ppt', 'pptx'])
+  }).custom((value, helpers) => {
+    if (value.provider === 'SUPABASE' && !value.supabaseUrl) {
+      return helpers.error('any.custom', { message: 'supabaseUrl is required when provider is SUPABASE' })
+    }
+
+    if (value.provider === 'CLOUDINARY') {
+      if (!value.cloudinaryCloudName) {
+        return helpers.error('any.custom', { message: 'cloudinaryCloudName is required when provider is CLOUDINARY' })
+      }
+      if (!value.cloudinaryApiKey) {
+        return helpers.error('any.custom', { message: 'cloudinaryApiKey is required when provider is CLOUDINARY' })
+      }
+    }
+
+    return value
+  }, 'media storage provider validation').messages({
+    'any.custom': '{{#message}}'
   })
 }
 

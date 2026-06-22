@@ -38,6 +38,12 @@ const eventSchema = new Schema(
     theme: { type: String, trim: true },
     registrationStart: { type: Date },
     registrationEnd: { type: Date },
+    registrationClosedAt: { type: Date },
+    registrationCloseReason: {
+      type: String,
+      enum: ['CAPACITY_REACHED', 'REGISTRATION_ENDED', 'MANUALLY_CLOSED'],
+      trim: true
+    },
     startDate: { type: Date },
     endDate: { type: Date },
     maxTeams: { type: Number, default: 30 },
@@ -51,7 +57,7 @@ const eventSchema = new Schema(
     totalFinalistSlots: { type: Number, default: 10 },
     status: {
       type: String,
-      enum: ['DRAFT', 'OPEN_REGISTRATION', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED'],
+      enum: ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED'],
       default: 'DRAFT'
     },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' }
