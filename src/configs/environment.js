@@ -62,6 +62,9 @@ export const env = {
     expiresHours: parseNumber(process.env.TEAM_INVITATION_EXPIRES_HOURS) || 72,
     temporaryPassword: process.env.TEAM_INVITATION_TEMP_PASSWORD || 'test'
   },
+  checkInQr: {
+    expiresMinutes: parseNumber(process.env.CHECK_IN_QR_EXPIRES_MINUTES) || 5
+  },
   otp: {
     expiresIn: process.env.OTP_EXPIRES_IN
   },

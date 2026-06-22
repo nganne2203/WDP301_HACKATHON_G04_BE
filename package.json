@@ -49,6 +49,7 @@
     "mongoose": "^8.5.1",
     "morgan": "^1.10.0",
     "nodemailer": "^8.0.10",
+    "qrcode": "^1.5.4",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
   },

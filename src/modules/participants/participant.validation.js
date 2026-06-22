@@ -27,6 +27,12 @@ const listParticipants = {
   })
 }
 
+const getMyParticipant = {
+  query: Joi.object({
+    eventId: objectId.required()
+  })
+}
+
 const createParticipant = {
   body: Joi.object({
     eventId: objectId.required(),
@@ -70,6 +76,18 @@ const updateCheckIn = {
   })
 }
 
+const generateCheckInQr = {
+  body: Joi.object({
+    eventId: objectId.required()
+  })
+}
+
+const scanCheckInQr = {
+  body: Joi.object({
+    token: Joi.string().trim().min(32).max(512).required()
+  })
+}
+
 const updateAttendance = {
   params: idParam,
   body: Joi.object({
@@ -90,9 +108,12 @@ const getParticipantById = {
 
 export const PARTICIPANT_VALIDATION = {
   listParticipants,
+  getMyParticipant,
   createParticipant,
   updateParticipant,
   updateCheckIn,
+  generateCheckInQr,
+  scanCheckInQr,
   updateAttendance,
   updateGithubAccess,
   getParticipantById
