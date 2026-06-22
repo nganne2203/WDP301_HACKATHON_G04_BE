@@ -79,6 +79,24 @@ export const ERROR_CODES = {
     message: 'Token đã hết hạn.'
   },
 
+  INVALID_CHECK_IN_QR: {
+    code: 'INVALID_CHECK_IN_QR',
+    statusCode: StatusCodes.BAD_REQUEST,
+    message: 'Mã QR check-in không hợp lệ.'
+  },
+
+  CHECK_IN_QR_EXPIRED: {
+    code: 'CHECK_IN_QR_EXPIRED',
+    statusCode: StatusCodes.GONE,
+    message: 'Mã QR check-in đã hết hạn.'
+  },
+
+  PARTICIPANT_ALREADY_CHECKED_IN: {
+    code: 'PARTICIPANT_ALREADY_CHECKED_IN',
+    statusCode: StatusCodes.CONFLICT,
+    message: 'Người tham gia đã check-in.'
+  },
+
   CONFLICT: {
     code: 'CONFLICT',
     statusCode: StatusCodes.CONFLICT,

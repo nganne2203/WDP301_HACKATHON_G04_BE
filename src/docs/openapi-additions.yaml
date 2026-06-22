@@ -1601,6 +1601,23 @@ paths:
       responses:
         '200':
           description: Participant updated
+  /api/participants/me:
+    get:
+      summary: Get the authenticated user's participant registration for an event
+      tags: [Participants]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Current participant returned
+        '404':
+          description: User is not registered for the event
   /api/participants/{id}/check-in:
     patch:
       summary: Update participant check-in status
@@ -1627,6 +1644,49 @@ paths:
       responses:
         '200':
           description: Check-in status updated
+  /api/participants/check-in/qr:
+    post:
+      summary: Generate a short-lived event check-in QR (coordinator/admin)
+      tags: [Participants]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId]
+              properties:
+                eventId:
+                  type: string
+      responses:
+        '200':
+          description: QR image, payload, and expiration returned
+  /api/participants/check-in/scan:
+    post:
+      summary: Participant scans an event QR to check in themselves
+      tags: [Participants]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  example: wdp301-checkin:opaque-token
+      responses:
+        '200':
+          description: Participant checked in
+        '410':
+          description: QR expired
+        '409':
+          description: Participant already checked in
   /api/participants/{id}/attendance:
     patch:
       summary: Update participant attendance activities
