@@ -44,6 +44,13 @@ router.get(
 )
 
 router.get(
+  '/:id/static-analysis',
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  validationHandlingMiddleware(REPOSITORY_VALIDATION.listRepositoryCommits),
+  REPOSITORY_CONTROLLER.listStaticAnalysis
+)
+
+router.get(
   '/:id/ai-reviews',
   permissionMiddleware(PERMISSIONS.AI_REVIEW_VIEW),
   validationHandlingMiddleware(AI_REVIEW_VALIDATION.repositoryAiReviews),

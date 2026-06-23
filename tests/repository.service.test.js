@@ -153,3 +153,41 @@ test('listRepositoryCommits returns stored commit history for a repository', asy
   assert.equal(result.commits.length, 1)
   assert.equal(result.commits[0].commitSha, 'abc123')
 })
+
+test('listStaticAnalysis returns static analysis results for a repository', async () => {
+  const repository = {
+    count: async () => 1,
+    findAll: async () => [],
+    findById: async (id) => id === '000000000000000000000111'
+      ? { _id: id, repositoryFullName: 'seal-org/team-alpha', githubOwner: 'seal-org', githubRepo: 'team-alpha', defaultBranch: 'main' }
+      : null,
+    findByTeamId: async () => null,
+    listCommitsByRepository: async () => [],
+    countCommitsByRepository: async () => 0,
+    listStaticAnalysisByRepository: async () => [{
+      _id: '000000000000000000000311',
+      repositoryId: '000000000000000000000111',
+      commitSha: 'abc123',
+      source: 'COMMAND_HOOK_ESLINT',
+      status: 'COMPLETED',
+      errorCount: 2,
+      warningCount: 5,
+      findings: []
+    }],
+    countStaticAnalysisByRepository: async () => 1,
+    create: async () => null,
+    updateById: async () => null
+  }
+
+  const service = createRepositoryService({ repository })
+  const result = await service.listStaticAnalysis({
+    repositoryId: '000000000000000000000111',
+    query: { page: 1, limit: 10 }
+  })
+
+  assert.equal(result.repository.repositoryFullName, 'seal-org/team-alpha')
+  assert.equal(result.analysisResults.length, 1)
+  assert.equal(result.analysisResults[0].commitSha, 'abc123')
+  assert.equal(result.analysisResults[0].errorCount, 2)
+  assert.equal(result.analysisResults[0].warningCount, 5)
+})

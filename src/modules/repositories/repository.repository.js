@@ -1,5 +1,6 @@
 import Repository from '#models/repository.model.js'
 import Commit from '#models/commit.model.js'
+import StaticAnalysisResult from '#models/staticAnalysisResult.model.js'
 
 const repositoryPopulate = [
   { path: 'eventId', select: 'title semester season year status competitionConfig' },
@@ -49,6 +50,17 @@ const countCommitsByRepository = async (repositoryId) => {
   return await Commit.countDocuments({ repositoryId })
 }
 
+const listStaticAnalysisByRepository = async ({ repositoryId, skip = 0, limit = 10 }) => {
+  return await StaticAnalysisResult.find({ repositoryId })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+}
+
+const countStaticAnalysisByRepository = async (repositoryId) => {
+  return await StaticAnalysisResult.countDocuments({ repositoryId })
+}
+
 export const REPOSITORY_REPOSITORY = {
   count,
   create,
@@ -57,5 +69,7 @@ export const REPOSITORY_REPOSITORY = {
   findByTeamId,
   updateById,
   listCommitsByRepository,
-  countCommitsByRepository
+  countCommitsByRepository,
+  listStaticAnalysisByRepository,
+  countStaticAnalysisByRepository
 }
