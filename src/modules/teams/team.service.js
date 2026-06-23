@@ -1022,7 +1022,7 @@ export const createTeamService = ({
   const getMyTeamByEvent = async (eventId, actor = {}) => {
     ensureObjectId(eventId, 'event id')
     const team = await repository.findTeamForUserInEvent({ eventId, userId: actor.id })
-    if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found for this event'])
+    if (!team) return null
 
     return await loadTeamDetail({ repository, team })
   }
