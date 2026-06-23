@@ -737,3 +737,33 @@ test('createTeamAggregateAudit triggers n8n webhook and handleAuditCallback comp
     }
   })
 })
+
+test('handleAuditCallback success path parses object rawResponse and stringifies it for DB', async () => {
+  const { repository, stores, repositoryId } = createRepositoryFixture({
+    impactDecision: { impactLevel: 'HIGH', decision: 'CALL_PER_PUSH_AUDIT' }
+  })
+
+  const pendingReview = await repository.createAiReview({
+    repositoryId,
+    reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
+    status: 'PENDING',
+    commitSha: 'commit-1',
+    requestedBy: 'user-1',
+    requestedAt: new Date()
+  })
+
+  const rawResponseObject = JSON.parse(validAiResponse)
+  const service = createAiReviewService({ repository })
+  const result = await service.handleAuditCallback({
+    aiReviewId: pendingReview._id,
+    status: 'success',
+    rawResponse: rawResponseObject,
+    modelName: 'gemini-1.5-pro',
+    provider: 'google'
+  })
+
+  assert.equal(result.status, 'COMPLETED')
+  const reviewInDb = await repository.findAiReviewById(pendingReview._id)
+  assert.equal(typeof reviewInDb.rawResponse, 'string')
+  assert.equal(JSON.parse(reviewInDb.rawResponse).reviewKind, 'PER_PUSH_TECHNICAL_AUDIT')
+})

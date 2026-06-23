@@ -49,8 +49,6 @@ services:
     init: true
     restart: unless-stopped
     depends_on:
-      mongo:
-        condition: service_healthy
       redis:
         condition: service_healthy
     env_file:
@@ -58,11 +56,11 @@ services:
     environment:
       PORT: 3000
       HOSTNAME: 0.0.0.0
-      MONGODB_URI: ${MONGODB_URI_DOCKER:-mongodb://mongo:27017/seal_db}
+      MONGODB_URI: ${MONGODB_URI}
       REDIS_URL: redis://redis:6379
       APP_BASE_URL: ${APP_BASE_URL_DOCKER:-http://api:3000}
-      N8N_PER_PUSH_WEBHOOK_URL: ${N8N_PER_PUSH_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookperpush/per-push-audit}
-      N8N_AGGREGATE_WEBHOOK_URL: ${N8N_AGGREGATE_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookaggregate/team-aggregate-audit}
+      N8N_PER_PUSH_WEBHOOK_URL: ${N8N_PER_PUSH_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/per-push-audit}
+      N8N_AGGREGATE_WEBHOOK_URL: ${N8N_AGGREGATE_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/team-aggregate-audit}
       GITHUB_WEBHOOK_CALLBACK_URL: ${GITHUB_WEBHOOK_CALLBACK_URL:-}
       READINESS_REQUIRES_REDIS: "true"
       STATIC_ANALYSIS_ESLINT_COMMAND: ${STATIC_ANALYSIS_ESLINT_COMMAND_DOCKER:-}
@@ -91,18 +89,16 @@ services:
     restart: unless-stopped
     command: ["node", "src/worker.js"]
     depends_on:
-      mongo:
-        condition: service_healthy
       redis:
         condition: service_healthy
     env_file:
       - .env
     environment:
-      MONGODB_URI: ${MONGODB_URI_DOCKER:-mongodb://mongo:27017/seal_db}
+      MONGODB_URI: ${MONGODB_URI}
       REDIS_URL: redis://redis:6379
       APP_BASE_URL: ${APP_BASE_URL_DOCKER:-http://api:3000}
-      N8N_PER_PUSH_WEBHOOK_URL: ${N8N_PER_PUSH_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookperpush/per-push-audit}
-      N8N_AGGREGATE_WEBHOOK_URL: ${N8N_AGGREGATE_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/g0YoCnoZZtAU3pRs/webhookaggregate/team-aggregate-audit}
+      N8N_PER_PUSH_WEBHOOK_URL: ${N8N_PER_PUSH_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/per-push-audit}
+      N8N_AGGREGATE_WEBHOOK_URL: ${N8N_AGGREGATE_WEBHOOK_URL_DOCKER:-http://n8n:5678/webhook/team-aggregate-audit}
       GITHUB_WEBHOOK_CALLBACK_URL: ${GITHUB_WEBHOOK_CALLBACK_URL:-}
       STATIC_ANALYSIS_ESLINT_COMMAND: ${STATIC_ANALYSIS_ESLINT_COMMAND_DOCKER:-}
       STATIC_ANALYSIS_TSC_COMMAND: ${STATIC_ANALYSIS_TSC_COMMAND_DOCKER:-}
