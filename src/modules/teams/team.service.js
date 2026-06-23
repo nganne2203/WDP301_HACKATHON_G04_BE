@@ -407,9 +407,15 @@ const ensureTeamSizeWithinEventRules = (team, event) => {
 
 const ensureTeamReadable = (team, actor) => {
   const memberIds = (team.memberIds || []).map(getId)
+  const mentorIds = (team.mentorIds || []).map(getId)
   const actorId = actor.id
 
-  if (hasTeamManagementPermission(actor) || isSameId(team.leaderId, actorId) || memberIds.includes(actorId)) {
+  if (
+    hasTeamManagementPermission(actor) ||
+    isSameId(team.leaderId, actorId) ||
+    memberIds.includes(actorId) ||
+    mentorIds.includes(actorId)
+  ) {
     return
   }
 
