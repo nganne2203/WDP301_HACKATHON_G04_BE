@@ -10,10 +10,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        1712,
-        656
+        0,
+        0
       ],
-      "id": "94771a9c-cbc4-4a85-a006-f96b552dbb08",
+      "id": "02814c76-49e4-4cf9-b910-84c67e98fd28",
       "name": "WebhookPerPush",
       "webhookId": "27c9fc56-b815-4b84-9f4f-d1a020fb85e1"
     },
@@ -100,10 +100,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1936,
-        656
+        224,
+        0
       ],
-      "id": "1869647d-8faa-455b-88ce-733ea0f302ea",
+      "id": "20f83b7e-03da-4a93-a511-aa070b684792",
       "name": "Normalize Per Push"
     },
     {
@@ -127,24 +127,24 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2384,
-        656
+        672,
+        0
       ],
-      "id": "85d504d1-1888-40e9-b430-46f475d8b7cc",
+      "id": "c451b140-ab05-4de0-93ed-8fbe3d39fef6",
       "name": "GitHub Compare API",
       "onError": "continueErrorOutput"
     },
     {
       "parameters": {
-        "jsCode": "const compare = $input.first().json;\nconst ctx = $('Normalize Per Push').item.json;\nconst files = Array.isArray(compare.files) ? compare.files : [];\nconst commitCount = Array.isArray(compare.commits) ? compare.commits.length : 0;\nconst patches = files.slice(0, 40).map((file) => {\n  const patch = file.patch || '[No textual patch available]';\n  return `FILE: ${file.filename}\\nSTATUS: ${file.status || 'modified'}\\nADDITIONS: ${file.additions || 0}\\nDELETIONS: ${file.deletions || 0}\\nPATCH:\\n${patch}`;\n}).join('\\n\\n');\n\nconst prompt = `Ban la mot ky su phan tich code ky thuat cho he thong hackathon. Hay danh gia thay doi cua mot lan push va tra ve DUY NHAT mot JSON hop le, khong them markdown, khong giai thich ben ngoai JSON.\\n\\nBat buoc tra ve dung cac truong sau:\\n- reviewKind: \\\"PER_PUSH_TECHNICAL_AUDIT\\\"\\n- status: \\\"DONE\\\"\\n- isScoreBased: false\\n- isFinalDecision: false\\n- overallPicture: { pushSummary, significantChange, changeImpactLevel, mainAffectedAreas }\\n- techStackDetected: { frontend, backend, database, ai, retrieval, testing }\\n- technicalFindings: array cac object { type, severity, title, evidence, comment, recommendedAction }\\n- rubricAwareComments: array\\n- suggestedTestCases: array { title, purpose, expectedObservation }\\n- suggestedJudgeQuestions: array string\\n- costControlNotes: { llmCallReason, skippedFiles, tokenSavingStrategy }\\n- historicalSynthesis: null\\n- currentTechnicalSnapshot: null\\n- riskSummary: array { severity, title, summary }\\n- judgeDashboardSummary: { headline, needsHumanReview, primaryConcerns, recommendedJudgeFocus }\\n- needsHumanReview: boolean\\n\\nGia tri hop le:\\n- changeImpactLevel: LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN\\n- severity: LOW, MEDIUM, HIGH, CRITICAL\\n- technicalFindings.type: ARCHITECTURE, SECURITY, RELIABILITY, PERFORMANCE, TESTING, AI_USAGE, RAG, AGENT, DEPENDENCY, MAINTAINABILITY\\n\\nThong tin ngu canh:\\n- Repository: ${ctx.repositoryFullName}\\n- Branch: ${ctx.branch}\\n- Before SHA: ${ctx.beforeCommitSha}\\n- After SHA: ${ctx.afterCommitSha}\\n- So commit trong compare: ${commitCount}\\n- So file thay doi: ${files.length}\\n\\nNoi dung diff:\\n${patches || '[Khong co patch text de phan tich]'}\\n\\nNeu khong du bang chung, van phai tra ve JSON hop le va dung gia tri trong tap cho phep. Khong duoc dua ra diem so hay ket luan chung cuoc.`;\n\nreturn [{\n  prompt,\n  aiReviewId: ctx.aiReviewId,\n  callbackUrl: ctx.callbackUrl,\n  reviewKind: ctx.reviewKind\n}];"
+        "jsCode": "const compare = $input.first().json;\nconst ctx = $('Normalize Per Push').item.json;\nconst files = Array.isArray(compare.files) ? compare.files : [];\nconst commitCount = Array.isArray(compare.commits) ? compare.commits.length : 0;\nconst patches = files.slice(0, 40).map((file) => {\n  const patch = file.patch || '[No textual patch available]';\n  return `FILE: ${file.filename}\\nSTATUS: ${file.status || 'modified'}\\nADDITIONS: ${file.additions || 0}\\nDELETIONS: ${file.deletions || 0}\\nPATCH:\\n${patch}`;\n}).join('\\n\\n');\n\nconst prompt = `Ban la mot ky su phan tich code ky thuat cho he thong hackathon. Hay danh gia thay doi cua mot lan push va tra ve DUY NHAT mot JSON hop le, khong them markdown, khong giai thich ben ngoai JSON.\\n\\nBat buoc tra ve dung cac truong sau:\\n- reviewKind: \\\"PER_PUSH_TECHNICAL_AUDIT\\\"\\n- status: \\\"DONE\\\"\\n- isScoreBased: false\\n- isFinalDecision: false\\n- overallPicture: { pushSummary, significantChange, changeImpactLevel, mainAffectedAreas }\\n- techStackDetected: { frontend: array string, backend: array string, database: array string, ai: array string, retrieval: array string, testing: array string }\\n- technicalFindings: array cac object { type, severity, title, evidence: array string, comment, recommendedAction }\\n- rubricAwareComments: array\\n- suggestedTestCases: array { title, purpose, expectedObservation }\\n- suggestedJudgeQuestions: array string\\n- costControlNotes: { llmCallReason, skippedFiles: array string, tokenSavingStrategy: array string }\\n- historicalSynthesis: null\\n- currentTechnicalSnapshot: null\\n- riskSummary: array { severity, title, summary }\\n- judgeDashboardSummary: { headline, needsHumanReview, primaryConcerns: array string, recommendedJudgeFocus: array string }\\n- needsHumanReview: boolean\\n\\nGia tri hop le:\\n- changeImpactLevel: LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN\\n- severity: LOW, MEDIUM, HIGH, CRITICAL\\n- technicalFindings.type: ARCHITECTURE, SECURITY, RELIABILITY, PERFORMANCE, TESTING, AI_USAGE, RAG, AGENT, DEPENDENCY, MAINTAINABILITY\\n\\nThong tin ngu canh:\\n- Repository: ${ctx.repositoryFullName}\\n- Branch: ${ctx.branch}\\n- Before SHA: ${ctx.beforeCommitSha}\\n- After SHA: ${ctx.afterCommitSha}\\n- So commit trong compare: ${commitCount}\\n- So file thay doi: ${files.length}\\n\\nNoi dung diff:\\n${patches || '[Khong co patch text de phan tich]'}\\n\\nNeu khong du bang chung, van phai tra ve JSON hop le va dung gia tri trong tap cho phep. Khong duoc dua ra diem so hay ket luan chung cuoc.`;\n\nreturn [{\n  prompt,\n  aiReviewId: ctx.aiReviewId,\n  callbackUrl: ctx.callbackUrl,\n  reviewKind: ctx.reviewKind\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2640,
-        656
+        928,
+        0
       ],
-      "id": "380f1ac8-7b64-4ffc-8fba-3c42c5cf7bfb",
+      "id": "9e5ddbc6-389f-43bb-aa0c-e41397ea8d07",
       "name": "Build Per Push Prompt",
       "onError": "continueErrorOutput"
     },
@@ -163,16 +163,16 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"systemInstruction\": {\n    \"parts\": [\n      {\n        \"text\": \"You are a precise technical audit assistant. Return valid JSON only, with no markdown.\"\n      }\n    ]\n  },\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        {\n          \"text\": $json.prompt\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.2,\n    \"responseMimeType\": \"application/json\"\n  }\n}",
+        "jsonBody": "={{ {\n  \"systemInstruction\": {\n    \"parts\": [\n      {\n        \"text\": \"You are a precise technical audit assistant. Return valid JSON only, with no markdown.\"\n      }\n    ]\n  },\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        {\n          \"text\": $json.prompt\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.2,\n    \"responseMimeType\": \"application/json\"\n  }\n} }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2896,
-        656
+        1184,
+        0
       ],
-      "id": "adcbce0b-08ba-4b55-a332-e8c886bb3e6e",
+      "id": "930685d8-b42d-4d8c-b2d1-c0dddd168ce1",
       "name": "Gemini Per Push",
       "onError": "continueErrorOutput"
     },
@@ -183,10 +183,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3152,
-        656
+        1440,
+        0
       ],
-      "id": "5ff0eea8-c1aa-43e9-a1b6-a587c854c0fc",
+      "id": "1fa58bd3-f00f-424d-be73-fcc509beb8fb",
       "name": "Format Per Push Success",
       "onError": "continueErrorOutput"
     },
@@ -215,10 +215,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        3408,
-        656
+        1696,
+        0
       ],
-      "id": "52126477-7d81-41c8-a775-e21df3ef8ae6",
+      "id": "ac7a7f56-7954-4a45-9626-d8576254b349",
       "name": "Callback Per Push Success"
     },
     {
@@ -228,10 +228,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3152,
-        848
+        1440,
+        192
       ],
-      "id": "5d055c27-9cf3-4abb-bc8c-2b6f39d6b196",
+      "id": "95863f42-c815-463f-97d9-4bcf1cfb9046",
       "name": "Format Per Push Error"
     },
     {
@@ -259,10 +259,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        3408,
-        848
+        1696,
+        192
       ],
-      "id": "e49e1d40-f6ad-444b-8135-0818e653cbad",
+      "id": "62323bd8-0236-4fa3-8769-f9fa4be5bb37",
       "name": "Callback Per Push Error"
     },
     {
@@ -274,10 +274,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        1712,
-        1120
+        0,
+        464
       ],
-      "id": "8d460ea5-fd13-4b9f-b689-93286f426bae",
+      "id": "bb43ad2d-4443-4805-8336-28599fb9eee2",
       "name": "WebhookAggregate",
       "webhookId": "027c19bb-ab03-4e87-be50-d1ee793fd45a"
     },
@@ -334,10 +334,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1936,
-        1120
+        224,
+        464
       ],
-      "id": "ec7de998-193e-4842-8518-63f6c9971fcc",
+      "id": "d9ca9b10-6dc2-4cf0-8b0c-9929cc43fa3f",
       "name": "Normalize Aggregate"
     },
     {
@@ -361,24 +361,24 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2272,
-        1120
+        560,
+        464
       ],
-      "id": "b047b540-67e8-4806-8b70-7683838d6ce3",
+      "id": "34d98206-15f3-4488-9715-eb9be8e7bf57",
       "name": "GitHub Recent Commits",
       "onError": "continueErrorOutput"
     },
     {
       "parameters": {
-        "jsCode": "const commits = Array.isArray($input.first().json) ? $input.first().json : [];\nconst ctx = $('Normalize Aggregate').item.json;\nconst compactCommits = commits.slice(0, 20).map((commit, index) => {\n  const sha = commit.sha || '';\n  const message = commit.commit?.message || '';\n  const author = commit.commit?.author?.name || 'unknown';\n  const date = commit.commit?.author?.date || '';\n  return `${index + 1}. SHA: ${sha}\\nAUTHOR: ${author}\\nDATE: ${date}\\nMESSAGE: ${message}`;\n}).join('\\n\\n');\n\nconst prompt = `Ban la mot ky su phan tich code ky thuat cho he thong hackathon. Hay tong hop tinh hinh ky thuat cua repository dua tren lich su commit gan day va tra ve DUY NHAT mot JSON hop le, khong them markdown, khong giai thich ben ngoai JSON.\\n\\nBat buoc tra ve dung cac truong sau:\\n- reviewKind: \\\"TEAM_AGGREGATE_TECHNICAL_AUDIT\\\"\\n- status: \\\"DONE\\\"\\n- isScoreBased: false\\n- isFinalDecision: false\\n- overallPicture: { pushSummary, significantChange, changeImpactLevel, mainAffectedAreas }\\n- techStackDetected: { frontend, backend, database, ai, retrieval, testing }\\n- technicalFindings: array cac object { type, severity, title, evidence, comment, recommendedAction }\\n- rubricAwareComments: array\\n- suggestedTestCases: array { title, purpose, expectedObservation }\\n- suggestedJudgeQuestions: array string\\n- costControlNotes: { llmCallReason, skippedFiles, tokenSavingStrategy }\\n- historicalSynthesis: string\\n- currentTechnicalSnapshot: string\\n- riskSummary: array { severity, title, summary }\\n- judgeDashboardSummary: { headline, needsHumanReview, primaryConcerns, recommendedJudgeFocus }\\n- needsHumanReview: boolean\\n\\nGia tri hop le:\\n- changeImpactLevel: LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN\\n- severity: LOW, MEDIUM, HIGH, CRITICAL\\n- technicalFindings.type: ARCHITECTURE, SECURITY, RELIABILITY, PERFORMANCE, TESTING, AI_USAGE, RAG, AGENT, DEPENDENCY, MAINTAINABILITY\\n\\nThong tin ngu canh:\\n- Repository: ${ctx.repositoryFullName}\\n- Default branch: ${ctx.defaultBranch}\\n- Batch ID: ${ctx.batchId || 'N/A'}\\n- So commit lay mau: ${commits.length}\\n\\nLich su commit gan day:\\n${compactCommits || '[Khong lay duoc lich su commit]'}\\n\\nNeu khong du bang chung, van phai tra ve JSON hop le va dung gia tri trong tap cho phep. Khong duoc dua ra diem so hay ket luan chung cuoc.`;\n\nreturn [{\n  prompt,\n  aiReviewId: ctx.aiReviewId,\n  callbackUrl: ctx.callbackUrl,\n  reviewKind: ctx.reviewKind\n}];"
+        "jsCode": "const commits = Array.isArray($input.first().json) ? $input.first().json : [];\nconst ctx = $('Normalize Aggregate').item.json;\nconst compactCommits = commits.slice(0, 20).map((commit, index) => {\n  const sha = commit.sha || '';\n  const message = commit.commit?.message || '';\n  const author = commit.commit?.author?.name || 'unknown';\n  const date = commit.commit?.author?.date || '';\n  return `${index + 1}. SHA: ${sha}\\nAUTHOR: ${author}\\nDATE: ${date}\\nMESSAGE: ${message}`;\n}).join('\\n\\n');\n\nconst prompt = `Ban la mot ky su phan tich code ky thuat cho he thong hackathon. Hay tong hop tinh hinh ky thuat cua repository dua tren lich su commit gan day va tra ve DUY NHAT mot JSON hop le, khong them markdown, khong giai thich ben ngoai JSON.\\n\\nBat buoc tra ve dung cac truong sau:\\n- reviewKind: \\\"TEAM_AGGREGATE_TECHNICAL_AUDIT\\\"\\n- status: \\\"DONE\\\"\\n- isScoreBased: false\\n- isFinalDecision: false\\n- overallPicture: { pushSummary, significantChange, changeImpactLevel, mainAffectedAreas }\\n- techStackDetected: { frontend: array string, backend: array string, database: array string, ai: array string, retrieval: array string, testing: array string }\\n- technicalFindings: array cac object { type, severity, title, evidence: array string, comment, recommendedAction }\\n- rubricAwareComments: array\\n- suggestedTestCases: array { title, purpose, expectedObservation }\\n- suggestedJudgeQuestions: array string\\n- costControlNotes: { llmCallReason, skippedFiles: array string, tokenSavingStrategy: array string }\\n- historicalSynthesis: string\\n- currentTechnicalSnapshot: string\\n- riskSummary: array { severity, title, summary }\\n- judgeDashboardSummary: { headline, needsHumanReview, primaryConcerns: array string, recommendedJudgeFocus: array string }\\n- needsHumanReview: boolean\\n\\nGia tri hop le:\\n- changeImpactLevel: LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN\\n- severity: LOW, MEDIUM, HIGH, CRITICAL\\n- technicalFindings.type: ARCHITECTURE, SECURITY, RELIABILITY, PERFORMANCE, TESTING, AI_USAGE, RAG, AGENT, DEPENDENCY, MAINTAINABILITY\\n\\nThong tin ngu canh:\\n- Repository: ${ctx.repositoryFullName}\\n- Default branch: ${ctx.defaultBranch}\\n- Batch ID: ${ctx.batchId || 'N/A'}\\n- So commit lay mau: ${commits.length}\\n\\nLich su commit gan day:\\n${compactCommits || '[Khong lay duoc lich su commit]'}\\n\\nNeu khong du bang chung, van phai tra ve JSON hop le va dung gia tri trong tap cho phep. Khong duoc dua ra diem so hay ket luan chung cuoc.`;\n\nreturn [{\n  prompt,\n  aiReviewId: ctx.aiReviewId,\n  callbackUrl: ctx.callbackUrl,\n  reviewKind: ctx.reviewKind\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2432,
-        1120
+        720,
+        464
       ],
-      "id": "98b0dc05-228c-4e77-b050-f81d820dc22b",
+      "id": "6a726a56-14d9-4214-bc0b-a37ac011b750",
       "name": "Build Aggregate Prompt",
       "onError": "continueErrorOutput"
     },
@@ -397,16 +397,16 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"systemInstruction\": {\n    \"parts\": [\n      {\n        \"text\": \"You are a precise technical audit assistant. Return valid JSON only, with no markdown.\"\n      }\n    ]\n  },\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        {\n          \"text\": $json.prompt\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.2,\n    \"responseMimeType\": \"application/json\"\n  }\n}",
+        "jsonBody": "={{ {\n  \"systemInstruction\": {\n    \"parts\": [\n      {\n        \"text\": \"You are a precise technical audit assistant. Return valid JSON only, with no markdown.\"\n      }\n    ]\n  },\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        {\n          \"text\": $json.prompt\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.2,\n    \"responseMimeType\": \"application/json\"\n  }\n} }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2688,
-        1120
+        976,
+        464
       ],
-      "id": "78b218ab-3687-4662-a6a4-60a3c13f14f4",
+      "id": "a973964e-2c89-4da1-96d5-0c5550876d61",
       "name": "Gemini Aggregate",
       "onError": "continueErrorOutput"
     },
@@ -417,10 +417,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2944,
-        1120
+        1232,
+        464
       ],
-      "id": "e796a9ef-8b7d-41ae-9503-9a61c52d706a",
+      "id": "a33ad1e9-7794-42c7-87df-b9caf8cbf071",
       "name": "Format Aggregate Success",
       "onError": "continueErrorOutput"
     },
@@ -449,10 +449,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        3200,
-        1120
+        1488,
+        464
       ],
-      "id": "d8ec859b-d9de-4ac5-b452-2dc63eb1d4fe",
+      "id": "7b5a4d64-87a7-47bb-abde-6c8cb4570a49",
       "name": "Callback Aggregate Success"
     },
     {
@@ -462,10 +462,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2944,
-        1312
+        1232,
+        656
       ],
-      "id": "cc242be1-6b8c-40c9-98c3-695e7deca3e6",
+      "id": "501cba0f-cbc0-4423-a5d0-a0c963f4bab5",
       "name": "Format Aggregate Error"
     },
     {
@@ -493,10 +493,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        3200,
-        1312
+        1488,
+        656
       ],
-      "id": "39c5f1d7-4bea-4d7f-95a0-03d987d6e0be",
+      "id": "4d7c9373-834b-4936-ab6d-5c0cf4cab428",
       "name": "Callback Aggregate Error"
     },
     {
@@ -506,10 +506,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2144,
-        656
+        432,
+        0
       ],
-      "id": "b52f9044-42d5-4707-9e64-724131b67465",
+      "id": "37a54b53-a963-4393-b72c-9020439eb2dc",
       "name": "Decrypt GitHub Token"
     },
     {
@@ -519,10 +519,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2096,
-        1120
+        384,
+        464
       ],
-      "id": "38abebca-b61d-47ec-b627-766eda6630d9",
+      "id": "0fe64b2c-6ee2-4a2e-940d-3c5c9cec0c35",
       "name": "Decrypt GitHub Token1"
     }
   ],
@@ -761,19 +761,22 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",
     "availableInMCP": false,
     "timeSavedMode": "fixed",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "versionId": "6a4a2bdf-0ee0-41a5-ae39-39239d60ea47",
+  "versionId": "cf333233-238b-49be-a635-0cfe84c996e1",
   "meta": {
-    "instanceId": "eb6e2cc12b542d212275a517dd075f347b0bd464d78d8acbdbeacf17662e2905"
+    "instanceId": "947370b9f63847f1f45fdbcd19726897f272f4d458bba28e6ff32d8b27b59973"
   },
   "nodeGroups": [],
-  "id": "h4Wjap4FH8KFTn8g",
+  "id": "VzqgFPEr0A8pz3g0",
   "tags": []
 }

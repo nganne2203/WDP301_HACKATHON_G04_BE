@@ -28,6 +28,8 @@ services:
       start_period: 5s
 
   seed:
+    profiles:
+      - manual
     build:
       context: .
     init: true
@@ -51,8 +53,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      seed:
-        condition: service_completed_successfully
     env_file:
       - .env
     environment:
@@ -95,8 +95,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      seed:
-        condition: service_completed_successfully
     env_file:
       - .env
     environment:
@@ -115,24 +113,24 @@ services:
     image: docker.n8n.io/n8nio/n8n:latest
     init: true
     restart: unless-stopped
-    depends_on:
-      api:
-        condition: service_healthy
     environment:
       N8N_HOST: 0.0.0.0
       N8N_PORT: 5678
       N8N_PROTOCOL: http
       WEBHOOK_URL: ${N8N_WEBHOOK_URL_DOCKER:-http://localhost:5678/}
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      NODE_FUNCTION_ALLOW_BUILTIN: "crypto"
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       GOOGLE_GEMINI_API_KEY: ${GOOGLE_GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
-      GITHUB_TOKEN_AES_KEY: ${GITHUB_TOKEN_AES_KEY:-}
+      GITHUB_TOKEN_DECRYPTION_KEY: ${GITHUB_TOKEN_AES_KEY:-}
       N8N_CALLBACK_SECRET: ${N8N_CALLBACK_SECRET}
     ports:
       - "${N8N_PORT:-5678}:5678"
     volumes:
       - n8n-data:/home/node/.n8n
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   mongo-data:
