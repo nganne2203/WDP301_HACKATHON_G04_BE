@@ -30,6 +30,19 @@ const getParticipantById = async (req, res, next) => {
   }
 }
 
+const getMyParticipant = async (req, res, next) => {
+  try {
+    const participant = await PARTICIPANT_SERVICE.getMyParticipant(req.validated.query.eventId, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get current participant successfully',
+      data: participant
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const createParticipant = async (req, res, next) => {
   try {
     const participant = await PARTICIPANT_SERVICE.createParticipant(req.body, req.user)
@@ -69,6 +82,32 @@ const updateCheckInStatus = async (req, res, next) => {
   }
 }
 
+const generateCheckInQr = async (req, res, next) => {
+  try {
+    const qr = await PARTICIPANT_SERVICE.generateCheckInQr(req.body.eventId, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Generate event check-in QR successfully',
+      data: qr
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const scanCheckInQr = async (req, res, next) => {
+  try {
+    const participant = await PARTICIPANT_SERVICE.scanCheckInQr(req.body.token, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Participant self check-in successfully',
+      data: participant
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const updateAttendance = async (req, res, next) => {
   try {
     const participant = await PARTICIPANT_SERVICE.updateAttendance(req.params.id, req.body.attendedActivities)
@@ -98,9 +137,12 @@ const updateGithubAccessStatus = async (req, res, next) => {
 export const PARTICIPANT_CONTROLLER = {
   listParticipants,
   getParticipantById,
+  getMyParticipant,
   createParticipant,
   updateParticipant,
   updateCheckInStatus,
+  generateCheckInQr,
+  scanCheckInQr,
   updateAttendance,
   updateGithubAccessStatus
 }

@@ -29,6 +29,8 @@ const participantSchema = new Schema(
       enum: ['NOT_CHECKED_IN', 'CHECKED_IN'],
       default: 'NOT_CHECKED_IN'
     },
+    checkedInAt: { type: Date },
+    checkedInBy: { type: Schema.Types.ObjectId, ref: 'User' },
     githubAccessStatus: {
       type: String,
       enum: ['NOT_GRANTED', 'GRANTED', 'REVOKED'],

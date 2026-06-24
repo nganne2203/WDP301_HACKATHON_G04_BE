@@ -18,11 +18,30 @@ router.get(
   PARTICIPANT_CONTROLLER.listParticipants
 )
 
+router.get(
+  '/me',
+  validationHandlingMiddleware(PARTICIPANT_VALIDATION.getMyParticipant),
+  PARTICIPANT_CONTROLLER.getMyParticipant
+)
+
 router.post(
   '/',
   permissionMiddleware(PERMISSIONS.EVENT_VIEW),
   validationHandlingMiddleware(PARTICIPANT_VALIDATION.createParticipant),
   PARTICIPANT_CONTROLLER.createParticipant
+)
+
+router.post(
+  '/check-in/scan',
+  validationHandlingMiddleware(PARTICIPANT_VALIDATION.scanCheckInQr),
+  PARTICIPANT_CONTROLLER.scanCheckInQr
+)
+
+router.post(
+  '/check-in/qr',
+  permissionMiddleware(PERMISSIONS.PARTICIPANT_APPROVE),
+  validationHandlingMiddleware(PARTICIPANT_VALIDATION.generateCheckInQr),
+  PARTICIPANT_CONTROLLER.generateCheckInQr
 )
 
 router.get(

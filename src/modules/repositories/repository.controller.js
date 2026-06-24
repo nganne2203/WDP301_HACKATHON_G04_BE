@@ -71,10 +71,27 @@ const listRepositoryCommits = async (req, res, next) => {
   }
 }
 
+const listStaticAnalysis = async (req, res, next) => {
+  try {
+    const { repository, analysisResults, pagination } = await REPOSITORY_SERVICE.listStaticAnalysis({
+      repositoryId: req.params.id,
+      query: req.validated?.query || req.query
+    })
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get repository static analysis successfully',
+      data: analysisResults,
+      pagination
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const REPOSITORY_CONTROLLER = {
   listRepositories,
   getRepositoryById,
   createRepository,
   updateRepository,
-  listRepositoryCommits
+  listRepositoryCommits,
+  listStaticAnalysis
 }

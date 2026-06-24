@@ -224,6 +224,45 @@ export const createRepositoryService = ({
     }
   }
 
+  const listStaticAnalysis = async ({ repositoryId, query = {} }) => {
+    const existingRepository = await ensureRepositoryExists(repositoryId)
+    const { page, limit } = normalizePaginationQuery(query)
+    const skip = (page - 1) * limit
+
+    const [analysisResults, totalItems] = await Promise.all([
+      repository.listStaticAnalysisByRepository({ repositoryId, skip, limit }),
+      repository.countStaticAnalysisByRepository(repositoryId)
+    ])
+
+    const normalizedAnalysis = analysisResults.map(plain => {
+      const obj = typeof plain.toObject === 'function' ? plain.toObject({ getters: true, virtuals: false }) : plain
+      return {
+        id: obj._id?.toString() || obj.id,
+        repositoryId: obj.repositoryId?.toString(),
+        commitSha: obj.commitSha,
+        source: obj.source,
+        status: obj.status,
+        errorCount: obj.errorCount || 0,
+        warningCount: obj.warningCount || 0,
+        findings: obj.findings || [],
+        rawOutput: typeof obj.rawOutput === 'string' ? obj.rawOutput : JSON.stringify(obj.rawOutput),
+        createdAt: obj.createdAt,
+        updatedAt: obj.updatedAt
+      }
+    })
+
+    return {
+      repository: normalizeRepository(existingRepository),
+      analysisResults: normalizedAnalysis,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalItems / limit) || 1,
+        pageSize: limit,
+        totalItems
+      }
+    }
+  }
+
   const createRepository = async (payload = {}) => {
     const event = await ensureEventExists(payload.eventId)
     await ensureTeamBelongsToEvent({ eventId: event._id, teamId: payload.teamId })
@@ -286,6 +325,7 @@ export const createRepositoryService = ({
     listRepositories,
     getRepositoryById,
     listRepositoryCommits,
+    listStaticAnalysis,
     createRepository,
     updateRepository
   }
