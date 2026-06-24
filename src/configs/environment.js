@@ -19,7 +19,7 @@ const frontendUrl = process.env.FRONTEND_URL || clientUrls[0] || localFrontendUr
 const allowedClientUrls = clientUrls.length > 0 ? clientUrls : (frontendUrl ? [frontendUrl] : [])
 const legacyEmailHost = process.env.EMAIL_HOST
 const legacyEmailHostIsAddress = legacyEmailHost?.includes('@')
-const emailUser = process.env.SMTP_USER || process.env.EMAIL_USER || (legacyEmailHostIsAddress ? legacyEmailHost : undefined)
+const emailUser = process.env.EMAIL_USER || process.env.SMTP_USER || (legacyEmailHostIsAddress ? legacyEmailHost : undefined)
 const emailHost = process.env.SMTP_HOST || (!legacyEmailHostIsAddress ? legacyEmailHost : undefined)
 
 export const env = {
@@ -55,7 +55,7 @@ export const env = {
     port: parseNumber(process.env.SMTP_PORT),
     secure: parseBoolean(process.env.SMTP_SECURE, false),
     user: emailUser,
-    password: process.env.SMTP_PASSWORD || process.env.EMAIL_PASSWORD,
+    password: process.env.EMAIL_PASSWORD || process.env.SMTP_PASSWORD,
     from: process.env.RESEND_FROM || process.env.EMAIL_FROM || process.env.SMTP_FROM || emailUser,
     resendApiKey: process.env.RESEND_API_KEY,
     resendApiUrl: process.env.RESEND_API_URL || 'https://api.resend.com',
