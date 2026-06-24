@@ -38,14 +38,23 @@ const changePassword = {
   })
 }
 
-const googleCallback = {
-  query: Joi.object({
-    code: Joi.string().trim().required(),
-    state: Joi.string().trim().required(),
-    scope: Joi.string().trim(),
-    authuser: Joi.string().trim(),
-    prompt: Joi.string().trim()
-  }).unknown(true)
+const googleLogin = {
+  body: Joi.object({
+    googleId: Joi.string().trim().required(),
+    email: Joi.string().email().trim().lowercase().required(),
+    name: Joi.string().trim().min(1).max(120).required(),
+    avatar: Joi.string().uri().allow(null).required()
+  })
+}
+
+const googleRegister = {
+  body: Joi.object({
+    googleId: Joi.string().trim().required(),
+    email: Joi.string().email().trim().lowercase().required(),
+    name: Joi.string().trim().min(1).max(120).required(),
+    avatar: Joi.string().uri().allow(null).required(),
+    githubUsername: githubUsername.required()
+  })
 }
 
 export const AUTH_VALIDATION = {
@@ -53,5 +62,6 @@ export const AUTH_VALIDATION = {
   login,
   refreshToken,
   changePassword,
-  googleCallback
+  googleLogin,
+  googleRegister
 }
