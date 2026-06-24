@@ -15,10 +15,31 @@ import auditLogMiddleware from '#middlewares/auditLogMiddleware.js'
 import apiRoutes from '#routes/index.js'
 import { QUEUE_SERVICE } from '#services/queue.service.js'
 
+export const rootHealthHandler = (req, res) => {
+  res.status(200).json({
+    success: true,
+    service: 'backend',
+    status: 'running'
+  })
+}
+
+export const processHealthHandler = (req, res) => {
+  res.status(200).json({
+    success: true,
+    uptime: process.uptime()
+  })
+}
+
 export const createApp = () => {
   const app = express()
   const jsonParser = express.json({ limit: '2mb' })
   const urlencodedParser = express.urlencoded({ extended: true })
+
+  app.use((req, res, next) => {
+    // eslint-disable-next-line no-console
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`)
+    next()
+  })
 
   app.use(cors(corsOptions))
   app.use(helmet())
@@ -32,12 +53,12 @@ export const createApp = () => {
     return urlencodedParser(req, res, next)
   })
   app.use(morgan('dev'))
+
+  app.get('/', rootHealthHandler)
+  app.get('/health', processHealthHandler)
+
   app.use(apiRateLimiter)
   app.use(auditLogMiddleware)
-
-  app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'ok' })
-  })
 
   app.get('/ready', async (req, res) => {
     const dbReady = mongoose.connection.readyState === 1
