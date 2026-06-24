@@ -71,7 +71,6 @@ export const env = {
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    authCallbackUrl: process.env.GOOGLE_AUTH_CALLBACK_URL,
     connectCallbackUrl: process.env.GOOGLE_CONNECT_CALLBACK_URL
   },
   n8n: {

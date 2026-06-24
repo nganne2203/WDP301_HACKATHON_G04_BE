@@ -579,8 +579,7 @@ module.exports = router;
 Handles:
 
 - login
-- Google OAuth login
-- Google OAuth callback handling
+- Google profile login
 - register
 - refresh token
 - current user profile
@@ -881,8 +880,7 @@ Examples:
 ```txt
 POST   /api/auth/register
 POST   /api/auth/login
-GET    /api/auth/google
-GET    /api/auth/google/callback
+POST   /api/auth/google
 GET    /api/google/connect
 GET    /api/google/callback
 GET    /api/users
@@ -1013,7 +1011,6 @@ GITHUB_TOKEN_AES_KEY=base64_encoded_32_byte_key_for_n8n_dispatch
 
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
-GOOGLE_AUTH_CALLBACK_URL=http://localhost:3000/api/auth/google/callback
 GOOGLE_CONNECT_CALLBACK_URL=http://localhost:3000/api/google/callback
 FRONTEND_URL=http://localhost:5173
 

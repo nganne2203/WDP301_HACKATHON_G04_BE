@@ -219,6 +219,32 @@ const router = Router()
  *         password:
  *           type: string
  *           example: Password123!
+ *     GoogleLoginRequest:
+ *       type: object
+ *       required: [googleId, email, name, avatar]
+ *       properties:
+ *         googleId:
+ *           type: string
+ *         email:
+ *           type: string
+ *           format: email
+ *         name:
+ *           type: string
+ *         avatar:
+ *           type: string
+ *           format: uri
+ *           nullable: true
+ *     GoogleRegisterRequest:
+ *       allOf:
+ *         - $ref: '#/components/schemas/GoogleLoginRequest'
+ *         - type: object
+ *           required: [githubUsername]
+ *           properties:
+ *             githubUsername:
+ *               type: string
+ *               minLength: 1
+ *               maxLength: 39
+ *               pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$'
  *     RefreshTokenRequest:
  *       type: object
  *       required: [refreshToken]
@@ -306,12 +332,54 @@ router.post(
   AUTH_CONTROLLER.login
 )
 
-router.get('/google', authRateLimiter, AUTH_CONTROLLER.redirectToGoogle)
-router.get(
-  '/google/callback',
+/**
+ * @swagger
+ * /api/auth/google:
+ *   post:
+ *     summary: Login to an existing approved account with a Google profile
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/GoogleLoginRequest'
+ *     responses:
+ *       200:
+ *         description: Google login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthSuccessResponse'
+ */
+router.post(
+  '/google',
   authRateLimiter,
-  validationHandlingMiddleware(AUTH_VALIDATION.googleCallback),
-  AUTH_CONTROLLER.googleCallback
+  validationHandlingMiddleware(AUTH_VALIDATION.googleLogin),
+  AUTH_CONTROLLER.googleLogin
+)
+
+/**
+ * @swagger
+ * /api/auth/google/register:
+ *   post:
+ *     summary: Register a participant with a Google profile
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/GoogleRegisterRequest'
+ *     responses:
+ *       201:
+ *         description: Account created and pending approval
+ */
+router.post(
+  '/google/register',
+  authRateLimiter,
+  validationHandlingMiddleware(AUTH_VALIDATION.googleRegister),
+  AUTH_CONTROLLER.googleRegister
 )
 
 /**
