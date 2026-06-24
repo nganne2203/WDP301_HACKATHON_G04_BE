@@ -29,26 +29,26 @@ const login = async (req, res, next) => {
   }
 }
 
-const redirectToGoogle = async (req, res, next) => {
+const googleLogin = async (req, res, next) => {
   try {
-    const url = AUTH_SERVICE.getGoogleLoginUrl()
-    res.redirect(url)
+    const authData = await AUTH_SERVICE.googleLogin(req.body)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Login with Google successfully',
+      data: authData
+    }))
   } catch (error) {
     next(error)
   }
 }
 
-const googleCallback = async (req, res, next) => {
+const googleRegister = async (req, res, next) => {
   try {
-    const { authData, redirectUrl } = await AUTH_SERVICE.handleGoogleCallback(req.validated?.query || req.query)
+    const user = await AUTH_SERVICE.googleRegister(req.body)
 
-    if (redirectUrl) {
-      return res.redirect(redirectUrl)
-    }
-
-    return res.status(StatusCodes.OK).json(responseSuccess({
-      message: 'Login with Google successfully',
-      data: authData
+    res.status(StatusCodes.CREATED).json(responseSuccess({
+      message: 'Register with Google successfully. Your account is pending approval.',
+      data: user
     }))
   } catch (error) {
     next(error)
@@ -108,8 +108,8 @@ const logout = async (req, res, next) => {
 export const AUTH_CONTROLLER = {
   register,
   login,
-  redirectToGoogle,
-  googleCallback,
+  googleLogin,
+  googleRegister,
   refreshToken,
   getMe,
   changePassword,
