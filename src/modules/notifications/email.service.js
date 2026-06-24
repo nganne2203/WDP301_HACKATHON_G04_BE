@@ -69,6 +69,10 @@ export const createEmailService = ({
 
     const from = config.from
     if (!transport) {
+      const missingProviderReason = config.transport?.provider === 'resend'
+        ? 'Resend API key is not configured'
+        : 'SMTP is not configured'
+
       if (config.devMode === 'console') {
         logger.info('Email logged in development mode', {
           to: valid,
@@ -77,7 +81,12 @@ export const createEmailService = ({
           metadata
         })
       } else {
-        logger.warn('Email skipped because SMTP is not configured', { to: valid, subject, metadata })
+        logger.warn('Email skipped because its delivery provider is not configured', {
+          to: valid,
+          subject,
+          provider: config.transport?.provider,
+          metadata
+        })
       }
 
       return {
@@ -87,7 +96,7 @@ export const createEmailService = ({
         accepted: [],
         rejected: valid,
         invalid,
-        reason: 'SMTP is not configured'
+        reason: missingProviderReason
       }
     }
 

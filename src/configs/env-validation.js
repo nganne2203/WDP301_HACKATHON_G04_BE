@@ -41,6 +41,15 @@ export const validateRuntimeEnvironment = ({
     errors.push('GITHUB_WEBHOOK_SECRET is required when GITHUB_WEBHOOK_CALLBACK_URL is configured')
   }
 
+  if (config.email?.provider === 'resend') {
+    if (!config.email.resendApiKey) {
+      errors.push('RESEND_API_KEY is required when EMAIL_PROVIDER=resend')
+    }
+    if (!config.email.from) {
+      errors.push('RESEND_FROM is required when EMAIL_PROVIDER=resend')
+    }
+  }
+
   if (config.n8n?.enabled) {
     if (!config.n8n.perPushWebhookUrl) {
       errors.push('N8N_PER_PUSH_WEBHOOK_URL is required when N8N_ENABLED=true')
