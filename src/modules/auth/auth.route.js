@@ -76,12 +76,16 @@ const router = Router()
  *           type: string
  *           enum: [GOOGLE, LOCAL]
  *           example: LOCAL
+ *         registrationSource:
+ *           type: string
+ *           enum: [GOOGLE, FORM]
+ *           example: FORM
  *         fullName:
  *           type: string
  *           example: Participant User
  *         status:
  *           type: string
- *           enum: [PENDING, APPROVED, REJECTED, SUSPENDED]
+ *           enum: [PENDING, APPROVED, ACTIVE, REJECTED, SUSPENDED]
  *           example: APPROVED
  *         roles:
  *           type: array
@@ -234,17 +238,6 @@ const router = Router()
  *           type: string
  *           format: uri
  *           nullable: true
- *     GoogleRegisterRequest:
- *       allOf:
- *         - $ref: '#/components/schemas/GoogleLoginRequest'
- *         - type: object
- *           required: [githubUsername]
- *           properties:
- *             githubUsername:
- *               type: string
- *               minLength: 1
- *               maxLength: 39
- *               pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$'
  *     RefreshTokenRequest:
  *       type: object
  *       required: [refreshToken]
@@ -336,7 +329,7 @@ router.post(
  * @swagger
  * /api/auth/google:
  *   post:
- *     summary: Login to an existing approved account with a Google profile
+ *     summary: Login to an existing account with a Google profile
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -351,35 +344,14 @@ router.post(
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/AuthSuccessResponse'
+ *       404:
+ *         description: No account exists for the Google email
  */
 router.post(
   '/google',
   authRateLimiter,
   validationHandlingMiddleware(AUTH_VALIDATION.googleLogin),
   AUTH_CONTROLLER.googleLogin
-)
-
-/**
- * @swagger
- * /api/auth/google/register:
- *   post:
- *     summary: Register a participant with a Google profile
- *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/GoogleRegisterRequest'
- *     responses:
- *       201:
- *         description: Account created and pending approval
- */
-router.post(
-  '/google/register',
-  authRateLimiter,
-  validationHandlingMiddleware(AUTH_VALIDATION.googleRegister),
-  AUTH_CONTROLLER.googleRegister
 )
 
 /**

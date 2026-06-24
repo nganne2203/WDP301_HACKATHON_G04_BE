@@ -11,7 +11,7 @@ const listUsers = {
   query: Joi.object({
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10),
-    status: Joi.string().valid('PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'),
+    status: Joi.string().valid('PENDING', 'APPROVED', 'ACTIVE', 'REJECTED', 'SUSPENDED'),
     search: Joi.string().trim().max(100)
   })
 }
@@ -66,7 +66,7 @@ const createUser = {
 const updateStatus = {
   params: idParam,
   body: Joi.object({
-    status: Joi.string().valid('PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED').required()
+    status: Joi.string().valid('PENDING', 'APPROVED', 'ACTIVE', 'REJECTED', 'SUSPENDED').required()
   })
 }
 

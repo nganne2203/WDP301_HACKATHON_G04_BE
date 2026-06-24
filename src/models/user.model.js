@@ -26,6 +26,10 @@ const userSchema = new Schema(
       enum: ['GOOGLE', 'LOCAL'],
       default: 'LOCAL'
     },
+    registrationSource: {
+      type: String,
+      enum: ['GOOGLE', 'FORM']
+    },
     passwordHash: { type: String },
     mustChangePassword: { type: Boolean, default: false },
     fullName: { type: String, required: true, trim: true },
@@ -43,7 +47,7 @@ const userSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'],
+      enum: ['PENDING', 'APPROVED', 'ACTIVE', 'REJECTED', 'SUSPENDED'],
       default: 'PENDING'
     },
     roles: [{ type: Schema.Types.ObjectId, ref: 'Role' }],

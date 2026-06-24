@@ -103,7 +103,7 @@ const router = Router()
  *           example: [JUDGE]
  *         status:
  *           type: string
- *           enum: [PENDING, APPROVED, REJECTED, SUSPENDED]
+ *           enum: [PENDING, APPROVED, ACTIVE, REJECTED, SUSPENDED]
  *           default: PENDING
  *         githubUsername:
  *           type: string
@@ -131,7 +131,7 @@ const router = Router()
  *       properties:
  *         status:
  *           type: string
- *           enum: [PENDING, APPROVED, REJECTED, SUSPENDED]
+ *           enum: [PENDING, APPROVED, ACTIVE, REJECTED, SUSPENDED]
  *           example: APPROVED
  *     AssignRolesRequest:
  *       type: object
@@ -175,7 +175,7 @@ router.use(authorizationMiddleware)
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, APPROVED, REJECTED, SUSPENDED]
+ *           enum: [PENDING, APPROVED, ACTIVE, REJECTED, SUSPENDED]
  *       - in: query
  *         name: search
  *         schema:

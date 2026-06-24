@@ -11,9 +11,14 @@ import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.servic
 import { EMAIL_TEMPLATE_KEYS } from '#modules/notifications/email-templates.js'
 import { AUDIT_LOG_SERVICE } from '#modules/audit-logs/audit-log.service.js'
 import { env } from '#configs/environment.js'
+import {
+  REGISTRATION_SOURCES,
+  getRegistrationSource,
+  isGoogleAccount
+} from '#utils/userAccountUtil.js'
 
 const PROFILE_FIELDS = ['fullName', 'avatarUrl', 'phone', 'bio', 'githubUsername']
-const ALLOWED_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED']
+const ALLOWED_STATUSES = ['PENDING', 'APPROVED', 'ACTIVE', 'REJECTED', 'SUSPENDED']
 const EMAIL_NOTIFICATION_STATUSES = ['APPROVED', 'REJECTED']
 const PARTICIPANT_ROLES = ['USER', 'PARTICIPANT']
 
@@ -101,6 +106,7 @@ const normalizeUser = (user) => {
     id: plainUser._id?.toString() || plainUser.id,
     email: plainUser.email,
     authProvider: plainUser.authProvider,
+    registrationSource: getRegistrationSource(plainUser),
     fullName: plainUser.fullName,
     status: plainUser.status,
     mustChangePassword: Boolean(plainUser.mustChangePassword),
@@ -261,6 +267,7 @@ const createUser = async (payload = {}, actor = {}) => {
     fullName: payload.fullName,
     passwordHash,
     authProvider: 'LOCAL',
+    registrationSource: REGISTRATION_SOURCES.FORM,
     status: payload.status || 'PENDING',
     roles: roles.map(role => role._id),
     phone: payload.phone,
@@ -292,6 +299,15 @@ const updateStatus = async (id, status) => {
   }
 
   const existingUser = await ensureUserExists(id)
+
+  if (isGoogleAccount(existingUser) && ['PENDING', 'APPROVED', 'REJECTED'].includes(status)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Google accounts do not use the approval workflow'])
+  }
+
+  if (!isGoogleAccount(existingUser) && status === 'ACTIVE') {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Form registrations must be approved instead of activated'])
+  }
+
   const updatedUser = await USER_REPOSITORY.updateById(id, { status })
   const normalizedUser = normalizeUser(updatedUser)
 

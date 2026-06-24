@@ -1054,8 +1054,8 @@ export const createTeamService = ({
         })
 
         const leader = await repository.findUserById(actor.id, { session })
-        if (!leader || leader.status !== 'APPROVED') {
-          throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only approved users can create teams'])
+        if (!leader || !['APPROVED', 'ACTIVE'].includes(leader.status)) {
+          throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only active users can create teams'])
         }
 
         const existingTeam = await repository.findTeamByLeaderAndEvent({

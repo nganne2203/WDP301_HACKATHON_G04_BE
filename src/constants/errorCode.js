@@ -67,10 +67,10 @@ export const ERROR_CODES = {
     message: 'Email đã được xác minh.'
   },
 
-  GOOGLE_REGISTRATION_REQUIRED: {
-    code: 'GOOGLE_REGISTRATION_REQUIRED',
+  GOOGLE_ACCOUNT_NOT_FOUND: {
+    code: 'GOOGLE_ACCOUNT_NOT_FOUND',
     statusCode: StatusCodes.NOT_FOUND,
-    message: 'Google account registration is required.'
+    message: 'No account exists for this Google email.'
   },
 
   SERVER_ERROR: {
