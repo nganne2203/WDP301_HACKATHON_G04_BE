@@ -17,12 +17,12 @@ const clientUrls = process.env.CLIENT_URLS?.split(',').map(url => url.trim()).fi
 const localFrontendUrl = ['prod', 'production'].includes(nodeEnv) ? undefined : 'http://localhost:5173'
 const frontendUrl = process.env.FRONTEND_URL || clientUrls[0] || localFrontendUrl
 const allowedClientUrls = clientUrls.length > 0 ? clientUrls : (frontendUrl ? [frontendUrl] : [])
-const legacyEmailHost = process.env.EMAIL_HOST
-const legacyEmailHostIsAddress = legacyEmailHost?.includes('@')
-const emailUser = process.env.EMAIL_USER || process.env.SMTP_USER || (legacyEmailHostIsAddress ? legacyEmailHost : undefined)
-const emailHost = process.env.SMTP_HOST || (!legacyEmailHostIsAddress ? legacyEmailHost : undefined)
+const emailUser = process.env.EMAIL_USER
+const emailPassword = process.env.EMAIL_PASSWORD
 
 export const env = {
+  EMAIL_USER: emailUser,
+  EMAIL_PASSWORD: emailPassword,
   server: {
     port: process.env.PORT || 3000,
     hostname: process.env.HOSTNAME,
@@ -49,16 +49,9 @@ export const env = {
     refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN
   },
   email: {
-    provider: process.env.EMAIL_PROVIDER?.trim().toLowerCase(),
-    service: process.env.EMAIL_SERVICE,
-    host: emailHost,
-    port: parseNumber(process.env.SMTP_PORT),
-    secure: parseBoolean(process.env.SMTP_SECURE, false),
     user: emailUser,
-    password: process.env.EMAIL_PASSWORD || process.env.SMTP_PASSWORD,
-    from: process.env.RESEND_FROM || process.env.EMAIL_FROM || process.env.SMTP_FROM || emailUser,
-    resendApiKey: process.env.RESEND_API_KEY,
-    resendApiUrl: process.env.RESEND_API_URL || 'https://api.resend.com',
+    password: emailPassword,
+    from: emailUser,
     devMode: process.env.EMAIL_DEV_MODE || (['dev', 'development', 'test'].includes(nodeEnv) ? 'console' : 'silent')
   },
   teamInvitation: {

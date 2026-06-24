@@ -59,6 +59,11 @@ test('sends email with configured transport', async () => {
   assert.equal(result.status, 'SENT')
   assert.deepEqual(result.accepted, ['participant@example.com'])
   assert.equal(sent[0].from, 'noreply@example.com')
+  assert.equal(logger.entries[0].message, 'Sending email...')
+  assert.deepEqual(logger.entries[0].metadata, {
+    to: ['participant@example.com'],
+    subject: 'Welcome'
+  })
 })
 
 test('returns failure for invalid recipient without calling transport', async () => {
@@ -107,7 +112,8 @@ test('returns failure when provider throws', async () => {
   assert.equal(result.sent, false)
   assert.equal(result.status, 'FAILED')
   assert.equal(result.reason, 'SMTP rejected message')
-  assert.equal(logger.entries[0].level, 'error')
+  assert.equal(logger.entries.at(-1).level, 'error')
+  assert.equal(logger.entries.at(-1).message, 'Email send failed')
 })
 
 test('renders and sends a templated email', async () => {
