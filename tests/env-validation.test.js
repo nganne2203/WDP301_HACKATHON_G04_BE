@@ -4,6 +4,8 @@ import test from 'node:test'
 import { validateRuntimeEnvironment } from '../src/configs/env-validation.js'
 
 const createConfig = (overrides = {}) => ({
+  EMAIL_USER: 'sender@gmail.com',
+  EMAIL_PASSWORD: 'google-app-password',
   db: { uri: 'mongodb://localhost:27017/seal' },
   jwt: {
     secret: 'jwt-secret-value-123',
@@ -55,33 +57,17 @@ test('environment validation does not require local AI credentials anymore', () 
   assert.equal(result.errors.length, 0)
 })
 
-test('environment validation requires Resend credentials when selected', () => {
+test('environment validation requires Gmail credentials', () => {
   assert.throws(
     () => validateRuntimeEnvironment({
       runtime: 'api',
       config: createConfig({
-        email: {
-          provider: 'resend',
-          resendApiKey: '',
-          from: ''
-        }
+        EMAIL_USER: '',
+        EMAIL_PASSWORD: ''
       })
     }),
-    /RESEND_API_KEY is required.*RESEND_FROM is required/
+    /EMAIL_USER is required.*EMAIL_PASSWORD is required/
   )
-
-  const result = validateRuntimeEnvironment({
-    runtime: 'api',
-    config: createConfig({
-      email: {
-        provider: 'resend',
-        resendApiKey: 're_test_key',
-        from: 'SEAL <noreply@example.com>'
-      }
-    })
-  })
-
-  assert.equal(result.errors.length, 0)
 })
 
 test('environment validation returns warnings in non-strict mode', () => {
