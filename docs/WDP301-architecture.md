@@ -1014,10 +1014,9 @@ GOOGLE_CLIENT_SECRET=your_google_client_secret
 GOOGLE_CONNECT_CALLBACK_URL=http://localhost:3000/api/google/callback
 FRONTEND_URL=http://localhost:5173
 
-# Recommended for Railway deployments (HTTPS; no SMTP port required)
-EMAIL_PROVIDER=resend
-RESEND_API_KEY=re_xxxxxxxxx
-RESEND_FROM="SEAL Hackathon <noreply@your-verified-domain.com>"
+# Gmail SMTP (Railway Pro or above is required for outbound SMTP)
+EMAIL_USER=your-account@gmail.com
+EMAIL_PASSWORD=your_google_app_password
 
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_key
