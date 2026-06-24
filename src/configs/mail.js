@@ -79,7 +79,7 @@ const createTransportOptions = () => {
   return null
 }
 
-const useResend = env.email.provider === 'resend' || Boolean(env.email.resendApiKey)
+const useResend = env.email.provider === 'resend'
 const transportOptions = useResend ? null : createTransportOptions()
 
 export const transporter = useResend
