@@ -182,6 +182,7 @@ const forbiddenFieldSanitizer = (value) => {
 }
 
 const safeJsonParse = (text) => {
+  if (text && typeof text === 'object') return text
   const trimmed = String(text || '').trim()
   if (!trimmed) throw new Error('AI response was empty')
 
@@ -345,7 +346,7 @@ export const createAiReviewService = ({
     }
 
     return {
-      rawResponse,
+      rawResponse: typeof rawResponse === 'string' ? rawResponse : JSON.stringify(rawResponse),
       normalizedOutput: enrichCanonicalAggregateOutput({
         reviewKind,
         normalizedOutput: value

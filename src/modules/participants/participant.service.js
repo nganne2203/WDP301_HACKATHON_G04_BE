@@ -235,7 +235,7 @@ export const createParticipantService = ({
     if (!actor.id) throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authentication is required'])
 
     const participant = await repository.findByEventAndUser({ eventId, userId: actor.id })
-    if (!participant) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Participant registration not found for this event'])
+    if (!participant) return null
     return normalizeParticipant(participant)
   }
 
