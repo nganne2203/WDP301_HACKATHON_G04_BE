@@ -49,13 +49,16 @@ export const env = {
     refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN
   },
   email: {
+    provider: process.env.EMAIL_PROVIDER?.trim().toLowerCase(),
     service: process.env.EMAIL_SERVICE,
     host: emailHost,
     port: parseNumber(process.env.SMTP_PORT),
     secure: parseBoolean(process.env.SMTP_SECURE, false),
     user: emailUser,
     password: process.env.SMTP_PASSWORD || process.env.EMAIL_PASSWORD,
-    from: process.env.EMAIL_FROM || process.env.SMTP_FROM || emailUser,
+    from: process.env.RESEND_FROM || process.env.EMAIL_FROM || process.env.SMTP_FROM || emailUser,
+    resendApiKey: process.env.RESEND_API_KEY,
+    resendApiUrl: process.env.RESEND_API_URL || 'https://api.resend.com',
     devMode: process.env.EMAIL_DEV_MODE || (['dev', 'development', 'test'].includes(nodeEnv) ? 'console' : 'silent')
   },
   teamInvitation: {

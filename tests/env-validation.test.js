@@ -55,6 +55,35 @@ test('environment validation does not require local AI credentials anymore', () 
   assert.equal(result.errors.length, 0)
 })
 
+test('environment validation requires Resend credentials when selected', () => {
+  assert.throws(
+    () => validateRuntimeEnvironment({
+      runtime: 'api',
+      config: createConfig({
+        email: {
+          provider: 'resend',
+          resendApiKey: '',
+          from: ''
+        }
+      })
+    }),
+    /RESEND_API_KEY is required.*RESEND_FROM is required/
+  )
+
+  const result = validateRuntimeEnvironment({
+    runtime: 'api',
+    config: createConfig({
+      email: {
+        provider: 'resend',
+        resendApiKey: 're_test_key',
+        from: 'SEAL <noreply@example.com>'
+      }
+    })
+  })
+
+  assert.equal(result.errors.length, 0)
+})
+
 test('environment validation returns warnings in non-strict mode', () => {
   const result = validateRuntimeEnvironment({
     runtime: 'api',
