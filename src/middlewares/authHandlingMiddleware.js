@@ -2,6 +2,7 @@ import { JWT_UTILS } from '#utils/jwtUtil.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { USER_SERVICE } from '#modules/users/user.service.js'
+import { canAccessAuthenticatedRoutes } from '#utils/userAccountUtil.js'
 
 export const authorizationMiddleware = async (req, res, next) => {
   try {
@@ -13,7 +14,7 @@ export const authorizationMiddleware = async (req, res, next) => {
 
     const user = await USER_SERVICE.getRawUserById(decoded.id)
 
-    if (user.status !== 'APPROVED') {
+    if (!canAccessAuthenticatedRoutes(user)) {
       throw new ApiError(ERROR_CODES.ACCOUNT_DISABLED, [`Account status is ${user.status}`])
     }
 

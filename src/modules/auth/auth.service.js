@@ -4,6 +4,35 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
 import { JWT_UTILS } from '#utils/jwtUtil.js'
+import {
+  REGISTRATION_SOURCES,
+  canAccessAuthenticatedRoutes,
+  getRegistrationSource,
+  isGoogleAccount
+} from '#utils/userAccountUtil.js'
+
+const FORM_REGISTRATION_FIELDS = [
+  'email',
+  'password',
+  'fullName',
+  'githubUsername',
+  'studentType',
+  'studentId'
+]
+
+export const isCompleteFormRegistrationPayload = (payload = {}) => {
+  const hasRequiredFields = FORM_REGISTRATION_FIELDS.every(field => {
+    const value = payload[field]
+    return value !== undefined && value !== null && String(value).trim() !== ''
+  })
+
+  if (!hasRequiredFields) return false
+  return payload.studentType !== 'EXTERNAL' || Boolean(payload.schoolName?.trim())
+}
+
+export const isGoogleLoginFallback = (payload = {}) => {
+  return Boolean(payload.googleId) && !isCompleteFormRegistrationPayload(payload)
+}
 
 const buildTokenPayload = (user) => {
   return {
@@ -29,7 +58,17 @@ const ensureApproved = (user) => {
   }
 }
 
+const ensureAccountCanAccess = (user) => {
+  if (!canAccessAuthenticatedRoutes(user)) {
+    throw new ApiError(ERROR_CODES.FORBIDDEN, [`Account status is ${user.status}`])
+  }
+}
+
 const register = async (payload) => {
+  if (isGoogleLoginFallback(payload)) {
+    return await googleLogin(payload)
+  }
+
   const existingUser = await AUTH_REPOSITORY.findUserByEmail(payload.email)
   if (existingUser) {
     throw new ApiError(ERROR_CODES.CONFLICT, ['Email already exists'])
@@ -47,6 +86,7 @@ const register = async (payload) => {
     schoolName: payload.studentType === 'EXTERNAL' ? payload.schoolName : undefined,
     passwordHash,
     authProvider: 'LOCAL',
+    registrationSource: REGISTRATION_SOURCES.FORM,
     status: 'PENDING',
     roles: userRole ? [userRole._id] : []
   })
@@ -68,50 +108,43 @@ const googleLogin = async ({ googleId, email, name, avatar }) => {
     await AUTH_REPOSITORY.findUserByEmail(email)
 
   if (!existingUser) {
-    throw new ApiError(ERROR_CODES.GOOGLE_REGISTRATION_REQUIRED, [
-      'Please provide a GitHub username to complete registration.'
+    throw new ApiError(ERROR_CODES.GOOGLE_ACCOUNT_NOT_FOUND, [
+      `No account exists for ${email}. Register with the registration form first.`
     ])
   }
 
-  const user = await AUTH_REPOSITORY.updateUserById(existingUser._id, {
+  if (existingUser.email.toLowerCase() !== email.toLowerCase()) {
+    throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Google identity does not match the account email'])
+  }
+
+  const linkedGoogleId = existingUser.googleAuth?.googleId || existingUser.googleId
+  if (linkedGoogleId && linkedGoogleId !== googleId) {
+    throw new ApiError(ERROR_CODES.CONFLICT, ['This email is linked to a different Google account'])
+  }
+
+  const registrationSource = getRegistrationSource(existingUser)
+  if (isGoogleAccount(existingUser)) {
+    if (['REJECTED', 'SUSPENDED'].includes(existingUser.status)) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, [`Account status is ${existingUser.status}`])
+    }
+  } else {
+    ensureApproved(existingUser)
+  }
+
+  const updates = {
     googleId,
     googleAuth,
-    authProvider: 'GOOGLE',
+    registrationSource,
     avatarUrl: existingUser.avatarUrl || avatar || undefined
-  })
+  }
 
-  ensureApproved(user)
+  if (registrationSource === REGISTRATION_SOURCES.GOOGLE) {
+    updates.authProvider = 'GOOGLE'
+    updates.status = 'ACTIVE'
+  }
+
+  const user = await AUTH_REPOSITORY.updateUserById(existingUser._id, updates)
   return buildAuthResponse(user)
-}
-
-const googleRegister = async ({ googleId, email, name, avatar, githubUsername }) => {
-  const existingUser = await AUTH_REPOSITORY.findUserByGoogleId(googleId) ||
-    await AUTH_REPOSITORY.findUserByEmail(email)
-
-  if (existingUser) {
-    throw new ApiError(ERROR_CODES.CONFLICT, ['Google account is already registered'])
-  }
-
-  const googleAuth = {
-    googleId,
-    email,
-    name,
-    picture: avatar || undefined
-  }
-  const userRole = await AUTH_REPOSITORY.findRoleByName('USER')
-  const createdUser = await AUTH_REPOSITORY.createUser({
-    email,
-    googleId,
-    googleAuth,
-    authProvider: 'GOOGLE',
-    fullName: name,
-    avatarUrl: avatar || undefined,
-    githubUsername,
-    status: 'PENDING',
-    roles: userRole ? [userRole._id] : []
-  })
-  const user = await AUTH_REPOSITORY.findUserById(createdUser._id)
-  return USER_SERVICE.normalizeUser(user)
 }
 
 const login = async ({ email, password }) => {
@@ -138,7 +171,7 @@ const refreshToken = async (refreshTokenValue) => {
     throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Invalid refresh token'])
   }
 
-  ensureApproved(user)
+  ensureAccountCanAccess(user)
 
   return buildAuthResponse(user)
 }
@@ -176,7 +209,6 @@ export const AUTH_SERVICE = {
   register,
   login,
   googleLogin,
-  googleRegister,
   refreshToken,
   getMe,
   changePassword

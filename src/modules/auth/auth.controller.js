@@ -1,13 +1,22 @@
 import { StatusCodes } from 'http-status-codes'
 
-import { AUTH_SERVICE } from './auth.service.js'
+import { AUTH_SERVICE, isGoogleLoginFallback } from './auth.service.js'
 import { responseSuccess } from '#utils/responseUtil.js'
 
 const register = async (req, res, next) => {
   try {
+    if (isGoogleLoginFallback(req.body)) {
+      const authData = await AUTH_SERVICE.googleLogin(req.body)
+
+      return res.status(StatusCodes.OK).json(responseSuccess({
+        message: 'Login with Google successfully',
+        data: authData
+      }))
+    }
+
     const user = await AUTH_SERVICE.register(req.body)
 
-    res.status(StatusCodes.CREATED).json(responseSuccess({
+    return res.status(StatusCodes.CREATED).json(responseSuccess({
       message: 'Register successfully. Your account is pending approval.',
       data: user
     }))
@@ -36,19 +45,6 @@ const googleLogin = async (req, res, next) => {
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Login with Google successfully',
       data: authData
-    }))
-  } catch (error) {
-    next(error)
-  }
-}
-
-const googleRegister = async (req, res, next) => {
-  try {
-    const user = await AUTH_SERVICE.googleRegister(req.body)
-
-    res.status(StatusCodes.CREATED).json(responseSuccess({
-      message: 'Register with Google successfully. Your account is pending approval.',
-      data: user
     }))
   } catch (error) {
     next(error)
@@ -109,7 +105,6 @@ export const AUTH_CONTROLLER = {
   register,
   login,
   googleLogin,
-  googleRegister,
   refreshToken,
   getMe,
   changePassword,
