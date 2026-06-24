@@ -1,63 +1,53 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { createResendTransport } from '../src/configs/mail.js'
+import { createGmailTransport, verifyGmailConnection } from '../src/configs/mail.js'
 
-test('Resend transport sends email through the HTTPS API', async () => {
-  const requests = []
-  const transport = createResendTransport({
-    apiKey: 're_test_key',
-    fetchImpl: async (url, options) => {
-      requests.push({ url, options })
-      return {
-        ok: true,
-        json: async () => ({ id: 'email-1' })
-      }
-    }
-  })
+const createLogger = () => {
+  const entries = []
+  return {
+    entries,
+    info: (message, metadata) => entries.push({ level: 'info', message, metadata }),
+    error: (message, metadata) => entries.push({ level: 'error', message, metadata })
+  }
+}
 
-  const result = await transport.sendMail({
-    from: 'SEAL <noreply@example.com>',
-    to: ['participant@example.com'],
-    subject: 'Account approved',
-    html: '<p>Approved</p>',
-    text: 'Approved'
+test('creates a Gmail Nodemailer transporter with user and App Password', () => {
+  const transport = createGmailTransport({
+    user: 'sender@gmail.com',
+    password: 'google-app-password'
   })
 
-  assert.equal(requests[0].url, 'https://api.resend.com/emails')
-  assert.equal(requests[0].options.method, 'POST')
-  assert.equal(requests[0].options.headers.Authorization, 'Bearer re_test_key')
-  assert.deepEqual(JSON.parse(requests[0].options.body), {
-    from: 'SEAL <noreply@example.com>',
-    to: ['participant@example.com'],
-    subject: 'Account approved',
-    html: '<p>Approved</p>',
-    text: 'Approved'
-  })
-  assert.deepEqual(result, {
-    accepted: ['participant@example.com'],
-    rejected: [],
-    messageId: 'email-1'
-  })
+  assert.equal(transport.options.service, 'gmail')
+  assert.equal(transport.options.auth.user, 'sender@gmail.com')
+  assert.equal(transport.options.auth.pass, 'google-app-password')
 })
 
-test('Resend transport surfaces API errors', async () => {
-  const transport = createResendTransport({
-    apiKey: 're_test_key',
-    fetchImpl: async () => ({
-      ok: false,
-      status: 403,
-      json: async () => ({ message: 'Domain is not verified' })
-    })
+test('startup Gmail health check logs a successful connection', async () => {
+  const logger = createLogger()
+  const connected = await verifyGmailConnection({
+    transport: { verify: async () => true },
+    logger
   })
 
-  await assert.rejects(
-    () => transport.sendMail({
-      from: 'noreply@example.com',
-      to: 'participant@example.com',
-      subject: 'Welcome',
-      text: 'Welcome'
-    }),
-    /Domain is not verified/
-  )
+  assert.equal(connected, true)
+  assert.equal(logger.entries[0].level, 'info')
+  assert.equal(logger.entries[0].message, 'Gmail SMTP connected successfully')
+})
+
+test('startup Gmail health check logs connection failures without crashing', async () => {
+  const logger = createLogger()
+  const connected = await verifyGmailConnection({
+    transport: {
+      verify: async () => {
+        throw new Error('Connection timeout')
+      }
+    },
+    logger
+  })
+
+  assert.equal(connected, false)
+  assert.equal(logger.entries[0].level, 'error')
+  assert.equal(logger.entries[0].message, 'Gmail SMTP connection failed')
+  assert.equal(logger.entries[0].metadata.error, 'Connection timeout')
 })

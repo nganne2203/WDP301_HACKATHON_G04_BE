@@ -69,10 +69,6 @@ export const createEmailService = ({
 
     const from = config.from
     if (!transport) {
-      const missingProviderReason = config.transport?.provider === 'resend'
-        ? 'Resend API key is not configured'
-        : 'SMTP is not configured'
-
       if (config.devMode === 'console') {
         logger.info('Email logged in development mode', {
           to: valid,
@@ -96,11 +92,16 @@ export const createEmailService = ({
         accepted: [],
         rejected: valid,
         invalid,
-        reason: missingProviderReason
+        reason: 'SMTP is not configured'
       }
     }
 
     try {
+      logger.info('Sending email...', {
+        to: valid,
+        subject
+      })
+
       const info = await transport.sendMail({
         from,
         to: valid,
@@ -125,7 +126,7 @@ export const createEmailService = ({
         invalid
       }
     } catch (error) {
-      logger.error('Email send attempt failed', {
+      logger.error('Email send failed', {
         to: valid,
         subject,
         error: error.message,
