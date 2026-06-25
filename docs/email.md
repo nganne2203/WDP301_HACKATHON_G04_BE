@@ -44,6 +44,7 @@ Probable causes include:
 - Missing `GMAIL_USER`, `GMAIL_APP_PASSWORD`, or `MAIL_FROM`.
 - Gmail account not configured for app passwords.
 - SMTP connectivity issue between Railway and `smtp.gmail.com:465`.
+- Railway container IPv6 routing failure, shown as `ENETUNREACH ... :465`. The backend forces Gmail SMTP sockets over IPv4 to avoid this.
 
 ## Railway Setup
 
