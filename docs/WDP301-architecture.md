@@ -1018,6 +1018,9 @@ FRONTEND_URL=http://localhost:5173
 GMAIL_USER=your.gmail.account@gmail.com
 GMAIL_APP_PASSWORD=your_16_character_gmail_app_password
 MAIL_FROM="SEAL Hackathon <your.gmail.account@gmail.com>"
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
 
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_key

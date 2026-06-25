@@ -32,7 +32,8 @@ test('builds Gmail SMTP transport configuration', () => {
 
   assert.equal(config.host, SMTP_HOST)
   assert.equal(config.port, SMTP_PORT)
-  assert.equal(config.secure, true)
+  assert.equal(config.secure, false)
+  assert.equal(config.requireTLS, true)
   assert.equal(config.family, SMTP_ADDRESS_FAMILY)
   assert.equal(typeof config.getSocket, 'function')
   assert.deepEqual(config.auth, {
@@ -54,6 +55,8 @@ test('creates a reusable SMTP transporter when Gmail credentials are configured'
 
   assert.equal(typeof transporter.sendMail, 'function')
   assert.equal(createdConfig.host, 'smtp.gmail.com')
+  assert.equal(createdConfig.port, 587)
+  assert.equal(createdConfig.secure, false)
   assert.equal(createdConfig.family, 4)
   assert.equal(createdConfig.auth.user, 'sender@gmail.com')
 })
@@ -69,6 +72,7 @@ test('SMTP socket factory resolves Gmail over IPv4 and preserves TLS servername'
   let lookupArgs
   let connectOptions
   const socketFactory = createIpv4SmtpSocketFactory({
+    secure: true,
     lookup: async (...args) => {
       lookupArgs = args
       return { address: '142.250.1.109', family: 4 }
@@ -100,6 +104,44 @@ test('SMTP socket factory resolves Gmail over IPv4 and preserves TLS servername'
   assert.equal(connectOptions.rejectUnauthorized, true)
   assert.equal(socketOptions.secured, true)
   assert.equal(socketOptions.host, 'smtp.gmail.com')
+})
+
+test('SMTP socket factory can open IPv4 plain sockets for STARTTLS', async () => {
+  class FakeSocket extends EventEmitter {
+    setTimeout() {}
+    destroy() {
+      this.destroyed = true
+    }
+  }
+
+  let connectOptions
+  const socketFactory = createIpv4SmtpSocketFactory({
+    secure: false,
+    lookup: async () => ({ address: '142.250.1.109', family: 4 }),
+    connect: (options, onConnect) => {
+      connectOptions = options
+      const socket = new FakeSocket()
+      queueMicrotask(onConnect)
+      return socket
+    }
+  })
+
+  const socketOptions = await new Promise((resolve, reject) => {
+    socketFactory({
+      host: 'smtp.gmail.com',
+      port: 587,
+      connectionTimeout: 1000
+    }, (error, result) => {
+      if (error) return reject(error)
+      return resolve(result)
+    })
+  })
+
+  assert.equal(connectOptions.host, '142.250.1.109')
+  assert.equal(connectOptions.port, 587)
+  assert.equal(connectOptions.servername, undefined)
+  assert.equal(socketOptions.secured, false)
+  assert.equal(socketOptions.tls.servername, 'smtp.gmail.com')
 })
 
 test('does not create an SMTP transporter without Gmail credentials', () => {
