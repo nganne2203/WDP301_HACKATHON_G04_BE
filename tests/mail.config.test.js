@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
 import test from 'node:test'
 
 import {
+  SMTP_ADDRESS_FAMILY,
   SMTP_HOST,
   SMTP_PORT,
   buildSmtpTransportConfig,
+  createIpv4SmtpSocketFactory,
   createSmtpTransporter,
   getSmtpConfigurationIssues,
   getSmtpFailureProbableCauses,
@@ -30,6 +33,8 @@ test('builds Gmail SMTP transport configuration', () => {
   assert.equal(config.host, SMTP_HOST)
   assert.equal(config.port, SMTP_PORT)
   assert.equal(config.secure, true)
+  assert.equal(config.family, SMTP_ADDRESS_FAMILY)
+  assert.equal(typeof config.getSocket, 'function')
   assert.deepEqual(config.auth, {
     user: 'sender@gmail.com',
     pass: 'app-password'
@@ -49,7 +54,52 @@ test('creates a reusable SMTP transporter when Gmail credentials are configured'
 
   assert.equal(typeof transporter.sendMail, 'function')
   assert.equal(createdConfig.host, 'smtp.gmail.com')
+  assert.equal(createdConfig.family, 4)
   assert.equal(createdConfig.auth.user, 'sender@gmail.com')
+})
+
+test('SMTP socket factory resolves Gmail over IPv4 and preserves TLS servername', async () => {
+  class FakeSocket extends EventEmitter {
+    setTimeout() {}
+    destroy() {
+      this.destroyed = true
+    }
+  }
+
+  let lookupArgs
+  let connectOptions
+  const socketFactory = createIpv4SmtpSocketFactory({
+    lookup: async (...args) => {
+      lookupArgs = args
+      return { address: '142.250.1.109', family: 4 }
+    },
+    connect: (options, onConnect) => {
+      connectOptions = options
+      const socket = new FakeSocket()
+      queueMicrotask(onConnect)
+      return socket
+    }
+  })
+
+  const socketOptions = await new Promise((resolve, reject) => {
+    socketFactory({
+      host: 'smtp.gmail.com',
+      port: 465,
+      connectionTimeout: 1000,
+      tls: { rejectUnauthorized: true }
+    }, (error, result) => {
+      if (error) return reject(error)
+      return resolve(result)
+    })
+  })
+
+  assert.deepEqual(lookupArgs, ['smtp.gmail.com', { family: 4 }])
+  assert.equal(connectOptions.host, '142.250.1.109')
+  assert.equal(connectOptions.port, 465)
+  assert.equal(connectOptions.servername, 'smtp.gmail.com')
+  assert.equal(connectOptions.rejectUnauthorized, true)
+  assert.equal(socketOptions.secured, true)
+  assert.equal(socketOptions.host, 'smtp.gmail.com')
 })
 
 test('does not create an SMTP transporter without Gmail credentials', () => {
@@ -130,3 +180,15 @@ test('SMTP verification causes explain connectivity failures', () => {
   )
 })
 
+test('SMTP verification causes explain unavailable IPv6 routes', () => {
+  assert.match(
+    getSmtpFailureProbableCauses({
+      error: {
+        code: 'ESOCKET',
+        message: 'connect ENETUNREACH 2607:f8b0:4023:c03::6d:465 - Local (:::0)'
+      },
+      missing: []
+    }).join(' '),
+    /force Gmail SMTP over IPv4/
+  )
+})
