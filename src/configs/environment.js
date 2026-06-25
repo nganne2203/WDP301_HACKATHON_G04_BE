@@ -17,10 +17,7 @@ const clientUrls = process.env.CLIENT_URLS?.split(',').map(url => url.trim()).fi
 const localFrontendUrl = ['prod', 'production'].includes(nodeEnv) ? undefined : 'http://localhost:5173'
 const frontendUrl = process.env.FRONTEND_URL || clientUrls[0] || localFrontendUrl
 const allowedClientUrls = clientUrls.length > 0 ? clientUrls : (frontendUrl ? [frontendUrl] : [])
-const resendApiKey = process.env.RESEND_API_KEY
-
 export const env = {
-  RESEND_API_KEY: resendApiKey,
   server: {
     port: process.env.PORT || 3000,
     hostname: process.env.HOSTNAME,
@@ -47,10 +44,10 @@ export const env = {
     refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN
   },
   email: {
-    devMode: process.env.EMAIL_DEV_MODE || (['dev', 'development', 'test'].includes(nodeEnv) ? 'console' : 'silent')
-  },
-  resend: {
-    apiKey: resendApiKey
+    devMode: process.env.EMAIL_DEV_MODE || (['dev', 'development', 'test'].includes(nodeEnv) ? 'console' : 'silent'),
+    gmailUser: process.env.GMAIL_USER,
+    gmailAppPassword: process.env.GMAIL_APP_PASSWORD,
+    from: process.env.MAIL_FROM
   },
   teamInvitation: {
     expiresHours: parseNumber(process.env.TEAM_INVITATION_EXPIRES_HOURS) || 72,

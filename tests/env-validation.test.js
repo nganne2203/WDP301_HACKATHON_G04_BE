@@ -4,14 +4,15 @@ import test from 'node:test'
 import { validateRuntimeEnvironment } from '../src/configs/env-validation.js'
 
 const createConfig = (overrides = {}) => ({
-  RESEND_API_KEY: 're_test_key',
-  resend: {
-    apiKey: 're_test_key'
-  },
   db: { uri: 'mongodb://localhost:27017/seal' },
   jwt: {
     secret: 'jwt-secret-value-123',
     refreshTokenSecret: 'refresh-secret-value-123'
+  },
+  email: {
+    gmailUser: 'sender@gmail.com',
+    gmailAppPassword: 'app-password',
+    from: 'SEAL Hackathon <sender@gmail.com>'
   },
   security: {
     tokenEncryptionSecret: 'encryption-secret-123'
@@ -59,19 +60,22 @@ test('environment validation does not require local AI credentials anymore', () 
   assert.equal(result.errors.length, 0)
 })
 
-test('environment validation warns instead of crashing when Resend API key is missing', () => {
+test('environment validation warns instead of crashing when Gmail SMTP variables are missing', () => {
   const result = validateRuntimeEnvironment({
     runtime: 'api',
     strict: false,
     config: createConfig({
-      RESEND_API_KEY: '',
-      resend: { apiKey: '' }
+      email: {
+        gmailUser: '',
+        gmailAppPassword: '',
+        from: ''
+      }
     })
   })
 
   assert.equal(result.errors.length, 0)
   assert.equal(result.warnings.length, 1)
-  assert.match(result.warnings[0], /RESEND_API_KEY is not configured/)
+  assert.match(result.warnings[0], /GMAIL_USER, GMAIL_APP_PASSWORD, MAIL_FROM are not configured/)
 })
 
 test('environment validation returns warnings in non-strict mode', () => {
@@ -80,8 +84,6 @@ test('environment validation returns warnings in non-strict mode', () => {
     strict: false,
     config: createConfig({
       redis: { url: '' },
-      RESEND_API_KEY: 're_test_key',
-      resend: { apiKey: 're_test_key' },
       server: {
         publicUrl: '',
         readinessRequiresRedis: false
