@@ -10,12 +10,18 @@ Required environment variables:
 GMAIL_USER=your.gmail.account@gmail.com
 GMAIL_APP_PASSWORD=abcd efgh ijkl mnop
 MAIL_FROM="SEAL Hackathon <your.gmail.account@gmail.com>"
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
 EMAIL_DEV_MODE=silent
 ```
 
 - `GMAIL_USER`: Gmail account used for SMTP authentication.
 - `GMAIL_APP_PASSWORD`: Gmail app password for the account. Use the app password value, not the normal account password.
 - `MAIL_FROM`: Sender shown to recipients. For Gmail SMTP, keep the email address aligned with `GMAIL_USER` unless the Gmail account is configured to send as another address.
+- `SMTP_HOST`: Optional. Defaults to `smtp.gmail.com`.
+- `SMTP_PORT`: Optional. Defaults to `587`, Gmail's STARTTLS submission port.
+- `SMTP_SECURE`: Optional. Defaults to `false` for port `587`. Use `true` only for implicit TLS on port `465`.
 - `EMAIL_DEV_MODE`: Optional. In local development/test, `console` logs skipped emails when SMTP is not configured. In production, use `silent`.
 
 ## Startup Verification
@@ -29,7 +35,7 @@ await transporter.verify()
 Successful verification logs:
 
 ```text
-[2026-06-25T00:00:00.000Z] INFO SMTP Ready {"provider":"gmail-smtp","host":"smtp.gmail.com","port":465,"secure":true,"user":"yo***l@gmail.com","from":"SEAL Hackathon <your.gmail.account@gmail.com>"}
+[2026-06-25T00:00:00.000Z] INFO SMTP Ready {"provider":"gmail-smtp","host":"smtp.gmail.com","port":587,"secure":false,"family":4,"user":"yo***l@gmail.com","from":"SEAL Hackathon <your.gmail.account@gmail.com>"}
 ```
 
 If verification fails, startup logs structured diagnostics and keeps the API process available:
@@ -43,8 +49,9 @@ Probable causes include:
 - Invalid Gmail App Password.
 - Missing `GMAIL_USER`, `GMAIL_APP_PASSWORD`, or `MAIL_FROM`.
 - Gmail account not configured for app passwords.
-- SMTP connectivity issue between Railway and `smtp.gmail.com:465`.
+- SMTP connectivity issue between Railway and `smtp.gmail.com:587`.
 - Railway container IPv6 routing failure, shown as `ENETUNREACH ... :465`. The backend forces Gmail SMTP sockets over IPv4 to avoid this.
+- Railway timeout on `smtp.gmail.com:465`. The backend defaults to port `587` with STARTTLS because it is usually the safer SMTP submission path in hosted containers.
 
 ## Railway Setup
 
@@ -56,6 +63,9 @@ Probable causes include:
 GMAIL_USER=your.gmail.account@gmail.com
 GMAIL_APP_PASSWORD=abcd efgh ijkl mnop
 MAIL_FROM="SEAL Hackathon <your.gmail.account@gmail.com>"
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
 EMAIL_DEV_MODE=silent
 ```
 

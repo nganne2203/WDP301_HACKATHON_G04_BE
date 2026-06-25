@@ -1,5 +1,6 @@
 import dns from 'node:dns'
 import dnsPromises from 'node:dns/promises'
+import net from 'node:net'
 import tls from 'node:tls'
 import nodemailer from 'nodemailer'
 
@@ -7,9 +8,9 @@ import { env } from '#configs/environment.js'
 import { LOGGER } from '#utils/logger.js'
 
 export const SMTP_PROVIDER_NAME = 'gmail-smtp'
-export const SMTP_HOST = 'smtp.gmail.com'
-export const SMTP_PORT = 465
-export const SMTP_SECURE = true
+export const SMTP_HOST = env.email.smtpHost
+export const SMTP_PORT = env.email.smtpPort
+export const SMTP_SECURE = env.email.smtpSecure
 export const SMTP_ADDRESS_FAMILY = 4
 
 const DEFAULT_TIMEOUT_MS = 10000
@@ -57,17 +58,21 @@ export const getSmtpConfigurationIssues = ({
 
 export const buildSmtpTransportConfig = ({
   gmailUser = env.email.gmailUser,
-  gmailAppPassword = env.email.gmailAppPassword
+  gmailAppPassword = env.email.gmailAppPassword,
+  host = SMTP_HOST,
+  port = SMTP_PORT,
+  secure = SMTP_SECURE
 } = {}) => ({
-  host: SMTP_HOST,
-  port: SMTP_PORT,
-  secure: SMTP_SECURE,
+  host,
+  port,
+  secure,
   family: SMTP_ADDRESS_FAMILY,
   auth: {
     user: gmailUser,
     pass: gmailAppPassword
   },
-  getSocket: createIpv4SmtpSocketFactory(),
+  requireTLS: !secure,
+  getSocket: createIpv4SmtpSocketFactory({ secure }),
   connectionTimeout: DEFAULT_TIMEOUT_MS,
   greetingTimeout: DEFAULT_TIMEOUT_MS,
   socketTimeout: DEFAULT_TIMEOUT_MS
@@ -75,7 +80,8 @@ export const buildSmtpTransportConfig = ({
 
 export const createIpv4SmtpSocketFactory = ({
   lookup = dnsPromises.lookup,
-  connect = tls.connect
+  secure = SMTP_SECURE,
+  connect = secure ? tls.connect : net.connect
 } = {}) => {
   return async (options = {}, callback) => {
     const hostname = options.host || SMTP_HOST
@@ -99,7 +105,7 @@ export const createIpv4SmtpSocketFactory = ({
         ...(options.tls || {}),
         host: address,
         port,
-        servername: hostname
+        ...(secure ? { servername: hostname } : {})
       }, () => {
         if (settled) return
         settled = true
@@ -107,9 +113,13 @@ export const createIpv4SmtpSocketFactory = ({
         connection.setTimeout(0)
         callback(null, {
           connection,
-          secured: true,
+          secured: secure,
           host: hostname,
-          servername: hostname
+          servername: hostname,
+          tls: {
+            ...(options.tls || {}),
+            servername: hostname
+          }
         })
       })
 
@@ -181,10 +191,10 @@ export const getSmtpFailureProbableCauses = ({
   }
 
   if (['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EDNS'].includes(error?.code)) {
-    causes.push('SMTP connectivity issue between Railway and smtp.gmail.com:465')
+    causes.push(`SMTP connectivity issue between Railway and ${SMTP_HOST}:${SMTP_PORT}`)
   }
 
-  if (/ENETUNREACH .*:465/i.test(error?.message || '')) {
+  if (/ENETUNREACH .*:(465|587)/i.test(error?.message || '')) {
     causes.push('IPv6 route is unavailable; force Gmail SMTP over IPv4')
   }
 
