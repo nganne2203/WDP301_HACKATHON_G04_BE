@@ -987,7 +987,7 @@ paths:
           description: API status returned
   /api/test-email:
     post:
-      summary: Send a Resend test email
+      summary: Send a Gmail SMTP test email
       tags: [Runtime]
       requestBody:
         required: true
@@ -1004,9 +1004,9 @@ paths:
               to: participant@example.com
       responses:
         '200':
-          description: Test email accepted by Resend
+          description: Test email accepted by Gmail SMTP
         '503':
-          description: Resend is not configured or rejected the message
+          description: Gmail SMTP is not configured or rejected the message
 
   /api/github/config:
     get:

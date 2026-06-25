@@ -1014,8 +1014,10 @@ GOOGLE_CLIENT_SECRET=your_google_client_secret
 GOOGLE_CONNECT_CALLBACK_URL=http://localhost:3000/api/google/callback
 FRONTEND_URL=http://localhost:5173
 
-# Resend API email delivery
-RESEND_API_KEY=re_your_resend_api_key
+# Gmail SMTP email delivery
+GMAIL_USER=your.gmail.account@gmail.com
+GMAIL_APP_PASSWORD=your_16_character_gmail_app_password
+MAIL_FROM="SEAL Hackathon <your.gmail.account@gmail.com>"
 
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_key
