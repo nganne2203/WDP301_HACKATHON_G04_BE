@@ -29,7 +29,7 @@ const router = Router()
  *         email:
  *           type: string
  *           format: email
- *           example: user@gmail.com
+ *           example: user@example.com
  *         tokenExpiryDate:
  *           type: string
  *           format: date-time

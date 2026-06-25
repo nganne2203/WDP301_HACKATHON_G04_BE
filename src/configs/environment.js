@@ -17,12 +17,10 @@ const clientUrls = process.env.CLIENT_URLS?.split(',').map(url => url.trim()).fi
 const localFrontendUrl = ['prod', 'production'].includes(nodeEnv) ? undefined : 'http://localhost:5173'
 const frontendUrl = process.env.FRONTEND_URL || clientUrls[0] || localFrontendUrl
 const allowedClientUrls = clientUrls.length > 0 ? clientUrls : (frontendUrl ? [frontendUrl] : [])
-const emailUser = process.env.EMAIL_USER
-const emailPassword = process.env.EMAIL_PASSWORD
+const resendApiKey = process.env.RESEND_API_KEY
 
 export const env = {
-  EMAIL_USER: emailUser,
-  EMAIL_PASSWORD: emailPassword,
+  RESEND_API_KEY: resendApiKey,
   server: {
     port: process.env.PORT || 3000,
     hostname: process.env.HOSTNAME,
@@ -49,11 +47,10 @@ export const env = {
     refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN
   },
   email: {
-    user: emailUser,
-    password: emailPassword,
-    from: emailUser,
-    devMode: process.env.EMAIL_DEV_MODE || (['dev', 'development', 'test', 'production'].includes(nodeEnv) ? 'console' : 'silent'),
-    port: process.env.EMAIL_PORT
+    devMode: process.env.EMAIL_DEV_MODE || (['dev', 'development', 'test'].includes(nodeEnv) ? 'console' : 'silent')
+  },
+  resend: {
+    apiKey: resendApiKey
   },
   teamInvitation: {
     expiresHours: parseNumber(process.env.TEAM_INVITATION_EXPIRES_HOURS) || 72,

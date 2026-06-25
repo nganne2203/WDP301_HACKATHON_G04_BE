@@ -985,6 +985,28 @@ paths:
       responses:
         '200':
           description: API status returned
+  /api/test-email:
+    post:
+      summary: Send a Resend test email
+      tags: [Runtime]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to:
+                  type: string
+                  format: email
+            example:
+              to: participant@example.com
+      responses:
+        '200':
+          description: Test email accepted by Resend
+        '503':
+          description: Resend is not configured or rejected the message
 
   /api/github/config:
     get:

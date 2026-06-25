@@ -1,4 +1,4 @@
-import { MAIL_CONFIG, transporter } from '#configs/mail.js'
+import { MAIL_CONFIG, resend } from '#configs/mail.js'
 import { LOGGER } from '#utils/logger.js'
 import { renderEmailTemplate } from './email-templates.js'
 
@@ -23,21 +23,22 @@ const splitRecipients = (to) => {
   }
 }
 
-const normalizeSendInfo = ({ info, recipients }) => {
-  const accepted = info?.accepted?.length ? info.accepted : recipients
+const normalizeSendInfo = ({ response, recipients }) => {
+  const providerMessageId = response?.data?.id
+  const accepted = providerMessageId ? recipients : []
 
   return {
     sent: accepted.length > 0,
     status: accepted.length > 0 ? 'SENT' : 'FAILED',
     accepted,
-    rejected: info?.rejected || [],
-    providerMessageId: info?.messageId,
-    reason: accepted.length > 0 ? undefined : 'Email was rejected by the mail provider'
+    rejected: accepted.length > 0 ? [] : recipients,
+    providerMessageId,
+    reason: accepted.length > 0 ? undefined : response?.error?.message || 'Email was rejected by the mail provider'
   }
 }
 
 export const createEmailService = ({
-  transport = transporter,
+  client = resend,
   config = MAIL_CONFIG,
   logger = LOGGER
 } = {}) => {
@@ -68,7 +69,7 @@ export const createEmailService = ({
     }
 
     const from = config.from
-    if (!transport) {
+    if (!client) {
       if (config.devMode === 'console') {
         logger.info('Email logged in development mode', {
           to: valid,
@@ -80,7 +81,7 @@ export const createEmailService = ({
         logger.warn('Email skipped because its delivery provider is not configured', {
           to: valid,
           subject,
-          provider: config.transport?.provider,
+          provider: config.provider?.name,
           metadata
         })
       }
@@ -92,7 +93,7 @@ export const createEmailService = ({
         accepted: [],
         rejected: valid,
         invalid,
-        reason: 'SMTP is not configured'
+        reason: 'Resend API is not configured'
       }
     }
 
@@ -102,15 +103,22 @@ export const createEmailService = ({
         subject
       })
 
-      const info = await transport.sendMail({
+      const response = await client.emails.send({
         from,
         to: valid,
         subject,
-        text,
-        html
+        ...(text ? { text } : {}),
+        ...(html ? { html } : {})
       })
 
-      const result = normalizeSendInfo({ info, recipients: valid })
+      if (response?.error) {
+        const error = new Error(response.error.message || 'Resend API rejected message')
+        error.name = response.error.name || error.name
+        error.statusCode = response.error.statusCode
+        throw error
+      }
+
+      const result = normalizeSendInfo({ response, recipients: valid })
       logger.info('Email send attempt completed', {
         to: valid,
         subject,
@@ -129,7 +137,8 @@ export const createEmailService = ({
       logger.error('Email send failed', {
         to: valid,
         subject,
-        error: error.message,
+        message: error.message,
+        stack: error.stack,
         metadata
       })
 
@@ -149,7 +158,11 @@ export const createEmailService = ({
     try {
       rendered = renderEmailTemplate(template, context)
     } catch (error) {
-      logger.error('Email template rendering failed', { template, error: error.message })
+      logger.error('Email template rendering failed', {
+        template,
+        message: error.message,
+        stack: error.stack
+      })
       return {
         sent: false,
         status: 'FAILED',

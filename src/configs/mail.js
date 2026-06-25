@@ -1,64 +1,39 @@
-import dns from 'dns'
-import nodemailer from 'nodemailer'
+import { Resend } from 'resend'
 
 import { env } from '#configs/environment.js'
 import { LOGGER } from '#utils/logger.js'
 
-dns.setDefaultResultOrder('ipv4first')
+export const RESEND_SENDER = 'SEAL Hackathon <onboarding@resend.dev>'
 
-export const createGmailTransport = ({ user, password }) => nodemailer.createTransport({
-  service: 'gmail',
-  family: 4,
-  auth: {
-    user,
-    pass: password
-  }
-})
+export const createResendClient = (apiKey) => {
+  if (!apiKey) return null
+  return new Resend(apiKey)
+}
 
-export const transporter = env.EMAIL_USER && env.EMAIL_PASSWORD
-  ? createGmailTransport({
-    user: env.EMAIL_USER,
-    password: env.EMAIL_PASSWORD
-  })
-  : null
+export const resend = createResendClient(env.resend.apiKey)
 
 export const MAIL_CONFIG = {
-  enabled: Boolean(transporter),
-  from: env.EMAIL_USER,
+  enabled: Boolean(resend),
+  from: RESEND_SENDER,
   devMode: env.email.devMode,
-  transport: transporter
+  provider: resend
     ? {
-      provider: 'gmail',
-      service: 'gmail',
-      family: 4
+      name: 'resend'
     }
     : null
 }
 
-export const verifyGmailConnection = async ({ transport = transporter, logger = LOGGER } = {}) => {
-  logger.info('Connecting to Gmail SMTP...', {
-    service: 'gmail',
-    family: 4
+export const validateResendConfiguration = ({ apiKey = env.resend.apiKey, logger = LOGGER } = {}) => {
+  if (!apiKey) {
+    logger.warn('Resend email provider is not configured', {
+      missing: 'RESEND_API_KEY'
+    })
+    return false
+  }
+
+  logger.info('Resend email provider configured', {
+    provider: 'resend',
+    from: RESEND_SENDER
   })
-
-  if (!transport) {
-    logger.error('Gmail SMTP connection failed', {
-      error: 'EMAIL_USER and EMAIL_PASSWORD are required'
-    })
-    return false
-  }
-
-  try {
-    await transport.verify()
-    logger.info('Gmail SMTP connected successfully', {
-      user: env.EMAIL_USER
-    })
-    return true
-  } catch (error) {
-    logger.error('Gmail SMTP connection failed', {
-      user: env.EMAIL_USER,
-      error: error.message
-    })
-    return false
-  }
+  return true
 }
