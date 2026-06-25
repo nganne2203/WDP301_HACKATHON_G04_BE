@@ -7,6 +7,7 @@ export const corsOptions = {
       !origin ||
       origin === 'null' ||
       allowedOrigins.includes(origin) ||
+      origin === env.server.publicUrl ||
       origin.startsWith('http://localhost') ||
       origin.startsWith('http://10.') ||
       origin.startsWith('http://192.168.')

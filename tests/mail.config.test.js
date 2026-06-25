@@ -1,18 +1,12 @@
 import assert from 'node:assert/strict'
-import { EventEmitter } from 'node:events'
 import test from 'node:test'
 
 import {
-  SMTP_ADDRESS_FAMILY,
-  SMTP_HOST,
-  SMTP_PORT,
-  buildSmtpTransportConfig,
-  createIpv4SmtpSocketFactory,
-  createSmtpTransporter,
-  getSmtpConfigurationIssues,
-  getSmtpFailureProbableCauses,
+  createGmailApiTransporter,
+  getGmailApiConfigurationIssues,
   verifyMailConnection
 } from '../src/configs/mail.js'
+import { env } from '../src/configs/environment.js'
 
 const createLogger = () => {
   const entries = []
@@ -24,177 +18,87 @@ const createLogger = () => {
   }
 }
 
-test('builds Gmail SMTP transport configuration', () => {
-  const config = buildSmtpTransportConfig({
-    gmailUser: 'sender@gmail.com',
-    gmailAppPassword: 'app-password'
-  })
-
-  assert.equal(config.host, SMTP_HOST)
-  assert.equal(config.port, SMTP_PORT)
-  assert.equal(config.secure, false)
-  assert.equal(config.requireTLS, true)
-  assert.equal(config.family, SMTP_ADDRESS_FAMILY)
-  assert.equal(typeof config.getSocket, 'function')
-  assert.deepEqual(config.auth, {
-    user: 'sender@gmail.com',
-    pass: 'app-password'
-  })
-})
-
-test('creates a reusable SMTP transporter when Gmail credentials are configured', () => {
-  let createdConfig
-  const transporter = createSmtpTransporter({
-    gmailUser: 'sender@gmail.com',
-    gmailAppPassword: 'app-password',
-    transporterFactory: (config) => {
-      createdConfig = config
-      return { sendMail: async () => ({ messageId: 'message-1' }) }
-    }
-  })
-
-  assert.equal(typeof transporter.sendMail, 'function')
-  assert.equal(createdConfig.host, 'smtp.gmail.com')
-  assert.equal(createdConfig.port, 587)
-  assert.equal(createdConfig.secure, false)
-  assert.equal(createdConfig.family, 4)
-  assert.equal(createdConfig.auth.user, 'sender@gmail.com')
-})
-
-test('SMTP socket factory resolves Gmail over IPv4 and preserves TLS servername', async () => {
-  class FakeSocket extends EventEmitter {
-    setTimeout() {}
-    destroy() {
-      this.destroyed = true
-    }
-  }
-
-  let lookupArgs
-  let connectOptions
-  const socketFactory = createIpv4SmtpSocketFactory({
-    secure: true,
-    lookup: async (...args) => {
-      lookupArgs = args
-      return { address: '142.250.1.109', family: 4 }
-    },
-    connect: (options, onConnect) => {
-      connectOptions = options
-      const socket = new FakeSocket()
-      queueMicrotask(onConnect)
-      return socket
-    }
-  })
-
-  const socketOptions = await new Promise((resolve, reject) => {
-    socketFactory({
-      host: 'smtp.gmail.com',
-      port: 465,
-      connectionTimeout: 1000,
-      tls: { rejectUnauthorized: true }
-    }, (error, result) => {
-      if (error) return reject(error)
-      return resolve(result)
-    })
-  })
-
-  assert.deepEqual(lookupArgs, ['smtp.gmail.com', { family: 4 }])
-  assert.equal(connectOptions.host, '142.250.1.109')
-  assert.equal(connectOptions.port, 465)
-  assert.equal(connectOptions.servername, 'smtp.gmail.com')
-  assert.equal(connectOptions.rejectUnauthorized, true)
-  assert.equal(socketOptions.secured, true)
-  assert.equal(socketOptions.host, 'smtp.gmail.com')
-})
-
-test('SMTP socket factory can open IPv4 plain sockets for STARTTLS', async () => {
-  class FakeSocket extends EventEmitter {
-    setTimeout() {}
-    destroy() {
-      this.destroyed = true
-    }
-  }
-
-  let connectOptions
-  const socketFactory = createIpv4SmtpSocketFactory({
-    secure: false,
-    lookup: async () => ({ address: '142.250.1.109', family: 4 }),
-    connect: (options, onConnect) => {
-      connectOptions = options
-      const socket = new FakeSocket()
-      queueMicrotask(onConnect)
-      return socket
-    }
-  })
-
-  const socketOptions = await new Promise((resolve, reject) => {
-    socketFactory({
-      host: 'smtp.gmail.com',
-      port: 587,
-      connectionTimeout: 1000
-    }, (error, result) => {
-      if (error) return reject(error)
-      return resolve(result)
-    })
-  })
-
-  assert.equal(connectOptions.host, '142.250.1.109')
-  assert.equal(connectOptions.port, 587)
-  assert.equal(connectOptions.servername, undefined)
-  assert.equal(socketOptions.secured, false)
-  assert.equal(socketOptions.tls.servername, 'smtp.gmail.com')
-})
-
-test('does not create an SMTP transporter without Gmail credentials', () => {
-  assert.equal(createSmtpTransporter({ gmailUser: '', gmailAppPassword: 'app-password' }), null)
-  assert.equal(createSmtpTransporter({ gmailUser: 'sender@gmail.com', gmailAppPassword: '' }), null)
-})
-
-test('reports missing Gmail SMTP variables', () => {
-  assert.deepEqual(getSmtpConfigurationIssues({
+test('reports missing Gmail API variables', () => {
+  assert.deepEqual(getGmailApiConfigurationIssues({
     gmailUser: '',
-    gmailAppPassword: '',
+    clientId: '',
+    clientSecret: '',
+    refreshToken: '',
     mailFrom: ''
-  }), ['GMAIL_USER', 'GMAIL_APP_PASSWORD', 'MAIL_FROM'])
+  }), ['GMAIL_USER', 'GMAIL_CLIENT_ID', 'GMAIL_CLIENT_SECRET', 'GMAIL_REFRESH_TOKEN', 'MAIL_FROM'])
 })
 
-test('startup SMTP check logs a warning without crashing when configuration is missing', async () => {
-  const logger = createLogger()
-  const configured = await verifyMailConnection({
-    transporter: null,
-    config: { from: '' },
+test('does not create a Gmail API transporter without credentials', () => {
+  assert.equal(createGmailApiTransporter({
     gmailUser: '',
-    gmailAppPassword: '',
-    logger
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    refreshToken: 'refresh-token'
+  }), null)
+})
+
+test('creates a Gmail API transporter when credentials are configured', () => {
+  const transporter = createGmailApiTransporter({
+    gmailUser: 'sender@gmail.com',
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    refreshToken: 'refresh-token'
   })
 
-  assert.equal(configured, false)
-  assert.equal(logger.entries[0].level, 'warn')
-  assert.equal(logger.entries[0].message, 'Gmail SMTP provider is not fully configured')
-  assert.deepEqual(logger.entries[0].metadata.missing, ['GMAIL_USER', 'GMAIL_APP_PASSWORD', 'MAIL_FROM'])
+  assert.equal(typeof transporter.verify, 'function')
+  assert.equal(typeof transporter.sendMail, 'function')
+  assert.equal(transporter.isGmailApi, true)
 })
 
-test('startup SMTP check logs SMTP Ready when verification succeeds', async () => {
+test('startup Gmail API check logs a warning without crashing when configuration is missing', async () => {
+  const logger = createLogger()
+  const originalClientId = env.email.gmailClientId
+  const originalClientSecret = env.email.gmailClientSecret
+  const originalRefreshToken = env.email.gmailRefreshToken
+
+  env.email.gmailClientId = ''
+  env.email.gmailClientSecret = ''
+  env.email.gmailRefreshToken = ''
+
+  try {
+    const configured = await verifyMailConnection({
+      transporter: null,
+      config: { from: '' },
+      gmailUser: '',
+      logger
+    })
+
+    assert.equal(configured, false)
+    assert.equal(logger.entries[0].level, 'warn')
+    assert.equal(logger.entries[0].message, 'Gmail API provider is not fully configured')
+    assert.deepEqual(logger.entries[0].metadata.missing, ['GMAIL_USER', 'GMAIL_CLIENT_ID', 'GMAIL_CLIENT_SECRET', 'GMAIL_REFRESH_TOKEN', 'MAIL_FROM'])
+  } finally {
+    env.email.gmailClientId = originalClientId
+    env.email.gmailClientSecret = originalClientSecret
+    env.email.gmailRefreshToken = originalRefreshToken
+  }
+})
+
+test('startup Gmail API check logs Gmail API Ready when verification succeeds', async () => {
   const logger = createLogger()
   const configured = await verifyMailConnection({
     transporter: { verify: async () => true },
     config: { from: 'SEAL Hackathon <sender@gmail.com>' },
     gmailUser: 'sender@gmail.com',
-    gmailAppPassword: 'app-password',
     logger
   })
 
   assert.equal(configured, true)
   assert.equal(logger.entries[0].level, 'info')
-  assert.equal(logger.entries[0].message, 'SMTP Ready')
-  assert.equal(logger.entries[0].metadata.provider, 'gmail-smtp')
+  assert.equal(logger.entries[0].message, 'Gmail API Ready')
+  assert.equal(logger.entries[0].metadata.provider, 'gmail-api')
   assert.equal(logger.entries[0].metadata.from, 'SEAL Hackathon <sender@gmail.com>')
 })
 
-test('startup SMTP check logs diagnostics when verification fails', async () => {
+test('startup Gmail API check logs diagnostics when verification fails', async () => {
   const logger = createLogger()
-  const authError = new Error('Invalid login')
-  authError.code = 'EAUTH'
-  authError.responseCode = 535
+  const authError = new Error('Invalid OAuth2 Credentials')
+  authError.code = 'INVALID_CREDENTIALS'
 
   const configured = await verifyMailConnection({
     transporter: {
@@ -204,33 +108,11 @@ test('startup SMTP check logs diagnostics when verification fails', async () => 
     },
     config: { from: 'SEAL Hackathon <sender@gmail.com>' },
     gmailUser: 'sender@gmail.com',
-    gmailAppPassword: 'app-password',
     logger
   })
 
   assert.equal(configured, false)
   assert.equal(logger.entries[0].level, 'error')
-  assert.equal(logger.entries[0].message, 'SMTP verification failed')
-  assert.equal(logger.entries[0].metadata.error.code, 'EAUTH')
-  assert.match(logger.entries[0].metadata.probableCauses.join(' '), /Invalid Gmail App Password/)
-})
-
-test('SMTP verification causes explain connectivity failures', () => {
-  assert.match(
-    getSmtpFailureProbableCauses({ error: { code: 'ETIMEDOUT' }, missing: [] }).join(' '),
-    /SMTP connectivity issue/
-  )
-})
-
-test('SMTP verification causes explain unavailable IPv6 routes', () => {
-  assert.match(
-    getSmtpFailureProbableCauses({
-      error: {
-        code: 'ESOCKET',
-        message: 'connect ENETUNREACH 2607:f8b0:4023:c03::6d:465 - Local (:::0)'
-      },
-      missing: []
-    }).join(' '),
-    /force Gmail SMTP over IPv4/
-  )
+  assert.equal(logger.entries[0].message, 'Gmail API verification failed')
+  assert.equal(logger.entries[0].metadata.error.code, 'INVALID_CREDENTIALS')
 })
