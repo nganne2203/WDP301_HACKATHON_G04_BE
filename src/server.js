@@ -1,7 +1,7 @@
 import { env } from '#configs/environment.js'
 import { validateRuntimeEnvironment } from '#configs/env-validation.js'
 import { CONNECT_DB, CLOSE_DB } from '#configs/mongodb.js'
-import { validateResendConfiguration } from '#configs/mail.js'
+import { verifyMailConnection } from '#configs/mail.js'
 import { LOGGER } from '#utils/logger.js'
 import { createApp } from './app.js'
 
@@ -18,14 +18,14 @@ const startServer = async () => {
   }
 
   await CONNECT_DB()
+  await verifyMailConnection()
+
   httpServer = app.listen(PORT, HOSTNAME, () => {
     LOGGER.info('HTTP server started', {
       hostname: HOSTNAME,
       port: PORT
     })
   })
-
-  validateResendConfiguration()
 }
 
 startServer().catch((error) => {

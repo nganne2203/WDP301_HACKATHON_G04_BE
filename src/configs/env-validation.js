@@ -23,8 +23,16 @@ export const validateRuntimeEnvironment = ({
   if (!config.db?.uri) errors.push('MONGODB_URI is required')
   if (!config.jwt?.secret) errors.push('JWT_SECRET is required')
   if (!config.jwt?.refreshTokenSecret) errors.push('REFRESH_TOKEN_SECRET is required')
-  if (runtime === 'api' && !config.resend?.apiKey && !config.RESEND_API_KEY) {
-    warnings.push('RESEND_API_KEY is not configured; email delivery will be skipped')
+  if (runtime === 'api') {
+    const missingMailVariables = [
+      !config.email?.gmailUser ? 'GMAIL_USER' : null,
+      !config.email?.gmailAppPassword ? 'GMAIL_APP_PASSWORD' : null,
+      !config.email?.from ? 'MAIL_FROM' : null
+    ].filter(Boolean)
+
+    if (missingMailVariables.length > 0) {
+      warnings.push(`${missingMailVariables.join(', ')} ${missingMailVariables.length === 1 ? 'is' : 'are'} not configured; email delivery will be skipped`)
+    }
   }
   if (!config.security?.tokenEncryptionSecret) {
     errors.push('GITHUB_TOKEN_DECRYPTION_KEY is required')

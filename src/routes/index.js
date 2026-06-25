@@ -47,8 +47,8 @@ const sendTestEmail = async (req, res, next) => {
     const result = await EMAIL_SERVICE.sendEmail({
       to: req.body.to,
       subject: 'SEAL Hackathon test email',
-      text: 'This is a test email from SEAL Hackathon via Resend.',
-      html: '<p>This is a test email from <strong>SEAL Hackathon</strong> via Resend.</p>',
+      text: 'This is a test email from SEAL Hackathon via Gmail SMTP.',
+      html: '<p>This is a test email from <strong>SEAL Hackathon</strong> via Gmail SMTP.</p>',
       metadata: {
         source: 'test-email-endpoint'
       }
