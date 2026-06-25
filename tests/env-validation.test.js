@@ -4,8 +4,10 @@ import test from 'node:test'
 import { validateRuntimeEnvironment } from '../src/configs/env-validation.js'
 
 const createConfig = (overrides = {}) => ({
-  EMAIL_USER: 'sender@gmail.com',
-  EMAIL_PASSWORD: 'google-app-password',
+  RESEND_API_KEY: 're_test_key',
+  resend: {
+    apiKey: 're_test_key'
+  },
   db: { uri: 'mongodb://localhost:27017/seal' },
   jwt: {
     secret: 'jwt-secret-value-123',
@@ -57,17 +59,19 @@ test('environment validation does not require local AI credentials anymore', () 
   assert.equal(result.errors.length, 0)
 })
 
-test('environment validation requires Gmail credentials', () => {
-  assert.throws(
-    () => validateRuntimeEnvironment({
-      runtime: 'api',
-      config: createConfig({
-        EMAIL_USER: '',
-        EMAIL_PASSWORD: ''
-      })
-    }),
-    /EMAIL_USER is required.*EMAIL_PASSWORD is required/
-  )
+test('environment validation warns instead of crashing when Resend API key is missing', () => {
+  const result = validateRuntimeEnvironment({
+    runtime: 'api',
+    strict: false,
+    config: createConfig({
+      RESEND_API_KEY: '',
+      resend: { apiKey: '' }
+    })
+  })
+
+  assert.equal(result.errors.length, 0)
+  assert.equal(result.warnings.length, 1)
+  assert.match(result.warnings[0], /RESEND_API_KEY is not configured/)
 })
 
 test('environment validation returns warnings in non-strict mode', () => {
@@ -76,6 +80,8 @@ test('environment validation returns warnings in non-strict mode', () => {
     strict: false,
     config: createConfig({
       redis: { url: '' },
+      RESEND_API_KEY: 're_test_key',
+      resend: { apiKey: 're_test_key' },
       server: {
         publicUrl: '',
         readinessRequiresRedis: false

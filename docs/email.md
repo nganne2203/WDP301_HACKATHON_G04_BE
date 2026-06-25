@@ -1,45 +1,36 @@
 # Email Configuration
 
-SEAL sends email through the notification/email service. If SMTP is not configured, development mode logs the attempted email and returns a skipped delivery result so the main business flow is not broken.
+SEAL sends email through the notification/email service using the Resend API. The previous network mail transport is no longer used by the backend, so hosted environments such as Railway and Render only need HTTPS access to Resend.
 
-## Local SMTP
-
-```env
-EMAIL_FROM="SEAL Hackathon <noreply@example.com>"
-EMAIL_DEV_MODE=console
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=your_smtp_username
-SMTP_PASSWORD=your_smtp_password
-```
-
-For Gmail app passwords, either use SMTP settings:
+## Resend Setup
 
 ```env
-EMAIL_FROM="SEAL Hackathon <your_gmail_address@gmail.com>"
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=465
-SMTP_SECURE=true
-SMTP_USER=your_gmail_address@gmail.com
-SMTP_PASSWORD=your_gmail_app_password
+RESEND_API_KEY=re_your_resend_api_key
+EMAIL_DEV_MODE=silent
 ```
 
-or the legacy aliases already supported by the project:
+The sender is fixed in code as:
 
-```env
-EMAIL_USER=your_gmail_address@gmail.com
-EMAIL_PASSWORD=your_gmail_app_password
+```text
+SEAL Hackathon <onboarding@resend.dev>
 ```
 
-The project also accepts the existing two-field local setup:
+This sender is used because the project does not currently own a verified custom email domain.
 
-```env
-EMAIL_HOST=your_gmail_address@gmail.com
-EMAIL_PASSWORD=your_gmail_app_password
+If `RESEND_API_KEY` is missing, startup logs a warning and the application continues running. Email sends return a skipped result instead of breaking the business flow.
+
+## Test Endpoint
+
+```http
+POST /api/test-email
+Content-Type: application/json
+
+{
+  "to": "participant@example.com"
+}
 ```
 
-When `EMAIL_HOST` contains an email address, the backend treats it as the sender/login email. If `EMAIL_HOST` contains an SMTP server such as `smtp.gmail.com`, you must also provide `SMTP_USER` or `EMAIL_USER` because a password alone is not enough to authenticate.
+The endpoint sends a fixed test email through the same `EMAIL_SERVICE` used by production flows.
 
 ## Current Email Triggers
 

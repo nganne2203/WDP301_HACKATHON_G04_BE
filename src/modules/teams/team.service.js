@@ -721,7 +721,8 @@ const sendEmailJob = async (emailService, logger, job) => {
     logger.error('Team email job failed', {
       template: job.template,
       to: job.to,
-      error: error.message
+      message: error.message,
+      stack: error.stack
     })
   }
 }

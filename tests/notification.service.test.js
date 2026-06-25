@@ -89,7 +89,7 @@ test('sendEventInvitations deduplicates recipients and summarizes delivery', asy
       sendTemplateEmail: async (payload) => {
         sent.push(payload)
         return payload.to === 'bad@example.com'
-          ? { sent: false, status: 'FAILED', accepted: [], rejected: [payload.to], reason: 'SMTP rejected message' }
+          ? { sent: false, status: 'FAILED', accepted: [], rejected: [payload.to], reason: 'Resend rejected message' }
           : { sent: true, status: 'SENT', accepted: [payload.to], rejected: [] }
       }
     },
