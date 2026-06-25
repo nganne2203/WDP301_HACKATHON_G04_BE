@@ -17,7 +17,7 @@ const clientUrls = process.env.CLIENT_URLS?.split(',').map(url => url.trim()).fi
 const localFrontendUrl = ['prod', 'production'].includes(nodeEnv) ? undefined : 'http://localhost:5173'
 const frontendUrl = process.env.FRONTEND_URL || clientUrls[0] || localFrontendUrl
 const allowedClientUrls = clientUrls.length > 0 ? clientUrls : (frontendUrl ? [frontendUrl] : [])
-const emailSmtpPort = parseNumber(process.env.SMTP_PORT) || 587
+
 export const env = {
   server: {
     port: process.env.PORT || 3000,
@@ -47,14 +47,10 @@ export const env = {
   email: {
     devMode: process.env.EMAIL_DEV_MODE || (['dev', 'development', 'test'].includes(nodeEnv) ? 'console' : 'silent'),
     gmailUser: process.env.GMAIL_USER,
-    gmailAppPassword: process.env.GMAIL_APP_PASSWORD,
     gmailClientId: process.env.GMAIL_CLIENT_ID,
     gmailClientSecret: process.env.GMAIL_CLIENT_SECRET,
     gmailRefreshToken: process.env.GMAIL_REFRESH_TOKEN,
-    from: process.env.MAIL_FROM,
-    smtpHost: process.env.SMTP_HOST || 'smtp.gmail.com',
-    smtpPort: emailSmtpPort,
-    smtpSecure: parseBoolean(process.env.SMTP_SECURE, emailSmtpPort === 465)
+    from: process.env.MAIL_FROM
   },
   teamInvitation: {
     expiresHours: parseNumber(process.env.TEAM_INVITATION_EXPIRES_HOURS) || 72,
