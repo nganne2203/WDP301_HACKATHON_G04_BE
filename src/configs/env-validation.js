@@ -23,9 +23,8 @@ export const validateRuntimeEnvironment = ({
   if (!config.db?.uri) errors.push('MONGODB_URI is required')
   if (!config.jwt?.secret) errors.push('JWT_SECRET is required')
   if (!config.jwt?.refreshTokenSecret) errors.push('REFRESH_TOKEN_SECRET is required')
-  if (runtime === 'api') {
-    if (!config.EMAIL_USER) errors.push('EMAIL_USER is required')
-    if (!config.EMAIL_PASSWORD) errors.push('EMAIL_PASSWORD is required')
+  if (runtime === 'api' && !config.resend?.apiKey && !config.RESEND_API_KEY) {
+    warnings.push('RESEND_API_KEY is not configured; email delivery will be skipped')
   }
   if (!config.security?.tokenEncryptionSecret) {
     errors.push('GITHUB_TOKEN_DECRYPTION_KEY is required')

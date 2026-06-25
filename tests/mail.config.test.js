@@ -1,59 +1,45 @@
 import assert from 'node:assert/strict'
-import dns from 'node:dns'
 import test from 'node:test'
 
-import { createGmailTransport, verifyGmailConnection } from '../src/configs/mail.js'
+import { RESEND_SENDER, createResendClient, validateResendConfiguration } from '../src/configs/mail.js'
 
 const createLogger = () => {
   const entries = []
   return {
     entries,
     info: (message, metadata) => entries.push({ level: 'info', message, metadata }),
+    warn: (message, metadata) => entries.push({ level: 'warn', message, metadata }),
     error: (message, metadata) => entries.push({ level: 'error', message, metadata })
   }
 }
 
-test('creates an IPv4-first Gmail SMTP transporter with user and App Password', () => {
-  const transport = createGmailTransport({
-    user: 'sender@gmail.com',
-    password: 'google-app-password'
-  })
+test('creates a Resend client when an API key is configured', () => {
+  const client = createResendClient('re_test_key')
 
-  assert.equal(transport.options.host, 'smtp.gmail.com')
-  assert.equal(transport.options.port, 587)
-  assert.equal(transport.options.secure, false)
-  assert.equal(transport.options.auth.user, 'sender@gmail.com')
-  assert.equal(transport.options.auth.pass, 'google-app-password')
-  assert.equal(dns.getDefaultResultOrder(), 'ipv4first')
+  assert.equal(typeof client.emails.send, 'function')
 })
 
-test('startup Gmail health check logs a successful connection', async () => {
-  const logger = createLogger()
-  const connected = await verifyGmailConnection({
-    transport: { verify: async () => true },
-    logger
-  })
-
-  assert.equal(connected, true)
-  assert.equal(logger.entries[0].message, 'Connecting to Gmail SMTP...')
-  assert.equal(logger.entries[1].level, 'info')
-  assert.equal(logger.entries[1].message, 'Gmail SMTP connected successfully')
+test('does not create a Resend client without an API key', () => {
+  assert.equal(createResendClient(''), null)
+  assert.equal(createResendClient(undefined), null)
 })
 
-test('startup Gmail health check logs connection failures without crashing', async () => {
+test('startup Resend check logs a warning without crashing when API key is missing', () => {
   const logger = createLogger()
-  const connected = await verifyGmailConnection({
-    transport: {
-      verify: async () => {
-        throw new Error('Connection timeout')
-      }
-    },
-    logger
-  })
+  const configured = validateResendConfiguration({ apiKey: '', logger })
 
-  assert.equal(connected, false)
-  assert.equal(logger.entries[0].message, 'Connecting to Gmail SMTP...')
-  assert.equal(logger.entries[1].level, 'error')
-  assert.equal(logger.entries[1].message, 'Gmail SMTP connection failed')
-  assert.equal(logger.entries[1].metadata.error, 'Connection timeout')
+  assert.equal(configured, false)
+  assert.equal(logger.entries[0].level, 'warn')
+  assert.equal(logger.entries[0].message, 'Resend email provider is not configured')
+  assert.equal(logger.entries[0].metadata.missing, 'RESEND_API_KEY')
+})
+
+test('startup Resend check logs configured sender when API key exists', () => {
+  const logger = createLogger()
+  const configured = validateResendConfiguration({ apiKey: 're_test_key', logger })
+
+  assert.equal(configured, true)
+  assert.equal(logger.entries[0].level, 'info')
+  assert.equal(logger.entries[0].message, 'Resend email provider configured')
+  assert.equal(logger.entries[0].metadata.from, RESEND_SENDER)
 })
