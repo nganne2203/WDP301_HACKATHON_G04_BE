@@ -1,15 +1,10 @@
-import dns from 'dns'
 import nodemailer from 'nodemailer'
 
 import { env } from '#configs/environment.js'
 import { LOGGER } from '#utils/logger.js'
 
-dns.setDefaultResultOrder('ipv4first')
-
 export const createGmailTransport = ({ user, password }) => nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
+  service: 'gmail',
   auth: {
     user,
     pass: password
@@ -30,17 +25,14 @@ export const MAIL_CONFIG = {
   transport: transporter
     ? {
       provider: 'gmail',
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false
+      service: 'gmail'
     }
     : null
 }
 
 export const verifyGmailConnection = async ({ transport = transporter, logger = LOGGER } = {}) => {
   logger.info('Connecting to Gmail SMTP...', {
-    host: 'smtp.gmail.com',
-    port: 587
+    service: 'gmail'
   })
 
   if (!transport) {

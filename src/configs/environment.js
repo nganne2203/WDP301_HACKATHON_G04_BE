@@ -52,7 +52,8 @@ export const env = {
     user: emailUser,
     password: emailPassword,
     from: emailUser,
-    devMode: process.env.EMAIL_DEV_MODE || (['dev', 'development', 'test'].includes(nodeEnv) ? 'console' : 'silent')
+    devMode: process.env.EMAIL_DEV_MODE || (['dev', 'development', 'test', 'production'].includes(nodeEnv) ? 'console' : 'silent'),
+    port: process.env.EMAIL_PORT
   },
   teamInvitation: {
     expiresHours: parseNumber(process.env.TEAM_INVITATION_EXPIRES_HOURS) || 72,
