@@ -32,6 +32,14 @@ const withSession = (query, session) => {
   return session ? query.session(session) : query
 }
 
+const escapeRegExp = (value) => {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+const normalizeTeamName = (name) => {
+  return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
 const createSession = async () => {
   return await mongoose.startSession()
 }
@@ -78,6 +86,23 @@ const findTeams = async ({ filter = {}, skip = 0, limit = 20, sort = { createdAt
 
 const findTeamById = async (id, { session } = {}) => {
   return await withSession(Team.findById(id).populate(teamPopulate), session)
+}
+
+const findTeamByEventAndName = async ({ eventId, name }, { session } = {}) => {
+  const trimmedName = String(name || '').trim()
+  const normalizedName = normalizeTeamName(trimmedName)
+  if (!eventId || !normalizedName) return null
+
+  return await withSession(
+    Team.findOne({
+      eventId,
+      $or: [
+        { normalizedName },
+        { name: new RegExp(`^${escapeRegExp(trimmedName)}$`, 'i') }
+      ]
+    }).populate(teamPopulate),
+    session
+  )
 }
 
 const findTeamByLeaderAndEvent = async ({ eventId, leaderId }, { session } = {}) => {
@@ -252,6 +277,7 @@ export const TEAM_REPOSITORY = {
   countTeams,
   findTeams,
   findTeamById,
+  findTeamByEventAndName,
   findTeamByLeaderAndEvent,
   findTeamForUserInEvent,
   createTeam,

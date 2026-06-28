@@ -6,7 +6,6 @@ import { EMAIL_SERVICE } from '#modules/notifications/email.service.js'
 import { EMAIL_TEMPLATE_KEYS } from '#modules/notifications/email-templates.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 import { env } from '#configs/environment.js'
-import User from '#models/user.model.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
@@ -47,6 +46,11 @@ const REGISTRATION_CLOSE_REASONS = {
   CAPACITY_REACHED: 'CAPACITY_REACHED',
   REGISTRATION_ENDED: 'REGISTRATION_ENDED'
 }
+export const TEAM_REJECTION_REASONS = {
+  CAPACITY_REACHED: 'The required number of confirmed teams has already been reached.',
+  REGISTRATION_CLOSED: 'Registration has closed before this team was fully confirmed.',
+  REGISTRATION_ENDED: 'Registration ended before this team was fully confirmed.'
+}
 
 const getId = (value) => {
   return value?._id?.toString?.() || value?.id || value?.toString?.()
@@ -56,6 +60,10 @@ const isSameId = (left, right) => {
   const leftId = getId(left)
   const rightId = getId(right)
   return Boolean(leftId && rightId && leftId === rightId)
+}
+
+const normalizeTeamName = (name) => {
+  return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
 const normalizeEmailAddress = (email) => {
@@ -72,6 +80,10 @@ const ensureMembersDoNotContainLeader = (members = [], leader) => {
   for (const member of members) {
     ensureEmailIsNotLeader(member.email, leader)
   }
+}
+
+const buildTeamRejectedMessage = (team, reason) => {
+  return `${team?.name || 'Your team'} was rejected. ${reason}`
 }
 
 export const hashInvitationToken = (token) => {
@@ -376,6 +388,34 @@ const ensureObjectId = (id, fieldName = 'id') => {
   }
 }
 
+const ensureUniqueTeamName = async ({ repository, eventId, name, session }) => {
+  const existingTeam = await repository.findTeamByEventAndName({ eventId, name }, { session })
+  if (existingTeam) {
+    throw new ApiError(ERROR_CODES.CONFLICT, ['Team name already exists in this event'])
+  }
+}
+
+const isDuplicateKeyError = (error) => {
+  return error?.code === 11000
+}
+
+const mapDuplicateTeamError = (error) => {
+  if (!isDuplicateKeyError(error)) return error
+
+  const keyPattern = error.keyPattern || {}
+  const keyNames = Object.keys(keyPattern)
+
+  if (keyNames.includes('name') || keyNames.includes('normalizedName')) {
+    return new ApiError(ERROR_CODES.CONFLICT, ['Team name already exists in this event'])
+  }
+
+  if (keyNames.includes('leaderId')) {
+    return new ApiError(ERROR_CODES.CONFLICT, ['You already created a team for this event'])
+  }
+
+  return new ApiError(ERROR_CODES.CONFLICT, ['Team name or leader already exists in this event'])
+}
+
 const ensureEventOpen = (event) => {
   if (!isRegistrationOpen(event)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Event registration is not open'])
@@ -429,7 +469,7 @@ const ensureConfirmedSlotsNotFull = async ({ event, repository, session }) => {
   }, { session })
 
   if (confirmedCount >= getMaxTeams(event)) {
-    throw new ApiError(ERROR_CODES.CONFLICT, ['The required number of confirmed teams has already been reached'])
+    throw new ApiError(ERROR_CODES.CONFLICT, [TEAM_REJECTION_REASONS.CAPACITY_REACHED])
   }
 }
 
@@ -936,11 +976,12 @@ const rejectOpenTeams = async ({ repository, event, reason, excludeTeamId = null
           user,
           type: 'SYSTEM',
           title: 'Team registration rejected',
-          message: `${rejectedTeam.name} was rejected because the required number of confirmed teams has been reached.`,
+          message: buildTeamRejectedMessage(rejectedTeam, reason),
           emailTemplate: EMAIL_TEMPLATE_KEYS.TEAM_REJECTED,
           emailContext: {
             eventTitle: event.title,
-            teamName: rejectedTeam.name
+            teamName: rejectedTeam.name,
+            rejectionReason: reason
           },
           metadata: {
             eventId: getId(event),
@@ -1034,125 +1075,204 @@ export const createTeamService = ({
     return await loadTeamDetail({ repository, team })
   }
 
-  const createTeam = async (payload = {}, actor = {}) => {
+  const rejectUnconfirmedTeamsForRegistrationClosure = async ({
+    event,
+    eventId,
+    reason = TEAM_REJECTION_REASONS.REGISTRATION_CLOSED
+  } = {}) => {
     const jobs = []
     const result = await runWithOptionalTransaction({
       repository,
       logger,
       work: async (session) => {
-        const { event } = await loadEventForRegistration({
+        const targetEvent = event || await repository.findEventById(eventId, { session })
+        if (!targetEvent) {
+          throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+        }
+
+        const rejectedCount = await rejectOpenTeams({
           repository,
-          eventId: payload.eventId,
-          session
-        })
-        ensureEventOpen(event)
-        await ensureConfirmedSlotsNotFull({ event, repository, session })
-        await ensureTrackBelongsToEvent({
-          repository,
-          eventId: getId(event),
-          trackId: payload.trackId,
-          session
+          event: targetEvent,
+          reason,
+          session,
+          jobs
         })
 
-        const leader = await repository.findUserById(actor.id, { session })
-        if (!leader || !['APPROVED', 'ACTIVE'].includes(leader.status)) {
-          throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only active users can create teams'])
+        return {
+          eventId: getId(targetEvent),
+          rejectedCount
         }
-
-        const existingTeam = await repository.findTeamByLeaderAndEvent({
-          eventId: getId(event),
-          leaderId: getId(leader)
-        }, { session })
-        if (existingTeam) {
-          throw new ApiError(ERROR_CODES.CONFLICT, ['You already created a team for this event'])
-        }
-
-        await ensureParticipantCanJoinEvent({
-          repository,
-          eventId: getId(event),
-          user: leader,
-          session
-        })
-
-        const invitedMembers = normalizeInvitationMembers({
-          members: payload.invitedMembers,
-          emails: payload.invitedEmails
-        })
-        if (invitedMembers.length > Math.max((event.maxTeamMembers || 5) - 1, 0)) {
-          throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Too many invited members for this event'])
-        }
-        ensureMembersDoNotContainLeader(invitedMembers, leader)
-
-        const team = await repository.createTeam({
-          eventId: getId(event),
-          trackId: payload.trackId || undefined,
-          leaderId: getId(leader),
-          memberIds: [getId(leader)],
-          name: payload.name,
-          chapterName: payload.chapterName,
-          projectName: payload.projectName,
-          trackAssignmentMethod: payload.trackId ? 'MANUAL' : 'SYSTEM',
-          status: TEAM_STATUSES.WAITING_FOR_MEMBERS
-        }, { session })
-
-        await repository.upsertParticipant({
-          eventId: getId(event),
-          userId: getId(leader),
-          data: {
-            teamId: getId(team),
-            teamRole: 'LEADER',
-            status: 'ACTIVE',
-            joinedAt: new Date()
-          }
-        }, { session })
-
-        for (const member of invitedMembers) {
-          await createInvitationForEmail({
-            repository,
-            event,
-            team,
-            leader,
-            email: member.email,
-            fullName: member.fullName,
-            githubUsername: member.githubUsername,
-            session,
-            jobs
-          })
-        }
-
-        if ((event.minTeamMembers || 1) <= 1) {
-          const confirmedTeam = await repository.updateTeamById(getId(team), {
-            status: TEAM_STATUSES.CONFIRMED,
-            confirmedAt: new Date()
-          }, { session })
-
-          await assignTeamPlacement({
-            repository,
-            event,
-            team: confirmedTeam,
-            preferredTrackId: payload.trackId,
-            trackAssignmentMethod: payload.trackId ? 'MANUAL' : 'SYSTEM',
-            session,
-            allowWaitlist: true
-          })
-
-          await syncEventRegistrationStatus({
-            repository,
-            event,
-            session,
-            confirmedCount: await repository.countTeams({
-              eventId: getId(event),
-              status: { $in: CONFIRMED_TEAM_STATUSES }
-            }, { session })
-          })
-
-          // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
-        }
-
-        const createdTeam = await repository.findTeamById(getId(team), { session })
-        return await loadTeamDetail({ repository, team: createdTeam, session })
       }
     })
+
+    await sendJobs({ jobs, emailService, notificationService, logger })
+    return result
+  }
+
+  const checkTeamAvailability = async (query = {}, actor = {}) => {
+    ensureObjectId(query.eventId, 'event id')
+    if (!actor.id) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['User context is required to validate team availability'])
+    }
+
+    const name = String(query.name || '').trim()
+    const [event, existingTeam, existingLeaderTeam] = await Promise.all([
+      repository.findEventById(query.eventId),
+      repository.findTeamByEventAndName({ eventId: query.eventId, name }),
+      repository.findTeamByLeaderAndEvent({ eventId: query.eventId, leaderId: actor.id })
+    ])
+
+    if (!event) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+    }
+
+    const errors = []
+    if (existingTeam) errors.push('Team name already exists in this event')
+    if (existingLeaderTeam) errors.push('You already created a team for this event')
+
+    return {
+      eventId: getId(event),
+      name,
+      normalizedName: normalizeTeamName(name),
+      available: errors.length === 0,
+      nameAvailable: !existingTeam,
+      leaderAvailable: !existingLeaderTeam,
+      errors
+    }
+  }
+
+  const createTeam = async (payload = {}, actor = {}) => {
+    const jobs = []
+    let result
+
+    try {
+      result = await runWithOptionalTransaction({
+        repository,
+        logger,
+        work: async (session) => {
+          const { event } = await loadEventForRegistration({
+            repository,
+            eventId: payload.eventId,
+            session
+          })
+          ensureEventOpen(event)
+          await ensureConfirmedSlotsNotFull({ event, repository, session })
+          await ensureTrackBelongsToEvent({
+            repository,
+            eventId: getId(event),
+            trackId: payload.trackId,
+            session
+          })
+
+          const leader = await repository.findUserById(actor.id, { session })
+          if (!leader || !['APPROVED', 'ACTIVE'].includes(leader.status)) {
+            throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only active users can create teams'])
+          }
+
+          const existingTeam = await repository.findTeamByLeaderAndEvent({
+            eventId: getId(event),
+            leaderId: getId(leader)
+          }, { session })
+          if (existingTeam) {
+            throw new ApiError(ERROR_CODES.CONFLICT, ['You already created a team for this event'])
+          }
+
+          await ensureUniqueTeamName({
+            repository,
+            eventId: getId(event),
+            name: payload.name,
+            session
+          })
+
+          await ensureParticipantCanJoinEvent({
+            repository,
+            eventId: getId(event),
+            user: leader,
+            session
+          })
+
+          const invitedMembers = normalizeInvitationMembers({
+            members: payload.invitedMembers,
+            emails: payload.invitedEmails
+          })
+          if (invitedMembers.length > Math.max((event.maxTeamMembers || 5) - 1, 0)) {
+            throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Too many invited members for this event'])
+          }
+          ensureMembersDoNotContainLeader(invitedMembers, leader)
+
+          const team = await repository.createTeam({
+            eventId: getId(event),
+            trackId: payload.trackId || undefined,
+            leaderId: getId(leader),
+            memberIds: [getId(leader)],
+            name: payload.name,
+            chapterName: payload.chapterName,
+            projectName: payload.projectName,
+            trackAssignmentMethod: payload.trackId ? 'MANUAL' : 'SYSTEM',
+            status: TEAM_STATUSES.WAITING_FOR_MEMBERS
+          }, { session })
+
+          await repository.upsertParticipant({
+            eventId: getId(event),
+            userId: getId(leader),
+            data: {
+              teamId: getId(team),
+              teamRole: 'LEADER',
+              status: 'ACTIVE',
+              joinedAt: new Date()
+            }
+          }, { session })
+
+          for (const member of invitedMembers) {
+            await createInvitationForEmail({
+              repository,
+              event,
+              team,
+              leader,
+              email: member.email,
+              fullName: member.fullName,
+              githubUsername: member.githubUsername,
+              session,
+              jobs
+            })
+          }
+
+          if ((event.minTeamMembers || 1) <= 1) {
+            const confirmedTeam = await repository.updateTeamById(getId(team), {
+              status: TEAM_STATUSES.CONFIRMED,
+              confirmedAt: new Date()
+            }, { session })
+
+            await assignTeamPlacement({
+              repository,
+              event,
+              team: confirmedTeam,
+              preferredTrackId: payload.trackId,
+              trackAssignmentMethod: payload.trackId ? 'MANUAL' : 'SYSTEM',
+              session,
+              allowWaitlist: true
+            })
+
+            await syncEventRegistrationStatus({
+              repository,
+              event,
+              session,
+              confirmedCount: await repository.countTeams({
+                eventId: getId(event),
+                status: { $in: CONFIRMED_TEAM_STATUSES }
+              }, { session })
+            })
+
+            // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
+          }
+
+          const createdTeam = await repository.findTeamById(getId(team), { session })
+          return await loadTeamDetail({ repository, team: createdTeam, session })
+        }
+      })
+    } catch (error) {
+      throw mapDuplicateTeamError(error)
+    }
 
     await sendJobs({ jobs, emailService, notificationService, logger })
     return result
@@ -1292,7 +1412,7 @@ export const createTeamService = ({
           const rejectedTeam = await repository.updateTeamById(getId(team), {
             status: TEAM_STATUSES.REJECTED,
             rejectedAt: new Date(),
-            rejectionReason: 'The required number of confirmed teams has already been reached.'
+            rejectionReason: TEAM_REJECTION_REASONS.CAPACITY_REACHED
           }, { session })
 
           await repository.updateInvitationById(getId(invitation), {
@@ -1302,7 +1422,7 @@ export const createTeamService = ({
           await rejectOpenTeams({
             repository,
             event,
-            reason: 'The required number of confirmed teams has already been reached.',
+            reason: TEAM_REJECTION_REASONS.CAPACITY_REACHED,
             excludeTeamId: getId(team),
             session,
             jobs
@@ -1386,7 +1506,7 @@ export const createTeamService = ({
             updatedTeam = await repository.updateTeamById(getId(updatedTeam), {
               status: TEAM_STATUSES.REJECTED,
               rejectedAt: new Date(),
-              rejectionReason: 'The required number of confirmed teams has already been reached.'
+              rejectionReason: TEAM_REJECTION_REASONS.CAPACITY_REACHED
             }, { session })
           } else {
             updatedTeam = await repository.updateTeamById(getId(updatedTeam), {
@@ -1410,7 +1530,7 @@ export const createTeamService = ({
               await rejectOpenTeams({
                 repository,
                 event,
-                reason: 'The required number of confirmed teams has already been reached.',
+                reason: TEAM_REJECTION_REASONS.CAPACITY_REACHED,
                 excludeTeamId: getId(updatedTeam),
                 session,
                 jobs
@@ -1732,6 +1852,8 @@ export const createTeamService = ({
     listTeams,
     getTeamById,
     getMyTeamByEvent,
+    rejectUnconfirmedTeamsForRegistrationClosure,
+    checkTeamAvailability,
     createTeam,
     inviteMembers,
     acceptInvitation,
