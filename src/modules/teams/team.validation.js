@@ -68,6 +68,13 @@ const getMyTeam = {
   })
 }
 
+const checkTeamAvailability = {
+  query: Joi.object({
+    eventId: objectId.required(),
+    name: Joi.string().trim().min(2).max(120).required()
+  })
+}
+
 const replaceInvitation = {
   params: teamInvitationParam,
   body: Joi.object({
@@ -119,6 +126,7 @@ export const TEAM_VALIDATION = {
   createTeam,
   inviteMembers,
   getMyTeam,
+  checkTeamAvailability,
   replaceInvitation,
   cancelInvitation,
   getTeamById,

@@ -47,6 +47,13 @@ router.get(
 )
 
 router.get(
+  '/availability',
+  permissionMiddleware(PERMISSIONS.TEAM_CREATE),
+  validationHandlingMiddleware(TEAM_VALIDATION.checkTeamAvailability),
+  TEAM_CONTROLLER.checkTeamAvailability
+)
+
+router.get(
   '/:id',
   permissionMiddleware(PERMISSIONS.TEAM_VIEW),
   validationHandlingMiddleware(TEAM_VALIDATION.getTeamById),

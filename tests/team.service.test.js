@@ -113,6 +113,55 @@ test('createTeam rejects duplicate team creation for the same event leader', asy
   )
 })
 
+test('createTeam rejects duplicate team name in the same event', async () => {
+  const repository = {
+    createSession,
+    findEventById: async () => ({
+      _id: 'event-1',
+      title: 'SEAL Hackathon',
+      status: 'OPEN_REGISTRATION',
+      minTeamMembers: 3,
+      maxTeamMembers: 5,
+      maxTeams: 30
+    }),
+    countTeams: async () => 0,
+    findUserById: async () => ({ _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'APPROVED' }),
+    findTeamByLeaderAndEvent: async () => null,
+    findTeamByEventAndName: async ({ name }) => ({ _id: 'team-1', name })
+  }
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.createTeam({ eventId: 'event-1', name: 'Code Wizards' }, { id: 'leader-1' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'CONFLICT' &&
+      error.errors.includes('Team name already exists in this event')
+  )
+})
+
+test('checkTeamAvailability reports duplicate team name and leader for an event', async () => {
+  const eventId = '000000000000000000000001'
+  const repository = {
+    findEventById: async () => ({ _id: eventId, title: 'SEAL Hackathon' }),
+    findTeamByEventAndName: async () => ({ _id: 'team-1', name: 'Code Wizards' }),
+    findTeamByLeaderAndEvent: async () => ({ _id: 'team-2', name: 'Leader Team' })
+  }
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  const result = await service.checkTeamAvailability({
+    eventId,
+    name: ' Code Wizards '
+  }, { id: 'leader-1' })
+
+  assert.equal(result.available, false)
+  assert.equal(result.nameAvailable, false)
+  assert.equal(result.leaderAvailable, false)
+  assert.deepEqual(result.errors, [
+    'Team name already exists in this event',
+    'You already created a team for this event'
+  ])
+})
+
 test('createTeam rejects inviting the leader email as a team member', async () => {
   const leader = { _id: 'leader-1', email: 'Leader@Example.com', fullName: 'Leader', status: 'APPROVED' }
   const repository = {
@@ -128,6 +177,7 @@ test('createTeam rejects inviting the leader email as a team member', async () =
     countTeams: async () => 0,
     findUserById: async () => leader,
     findTeamByLeaderAndEvent: async () => null,
+    findTeamByEventAndName: async () => null,
     findParticipantByEventAndUser: async () => null,
     findBlockingInvitation: async () => null
   }
@@ -181,6 +231,7 @@ test('createTeam sends temporary account and invitation emails for unknown invit
     countTeams: async () => 0,
     findUserById: async (id) => id === 'leader-1' ? leader : { _id: id, email: 'member@example.com', fullName: 'Member', status: 'APPROVED' },
     findTeamByLeaderAndEvent: async () => null,
+    findTeamByEventAndName: async () => null,
     findParticipantByEventAndUser: async () => null,
     findBlockingInvitation: async () => null,
     createTeam: async () => team,
@@ -242,6 +293,7 @@ test('createTeam rejects duplicate active participant membership in the same eve
     countTeams: async () => 0,
     findUserById: async () => leader,
     findTeamByLeaderAndEvent: async () => null,
+    findTeamByEventAndName: async () => null,
     findParticipantByEventAndUser: async () => ({
       _id: 'participant-1',
       teamId: 'other-team',
@@ -275,6 +327,7 @@ test('createTeam enforces event max team size from invited members', async () =>
     countTeams: async () => 0,
     findUserById: async () => leader,
     findTeamByLeaderAndEvent: async () => null,
+    findTeamByEventAndName: async () => null,
     findParticipantByEventAndUser: async () => null,
     findBlockingInvitation: async () => null
   }
