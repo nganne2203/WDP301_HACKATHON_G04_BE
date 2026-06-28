@@ -57,6 +57,20 @@ router.get(
   AI_REVIEW_CONTROLLER.listRepositoryAiReviews
 )
 
+router.get(
+  '/:id/commit-diffs',
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  validationHandlingMiddleware(REPOSITORY_VALIDATION.listRepositoryCommits),
+  REPOSITORY_CONTROLLER.listCommitDiffs
+)
+
+router.get(
+  '/:id/impact-decisions',
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  validationHandlingMiddleware(REPOSITORY_VALIDATION.listRepositoryCommits),
+  REPOSITORY_CONTROLLER.listImpactDecisions
+)
+
 router.patch(
   '/:id',
   sensitiveRateLimiter,

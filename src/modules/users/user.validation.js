@@ -12,7 +12,11 @@ const listUsers = {
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10),
     status: Joi.string().valid('PENDING', 'APPROVED', 'ACTIVE', 'REJECTED', 'SUSPENDED'),
-    search: Joi.string().trim().max(100)
+    search: Joi.string().trim().max(100),
+    roles: Joi.alternatives().try(
+      Joi.array().items(Joi.string().trim().uppercase().valid('ADMIN', 'EVENT_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'USER', 'PARTICIPANT')).min(1).unique(),
+      Joi.string().trim().min(1)
+    )
   })
 }
 
