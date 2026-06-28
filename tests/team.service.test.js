@@ -195,8 +195,9 @@ test('createTeam rejects inviting the leader email as a team member', async () =
   )
 })
 
-test('createTeam sends temporary account and invitation emails for unknown invitees', async () => {
+test('createTeam sends only invitation email for unknown invitees', async () => {
   const sentEmails = []
+  const createdUsers = []
   const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'APPROVED' }
   const event = {
     _id: 'event-1',
@@ -220,8 +221,11 @@ test('createTeam sends temporary account and invitation emails for unknown invit
     teamId: 'team-1',
     leaderId: 'leader-1',
     invitedEmail: 'member@example.com',
-    invitedUserId: 'member-1',
     status: 'PENDING',
+    metadata: {
+      invitedFullName: undefined,
+      invitedGithubUsername: undefined
+    },
     expiresAt: new Date('2026-06-02T00:00:00.000Z')
   }
 
@@ -237,8 +241,10 @@ test('createTeam sends temporary account and invitation emails for unknown invit
     createTeam: async () => team,
     upsertParticipant: async () => ({}),
     findUserByEmail: async () => null,
-    findRoleByName: async () => ({ _id: 'role-user' }),
-    createUser: async () => ({ _id: 'member-1', email: 'member@example.com', fullName: 'Member', status: 'APPROVED' }),
+    createUser: async (data) => {
+      createdUsers.push(data)
+      return { _id: 'member-1', email: data.email, fullName: data.fullName, status: 'APPROVED' }
+    },
     createInvitation: async () => invitation,
     findTeamById: async () => team,
     findParticipantsByTeam: async () => [{
@@ -273,9 +279,137 @@ test('createTeam sends temporary account and invitation emails for unknown invit
   }, { id: 'leader-1' })
 
   assert.equal(result.name, 'Code Wizards')
-  assert.equal(sentEmails.length, 2)
+  assert.equal(createdUsers.length, 0)
+  assert.equal(sentEmails.length, 1)
+  assert.equal(sentEmails[0].template, EMAIL_TEMPLATE_KEYS.TEAM_INVITATION)
+})
+
+test('acceptInvitation creates account and sends temporary account email for unknown invitee', async () => {
+  const sentEmails = []
+  const notifications = []
+  const createdUsers = []
+  const token = createInvitationToken()
+  const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'APPROVED' }
+  const event = {
+    _id: 'event-1',
+    title: 'SEAL Hackathon',
+    status: 'OPEN_REGISTRATION',
+    minTeamMembers: 3,
+    maxTeamMembers: 5,
+    maxTeams: 30
+  }
+  let createdUser = null
+  let team = {
+    _id: 'team-1',
+    eventId: event,
+    leaderId: leader,
+    memberIds: [leader],
+    name: 'Code Wizards',
+    status: 'WAITING_FOR_MEMBERS'
+  }
+  let invitation = {
+    _id: 'invitation-1',
+    eventId: 'event-1',
+    teamId: 'team-1',
+    leaderId: 'leader-1',
+    invitedEmail: 'member@example.com',
+    tokenHash: hashInvitationToken(token),
+    status: 'PENDING',
+    metadata: {
+      invitedFullName: 'Member User'
+    },
+    expiresAt: new Date('2099-06-02T00:00:00.000Z')
+  }
+
+  const repository = {
+    createSession,
+    findInvitationByTokenHash: async (tokenHash) => tokenHash === invitation.tokenHash ? invitation : null,
+    findTeamById: async () => team,
+    findEventById: async () => event,
+    countTeams: async () => 0,
+    findUserByEmail: async () => null,
+    findRoleByName: async () => ({ _id: 'role-user' }),
+    createUser: async (data) => {
+      createdUsers.push(data)
+      createdUser = {
+        _id: 'member-1',
+        email: data.email,
+        fullName: data.fullName,
+        githubUsername: data.githubUsername,
+        status: data.status,
+        mustChangePassword: data.mustChangePassword
+      }
+      return createdUser
+    },
+    findParticipantByEventAndUser: async () => null,
+    findBlockingInvitation: async () => null,
+    upsertParticipant: async () => ({}),
+    updateTeamById: async (id, data) => {
+      if (data.$addToSet?.memberIds) {
+        team = {
+          ...team,
+          memberIds: [leader, createdUser]
+        }
+        return team
+      }
+
+      team = { ...team, ...data, _id: id }
+      return team
+    },
+    updateInvitationById: async (id, data) => {
+      invitation = { ...invitation, ...data, _id: id }
+      return invitation
+    },
+    findParticipantsByTeam: async () => [{
+      _id: 'participant-1',
+      eventId: 'event-1',
+      teamId: 'team-1',
+      userId: leader,
+      teamRole: 'LEADER',
+      status: 'ACTIVE'
+    }, {
+      _id: 'participant-2',
+      eventId: 'event-1',
+      teamId: 'team-1',
+      userId: createdUser,
+      teamRole: 'MEMBER',
+      status: 'ACTIVE'
+    }],
+    findInvitationsByTeam: async () => [invitation]
+  }
+
+  const service = createTeamService({
+    repository,
+    emailService: {
+      sendTemplateEmail: async (payload) => {
+        sentEmails.push(payload)
+        return { sent: true, status: 'SENT', accepted: [payload.to] }
+      }
+    },
+    notificationService: {
+      notifyUser: async (payload) => {
+        notifications.push(payload)
+        return { notification: null, email: null, errors: [] }
+      }
+    },
+    logger: createLogger()
+  })
+
+  const result = await service.acceptInvitation(token)
+
+  assert.equal(result.status, 'ACCEPTED')
+  assert.equal(createdUsers.length, 1)
+  assert.equal(createdUsers[0].email, 'member@example.com')
+  assert.equal(createdUsers[0].fullName, 'Member User')
+  assert.equal(createdUsers[0].status, 'APPROVED')
+  assert.equal(createdUsers[0].mustChangePassword, true)
+  assert.equal(invitation.invitedUserId, 'member-1')
+  assert.equal(sentEmails.length, 1)
   assert.equal(sentEmails[0].template, EMAIL_TEMPLATE_KEYS.TEMPORARY_ACCOUNT)
-  assert.equal(sentEmails[1].template, EMAIL_TEMPLATE_KEYS.TEAM_INVITATION)
+  assert.equal(sentEmails[0].to, 'member@example.com')
+  assert.equal(sentEmails[0].context.temporaryPassword, process.env.TEAM_INVITATION_TEMP_PASSWORD || 'test')
+  assert.equal(notifications.length, 1)
+  assert.deepEqual(notifications[0].channels, ['IN_APP'])
 })
 
 test('createTeam rejects duplicate active participant membership in the same event', async () => {
