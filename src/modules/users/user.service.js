@@ -67,6 +67,12 @@ const buildUserFilter = (query = {}) => {
   return filter
 }
 
+const normalizeRoleQuery = (roles) => {
+  if (!roles) return []
+  const values = Array.isArray(roles) ? roles : String(roles).split(',')
+  return [...new Set(values.map(role => String(role).trim().toUpperCase()).filter(Boolean))]
+}
+
 const normalizeUser = (user) => {
   if (!user) return null
 
@@ -188,6 +194,12 @@ const listUsers = async (query = {}) => {
   const { page, limit } = normalizePaginationQuery(query)
   const filter = buildUserFilter(query)
   const skip = (page - 1) * limit
+
+  const roleNames = normalizeRoleQuery(query.roles)
+  if (roleNames.length > 0) {
+    const roles = await USER_REPOSITORY.findRolesByNames(roleNames)
+    filter.roles = { $in: roles.map(role => role._id) }
+  }
 
   const [users, totalItems] = await Promise.all([
     USER_REPOSITORY.findAll({ filter, skip, limit }),
