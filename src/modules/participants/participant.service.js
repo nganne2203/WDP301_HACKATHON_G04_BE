@@ -32,7 +32,30 @@ const hashCheckInToken = (token) => crypto.createHash('sha256').update(token).di
 
 const normalizeCheckInToken = (value = '') => {
   const token = String(value).trim()
-  return token.startsWith(CHECK_IN_QR_PREFIX) ? token.slice(CHECK_IN_QR_PREFIX.length) : token
+  if (!token) return ''
+
+  try {
+    const url = new URL(token)
+    const urlToken = url.searchParams.get('checkInToken') || url.searchParams.get('token')
+    if (urlToken) return normalizeCheckInToken(urlToken)
+  } catch {
+    // The QR may still be the legacy raw token payload.
+  }
+
+  const prefixIndex = token.indexOf(CHECK_IN_QR_PREFIX)
+  return prefixIndex >= 0 ? token.slice(prefixIndex + CHECK_IN_QR_PREFIX.length) : token
+}
+
+const buildCheckInQrPayload = ({ tokenPayload, checkInUrlBase }) => {
+  if (!checkInUrlBase) return tokenPayload
+
+  try {
+    const url = new URL('/participant', checkInUrlBase)
+    url.searchParams.set('checkInToken', tokenPayload)
+    return url.toString()
+  } catch {
+    return tokenPayload
+  }
 }
 
 const ensureObjectId = (id, fieldName = 'participant id') => {
@@ -160,7 +183,8 @@ export const createParticipantService = ({
   qrEncoder = QRCode,
   randomToken = () => crypto.randomBytes(32).toString('base64url'),
   now = () => new Date(),
-  qrExpiresMinutes = env.checkInQr.expiresMinutes
+  qrExpiresMinutes = env.checkInQr.expiresMinutes,
+  checkInUrlBase = env.client.frontendUrl
 } = {}) => {
   const ensureParticipantExists = async (id) => {
     ensureObjectId(id)
@@ -309,7 +333,8 @@ export const createParticipantService = ({
     await ensureEventExists(eventId)
 
     const token = randomToken()
-    const qrPayload = `${CHECK_IN_QR_PREFIX}${token}`
+    const tokenPayload = `${CHECK_IN_QR_PREFIX}${token}`
+    const qrPayload = buildCheckInQrPayload({ tokenPayload, checkInUrlBase })
     const issuedAt = now()
     const ttlMinutes = Number.isFinite(Number(qrExpiresMinutes)) && Number(qrExpiresMinutes) > 0
       ? Number(qrExpiresMinutes)
