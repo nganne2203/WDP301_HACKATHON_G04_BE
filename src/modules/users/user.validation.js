@@ -63,6 +63,25 @@ const createUser = {
   })
 }
 
+const updateUser = {
+  params: idParam,
+  body: Joi.object({
+    email: Joi.string().email().trim().lowercase(),
+    fullName: Joi.string().trim().min(2).max(120),
+    roles: Joi.array()
+      .items(Joi.string().trim().uppercase().valid('ADMIN', 'EVENT_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'USER', 'PARTICIPANT'))
+      .min(1)
+      .unique(),
+    avatarUrl: Joi.string().uri().allow('', null),
+    phone: Joi.string().trim().max(30).allow('', null),
+    bio: Joi.string().trim().max(500).allow('', null),
+    githubUsername: githubUsername.allow('', null),
+    studentType: Joi.string().trim().uppercase().valid('FPT', 'EXTERNAL').allow(null),
+    studentId: Joi.string().trim().min(2).max(50).allow('', null),
+    schoolName: Joi.string().trim().max(200).allow('', null)
+  }).min(1)
+}
+
 const updateStatus = {
   params: idParam,
   body: Joi.object({
@@ -96,6 +115,7 @@ export const USER_VALIDATION = {
   listUsers,
   getUserById,
   createUser,
+  updateUser,
   updateProfile,
   updateStatus,
   assignRoles,

@@ -345,6 +345,13 @@ router.get(
   USER_CONTROLLER.getUserById
 )
 
+router.patch(
+  '/:id',
+  permissionMiddleware(PERMISSIONS.USER_UPDATE),
+  validationHandlingMiddleware(USER_VALIDATION.updateUser),
+  USER_CONTROLLER.updateUser
+)
+
 /**
  * @swagger
  * /api/users/{id}/status:
