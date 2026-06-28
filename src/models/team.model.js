@@ -2,6 +2,10 @@ import mongoose from 'mongoose'
 
 const { Schema } = mongoose
 
+const normalizeTeamName = (name) => {
+  return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
 const teamSchema = new Schema(
   {
     eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
@@ -10,6 +14,7 @@ const teamSchema = new Schema(
     memberIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     mentorIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     name: { type: String, required: true, trim: true },
+    normalizedName: { type: String, trim: true, lowercase: true },
     chapterName: { type: String, trim: true },
     projectName: { type: String, trim: true },
     trackAssignmentMethod: {
@@ -38,8 +43,17 @@ const teamSchema = new Schema(
   { timestamps: true }
 )
 
+teamSchema.pre('validate', function setNormalizedName(next) {
+  this.normalizedName = normalizeTeamName(this.name)
+  next()
+})
+
 teamSchema.index({ eventId: 1, trackId: 1 })
 teamSchema.index({ eventId: 1, name: 1 }, { unique: true })
+teamSchema.index(
+  { eventId: 1, normalizedName: 1 },
+  { unique: true, partialFilterExpression: { normalizedName: { $type: 'string' } } }
+)
 teamSchema.index(
   { eventId: 1, leaderId: 1 },
   { unique: true, partialFilterExpression: { leaderId: { $exists: true } } }

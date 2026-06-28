@@ -6,6 +6,7 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
+import { TEAM_REJECTION_REASONS, TEAM_SERVICE } from '#modules/teams/team.service.js'
 
 const EVENT_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED']
 const RANKING_SCOPES = ['TEAM', 'CHAPTER', 'INDIVIDUAL']
@@ -244,7 +245,8 @@ const normalizeEvent = (event) => {
 
 const createEventService = ({
   repository = EVENT_REPOSITORY,
-  notificationService = NOTIFICATION_SERVICE
+  notificationService = NOTIFICATION_SERVICE,
+  teamService = TEAM_SERVICE
 } = {}) => {
   const ensureEventExists = async (id) => {
     ensureObjectId(id)
@@ -328,6 +330,10 @@ const createEventService = ({
     ensureCompetitionRule(competitionConfig)
 
     const normalizedPayload = syncLegacyEventFields(safePayload, competitionConfig, existingEvent)
+    const shouldRejectUnconfirmedTeams =
+      normalizedPayload.status === 'REGISTRATION_CLOSED' &&
+      existingEvent.status !== 'REGISTRATION_CLOSED'
+
     if (normalizedPayload.status === 'OPEN_REGISTRATION') {
       normalizedPayload.registrationClosedAt = null
       normalizedPayload.registrationCloseReason = null
@@ -341,6 +347,13 @@ const createEventService = ({
     }
 
     const event = await repository.updateById(id, normalizedPayload)
+    if (event && shouldRejectUnconfirmedTeams) {
+      await teamService.rejectUnconfirmedTeamsForRegistrationClosure({
+        event,
+        reason: TEAM_REJECTION_REASONS.REGISTRATION_CLOSED
+      })
+    }
+
     return normalizeEvent(event)
   }
 
@@ -350,6 +363,7 @@ const createEventService = ({
     }
 
     ensureObjectId(id)
+    const existingEvent = await ensureEventExists(id)
     const updatePayload = { status }
     if (status === 'OPEN_REGISTRATION') {
       updatePayload.registrationClosedAt = null
@@ -362,6 +376,13 @@ const createEventService = ({
     const event = await repository.updateById(id, updatePayload)
     if (!event) {
       throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+    }
+
+    if (status === 'REGISTRATION_CLOSED' && existingEvent.status !== 'REGISTRATION_CLOSED') {
+      await teamService.rejectUnconfirmedTeamsForRegistrationClosure({
+        event,
+        reason: TEAM_REJECTION_REASONS.REGISTRATION_CLOSED
+      })
     }
 
     return normalizeEvent(event)

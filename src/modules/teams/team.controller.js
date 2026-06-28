@@ -56,6 +56,19 @@ const getMyTeam = async (req, res, next) => {
   }
 }
 
+const checkTeamAvailability = async (req, res, next) => {
+  try {
+    const availability = await TEAM_SERVICE.checkTeamAvailability(req.validated.query, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Check team availability successfully',
+      data: availability
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const inviteMembers = async (req, res, next) => {
   try {
     const result = await TEAM_SERVICE.inviteMembers(req.params.id, req.body, req.user)
@@ -172,6 +185,7 @@ export const TEAM_CONTROLLER = {
   createTeam,
   getTeamById,
   getMyTeam,
+  checkTeamAvailability,
   inviteMembers,
   acceptInvitation,
   declineInvitation,
