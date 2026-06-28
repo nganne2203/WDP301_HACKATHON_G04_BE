@@ -87,11 +87,45 @@ const listStaticAnalysis = async (req, res, next) => {
   }
 }
 
+const listCommitDiffs = async (req, res, next) => {
+  try {
+    const { commitDiffs, pagination } = await REPOSITORY_SERVICE.listCommitDiffs({
+      repositoryId: req.params.id,
+      query: req.validated?.query || req.query
+    })
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get repository commit diffs successfully',
+      data: commitDiffs,
+      pagination
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const listImpactDecisions = async (req, res, next) => {
+  try {
+    const { impactDecisions, pagination } = await REPOSITORY_SERVICE.listImpactDecisions({
+      repositoryId: req.params.id,
+      query: req.validated?.query || req.query
+    })
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get repository impact decisions successfully',
+      data: impactDecisions,
+      pagination
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const REPOSITORY_CONTROLLER = {
   listRepositories,
   getRepositoryById,
   createRepository,
   updateRepository,
   listRepositoryCommits,
-  listStaticAnalysis
+  listStaticAnalysis,
+  listCommitDiffs,
+  listImpactDecisions
 }

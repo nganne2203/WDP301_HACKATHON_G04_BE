@@ -263,6 +263,101 @@ export const createRepositoryService = ({
     }
   }
 
+  const listCommitDiffs = async ({ repositoryId, query = {} }) => {
+    await ensureRepositoryExists(repositoryId)
+    const { page, limit } = normalizePaginationQuery(query)
+    const skip = (page - 1) * limit
+
+    const [commitDiffs, totalItems] = await Promise.all([
+      repository.listCommitDiffsByRepository({ repositoryId, skip, limit }),
+      repository.countCommitDiffsByRepository(repositoryId)
+    ])
+
+    const normalized = commitDiffs.map(doc => {
+      const obj = typeof doc.toObject === 'function' ? doc.toObject({ getters: true, virtuals: false }) : doc
+      return {
+        id: obj._id?.toString() || obj.id,
+        repositoryId: obj.repositoryId?.toString(),
+        commitId: obj.commitId?.toString() || null,
+        baseCommitSha: obj.baseCommitSha || null,
+        headCommitSha: obj.headCommitSha,
+        provider: obj.provider || 'GITHUB',
+        status: obj.status,
+        diffHash: obj.diffHash || null,
+        totalFiles: obj.totalFiles || 0,
+        includedFiles: obj.includedFiles || 0,
+        excludedFiles: obj.excludedFiles || 0,
+        totalRawPatchSize: obj.totalRawPatchSize || 0,
+        totalCleanPatchSize: obj.totalCleanPatchSize || 0,
+        files: (obj.files || []).map(f => ({
+          filePath: f.filePath,
+          fileName: f.fileName,
+          language: f.language || null,
+          status: f.status,
+          additions: f.additions || 0,
+          deletions: f.deletions || 0,
+          changes: f.changes || 0,
+          isExcluded: f.isExcluded || false,
+          excludedReason: f.excludedReason || null,
+          isBinary: f.isBinary || false,
+          isGenerated: f.isGenerated || false,
+          isLockFile: f.isLockFile || false
+        })),
+        fetchedAt: obj.fetchedAt || null,
+        lastError: obj.lastError || null,
+        createdAt: obj.createdAt,
+        updatedAt: obj.updatedAt
+      }
+    })
+
+    return {
+      commitDiffs: normalized,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalItems / limit) || 1,
+        pageSize: limit,
+        totalItems
+      }
+    }
+  }
+
+  const listImpactDecisions = async ({ repositoryId, query = {} }) => {
+    await ensureRepositoryExists(repositoryId)
+    const { page, limit } = normalizePaginationQuery(query)
+    const skip = (page - 1) * limit
+
+    const [decisions, totalItems] = await Promise.all([
+      repository.listImpactDecisionsByRepository({ repositoryId, skip, limit }),
+      repository.countImpactDecisionsByRepository(repositoryId)
+    ])
+
+    const normalized = decisions.map(doc => {
+      const obj = typeof doc.toObject === 'function' ? doc.toObject({ getters: true, virtuals: false }) : doc
+      return {
+        id: obj._id?.toString() || obj.id,
+        repositoryId: obj.repositoryId?.toString(),
+        commitSha: obj.commitSha,
+        impactScore: obj.impactScore,
+        impactLevel: obj.impactLevel,
+        decision: obj.decision,
+        reasons: obj.reasons || [],
+        needsHumanReview: obj.needsHumanReview || false,
+        createdAt: obj.createdAt,
+        updatedAt: obj.updatedAt
+      }
+    })
+
+    return {
+      impactDecisions: normalized,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalItems / limit) || 1,
+        pageSize: limit,
+        totalItems
+      }
+    }
+  }
+
   const createRepository = async (payload = {}) => {
     const event = await ensureEventExists(payload.eventId)
     await ensureTeamBelongsToEvent({ eventId: event._id, teamId: payload.teamId })
@@ -326,6 +421,8 @@ export const createRepositoryService = ({
     getRepositoryById,
     listRepositoryCommits,
     listStaticAnalysis,
+    listCommitDiffs,
+    listImpactDecisions,
     createRepository,
     updateRepository
   }
