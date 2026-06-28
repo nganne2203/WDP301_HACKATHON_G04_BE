@@ -184,11 +184,11 @@ const teamConfirmationSuccess = ({ fullName, eventTitle, teamName }) => buildTem
   message: `You are now confirmed as a member of ${teamName || 'your team'} for ${eventTitle || 'SEAL Hackathon'}. Watch the platform for next steps from the organizers.`
 })
 
-const teamRejected = ({ fullName, eventTitle, teamName }) => buildTemplate({
+const teamRejected = ({ fullName, eventTitle, teamName, rejectionReason }) => buildTemplate({
   subject: `Team not confirmed: ${teamName || 'SEAL Hackathon team'}`,
   fullName,
   heading: 'Team registration was rejected',
-  message: `${teamName || 'Your team'} for ${eventTitle || 'SEAL Hackathon'} was not confirmed because the required number of confirmed teams has already been reached.`
+  message: `${teamName || 'Your team'} for ${eventTitle || 'SEAL Hackathon'} was not confirmed. ${rejectionReason || 'Please contact the organizers for details.'}`
 })
 
 const teamMemberDeclined = ({ fullName, eventTitle, teamName, declinedEmail }) => buildTemplate({

@@ -46,6 +46,11 @@ const REGISTRATION_CLOSE_REASONS = {
   CAPACITY_REACHED: 'CAPACITY_REACHED',
   REGISTRATION_ENDED: 'REGISTRATION_ENDED'
 }
+export const TEAM_REJECTION_REASONS = {
+  CAPACITY_REACHED: 'The required number of confirmed teams has already been reached.',
+  REGISTRATION_CLOSED: 'Registration has closed before this team was fully confirmed.',
+  REGISTRATION_ENDED: 'Registration ended before this team was fully confirmed.'
+}
 
 const getId = (value) => {
   return value?._id?.toString?.() || value?.id || value?.toString?.()
@@ -75,6 +80,10 @@ const ensureMembersDoNotContainLeader = (members = [], leader) => {
   for (const member of members) {
     ensureEmailIsNotLeader(member.email, leader)
   }
+}
+
+const buildTeamRejectedMessage = (team, reason) => {
+  return `${team?.name || 'Your team'} was rejected. ${reason}`
 }
 
 export const hashInvitationToken = (token) => {
@@ -460,7 +469,7 @@ const ensureConfirmedSlotsNotFull = async ({ event, repository, session }) => {
   }, { session })
 
   if (confirmedCount >= getMaxTeams(event)) {
-    throw new ApiError(ERROR_CODES.CONFLICT, ['The required number of confirmed teams has already been reached'])
+    throw new ApiError(ERROR_CODES.CONFLICT, [TEAM_REJECTION_REASONS.CAPACITY_REACHED])
   }
 }
 
@@ -967,11 +976,12 @@ const rejectOpenTeams = async ({ repository, event, reason, excludeTeamId = null
           user,
           type: 'SYSTEM',
           title: 'Team registration rejected',
-          message: `${rejectedTeam.name} was rejected because the required number of confirmed teams has been reached.`,
+          message: buildTeamRejectedMessage(rejectedTeam, reason),
           emailTemplate: EMAIL_TEMPLATE_KEYS.TEAM_REJECTED,
           emailContext: {
             eventTitle: event.title,
-            teamName: rejectedTeam.name
+            teamName: rejectedTeam.name,
+            rejectionReason: reason
           },
           metadata: {
             eventId: getId(event),
@@ -1063,6 +1073,40 @@ export const createTeamService = ({
     if (!team) return null
 
     return await loadTeamDetail({ repository, team })
+  }
+
+  const rejectUnconfirmedTeamsForRegistrationClosure = async ({
+    event,
+    eventId,
+    reason = TEAM_REJECTION_REASONS.REGISTRATION_CLOSED
+  } = {}) => {
+    const jobs = []
+    const result = await runWithOptionalTransaction({
+      repository,
+      logger,
+      work: async (session) => {
+        const targetEvent = event || await repository.findEventById(eventId, { session })
+        if (!targetEvent) {
+          throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+        }
+
+        const rejectedCount = await rejectOpenTeams({
+          repository,
+          event: targetEvent,
+          reason,
+          session,
+          jobs
+        })
+
+        return {
+          eventId: getId(targetEvent),
+          rejectedCount
+        }
+      }
+    })
+
+    await sendJobs({ jobs, emailService, notificationService, logger })
+    return result
   }
 
   const checkTeamAvailability = async (query = {}, actor = {}) => {
@@ -1368,7 +1412,7 @@ export const createTeamService = ({
           const rejectedTeam = await repository.updateTeamById(getId(team), {
             status: TEAM_STATUSES.REJECTED,
             rejectedAt: new Date(),
-            rejectionReason: 'The required number of confirmed teams has already been reached.'
+            rejectionReason: TEAM_REJECTION_REASONS.CAPACITY_REACHED
           }, { session })
 
           await repository.updateInvitationById(getId(invitation), {
@@ -1378,7 +1422,7 @@ export const createTeamService = ({
           await rejectOpenTeams({
             repository,
             event,
-            reason: 'The required number of confirmed teams has already been reached.',
+            reason: TEAM_REJECTION_REASONS.CAPACITY_REACHED,
             excludeTeamId: getId(team),
             session,
             jobs
@@ -1462,7 +1506,7 @@ export const createTeamService = ({
             updatedTeam = await repository.updateTeamById(getId(updatedTeam), {
               status: TEAM_STATUSES.REJECTED,
               rejectedAt: new Date(),
-              rejectionReason: 'The required number of confirmed teams has already been reached.'
+              rejectionReason: TEAM_REJECTION_REASONS.CAPACITY_REACHED
             }, { session })
           } else {
             updatedTeam = await repository.updateTeamById(getId(updatedTeam), {
@@ -1486,7 +1530,7 @@ export const createTeamService = ({
               await rejectOpenTeams({
                 repository,
                 event,
-                reason: 'The required number of confirmed teams has already been reached.',
+                reason: TEAM_REJECTION_REASONS.CAPACITY_REACHED,
                 excludeTeamId: getId(updatedTeam),
                 session,
                 jobs
@@ -1808,6 +1852,7 @@ export const createTeamService = ({
     listTeams,
     getTeamById,
     getMyTeamByEvent,
+    rejectUnconfirmedTeamsForRegistrationClosure,
     checkTeamAvailability,
     createTeam,
     inviteMembers,

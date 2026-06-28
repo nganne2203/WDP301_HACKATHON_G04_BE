@@ -380,6 +380,75 @@ test('createTeam auto-closes registration when confirmed team capacity is alread
   assert.equal(updates[0].data.registrationCloseReason, 'CAPACITY_REACHED')
 })
 
+test('rejectUnconfirmedTeamsForRegistrationClosure rejects open teams and cancels pending invites', async () => {
+  const notifications = []
+  const event = {
+    _id: '000000000000000000000301',
+    title: 'SEAL Hackathon',
+    status: 'REGISTRATION_CLOSED'
+  }
+  const leader = { _id: '000000000000000000000401', email: 'leader@example.com', fullName: 'Leader' }
+  const member = { _id: '000000000000000000000402', email: 'member@example.com', fullName: 'Member' }
+  const team = {
+    _id: '000000000000000000000501',
+    eventId: event,
+    leaderId: leader,
+    memberIds: [leader],
+    name: 'Pending Team',
+    status: 'WAITING_FOR_MEMBERS'
+  }
+  const updatedTeams = []
+  const invitationUpdates = []
+  const repository = {
+    createSession,
+    findTeams: async ({ filter }) => {
+      assert.equal(filter.eventId, event._id)
+      assert.deepEqual(filter.status.$in, ['PENDING', 'WAITING_FOR_MEMBERS', 'WAITLISTED'])
+      return [team]
+    },
+    updateTeamById: async (id, data) => {
+      updatedTeams.push({ id, data })
+      return { ...team, ...data, _id: id }
+    },
+    updateInvitations: async (filter, data) => {
+      invitationUpdates.push({ filter, data })
+      return { modifiedCount: 1 }
+    },
+    findParticipantsByTeam: async () => [{
+      _id: 'participant-1',
+      userId: member,
+      teamRole: 'MEMBER',
+      status: 'INVITED'
+    }]
+  }
+  const service = createTeamService({
+    repository,
+    notificationService: {
+      notifyUser: async (payload) => {
+        notifications.push(payload)
+        return { notification: null, email: null, errors: [] }
+      }
+    },
+    logger: createLogger()
+  })
+
+  const result = await service.rejectUnconfirmedTeamsForRegistrationClosure({
+    event,
+    reason: 'Registration has closed before this team was fully confirmed.'
+  })
+
+  assert.equal(result.rejectedCount, 1)
+  assert.equal(updatedTeams.length, 1)
+  assert.equal(updatedTeams[0].data.status, 'REJECTED')
+  assert.equal(updatedTeams[0].data.rejectionReason, 'Registration has closed before this team was fully confirmed.')
+  assert.equal(invitationUpdates.length, 1)
+  assert.equal(invitationUpdates[0].filter.teamId, team._id)
+  assert.equal(invitationUpdates[0].filter.status, 'PENDING')
+  assert.equal(invitationUpdates[0].data.status, 'CANCELLED')
+  assert.equal(notifications.length, 2)
+  assert.equal(notifications[0].emailContext.rejectionReason, 'Registration has closed before this team was fully confirmed.')
+})
+
 test('updateTeamStatus confirms a team and auto-assigns the next available placement slot', async () => {
   const event = {
     _id: '000000000000000000000501',
