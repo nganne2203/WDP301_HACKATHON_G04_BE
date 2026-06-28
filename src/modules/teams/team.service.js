@@ -13,6 +13,7 @@ import { LOGGER } from '#utils/logger.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { PERMISSIONS } from '#constants/permissions.js'
 import { GITHUB_SERVICE } from '#modules/github/github.service.js'
+import { REGISTRATION_SOURCES } from '#utils/userAccountUtil.js'
 
 export const TEAM_STATUSES = {
   PENDING: 'PENDING',
@@ -731,14 +732,14 @@ const ensureParticipantCanJoinEvent = async ({
   }
 }
 
-const buildInvitationEmailContext = ({ event, team, leader, token, invitedUser, email, logger = LOGGER }) => {
+const buildInvitationEmailContext = ({ event, team, leader, token, invitedUser, fullName, email, logger = LOGGER }) => {
   const { acceptUrl, declineUrl } = buildInvitationUrls(token, logger)
 
   return {
     to: email,
     template: EMAIL_TEMPLATE_KEYS.TEAM_INVITATION,
     context: {
-      fullName: invitedUser?.fullName || email,
+      fullName: invitedUser?.fullName || fullName || email,
       eventTitle: event.title,
       teamName: team.name,
       leaderName: leader.fullName,
@@ -846,7 +847,6 @@ const createInvitationForEmail = async ({
   ensureEmailIsNotLeader(email, leader)
 
   let invitedUser = await repository.findUserByEmail(email, { session })
-  let temporaryPassword = null
 
   if (invitedUser) {
     await ensureParticipantCanJoinEvent({
@@ -870,19 +870,6 @@ const createInvitationForEmail = async ({
     if (blockingInvitation) {
       throw new ApiError(ERROR_CODES.CONFLICT, ['User already has an active invitation for this event'])
     }
-
-    const userRole = await repository.findRoleByName('USER', { session })
-    temporaryPassword = env.teamInvitation.temporaryPassword
-    invitedUser = await repository.createUser({
-      email,
-      fullName: fullName || buildFullNameFromEmail(email),
-      githubUsername,
-      passwordHash: await BCRYPT_UTILS.hashPassword(temporaryPassword),
-      authProvider: 'LOCAL',
-      status: 'APPROVED',
-      mustChangePassword: true,
-      roles: userRole ? [userRole._id] : []
-    }, { session })
   }
 
   const token = createInvitationToken()
@@ -891,33 +878,15 @@ const createInvitationForEmail = async ({
     teamId: getId(team),
     leaderId: getId(leader),
     invitedEmail: email,
-    invitedUserId: getId(invitedUser),
+    invitedUserId: getId(invitedUser) || undefined,
     tokenHash: hashInvitationToken(token),
     expiresAt: new Date(Date.now() + env.teamInvitation.expiresHours * 60 * 60 * 1000),
-    status: INVITATION_STATUSES.PENDING
+    status: INVITATION_STATUSES.PENDING,
+    metadata: {
+      invitedFullName: fullName || undefined,
+      invitedGithubUsername: githubUsername || undefined
+    }
   }, { session })
-
-  if (temporaryPassword) {
-    jobs.push({
-      kind: 'email',
-      payload: {
-        to: email,
-        template: EMAIL_TEMPLATE_KEYS.TEMPORARY_ACCOUNT,
-        context: {
-          fullName: invitedUser.fullName,
-          email,
-          temporaryPassword,
-          loginUrl: buildLoginUrl(logger)
-        },
-        metadata: {
-          eventId: getId(event),
-          teamId: getId(team),
-          invitedUserId: getId(invitedUser),
-          invitationId: getId(invitation)
-        }
-      }
-    })
-  }
 
   jobs.push({
     kind: 'email',
@@ -927,12 +896,85 @@ const createInvitationForEmail = async ({
       leader,
       token,
       invitedUser,
+      fullName,
       email,
       logger
     })
   })
 
   return invitation
+}
+
+const getInvitationMetadata = (invitation = {}) => {
+  return invitation.metadata && typeof invitation.metadata === 'object'
+    ? invitation.metadata
+    : {}
+}
+
+const resolveInvitationUser = async ({
+  repository,
+  event,
+  team,
+  invitation,
+  session
+}) => {
+  const invitedEmail = normalizeEmailAddress(invitation.invitedEmail)
+  const metadata = getInvitationMetadata(invitation)
+  const invitedFullName = metadata.invitedFullName || buildFullNameFromEmail(invitedEmail)
+  const invitedGithubUsername = metadata.invitedGithubUsername
+
+  let invitedUser = null
+  let accountCreated = false
+  let temporaryPassword = null
+
+  if (invitation.invitedUserId) {
+    invitedUser = await repository.findUserById(invitation.invitedUserId, { session })
+    if (!invitedUser) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Invitation target not found'])
+  } else {
+    invitedUser = await repository.findUserByEmail(invitedEmail, { session })
+
+    if (invitedUser && !invitedUser.githubUsername && invitedGithubUsername) {
+      invitedUser = await repository.updateUserById(invitedUser._id, {
+        githubUsername: invitedGithubUsername
+      }, { session })
+    }
+
+    if (!invitedUser) {
+      const userRole = await repository.findRoleByName('USER', { session })
+      temporaryPassword = env.teamInvitation.temporaryPassword
+      invitedUser = await repository.createUser({
+        email: invitedEmail,
+        fullName: invitedFullName,
+        githubUsername: invitedGithubUsername,
+        passwordHash: await BCRYPT_UTILS.hashPassword(temporaryPassword),
+        authProvider: 'LOCAL',
+        registrationSource: REGISTRATION_SOURCES.FORM,
+        status: 'APPROVED',
+        mustChangePassword: true,
+        roles: userRole ? [userRole._id] : []
+      }, { session })
+      accountCreated = true
+    }
+  }
+
+  if (isSameId(team.leaderId, invitedUser)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team member must not be the team leader'])
+  }
+
+  await ensureParticipantCanJoinEvent({
+    repository,
+    eventId: getId(event),
+    user: invitedUser,
+    targetTeamId: getId(team),
+    excludeInvitationId: getId(invitation),
+    session
+  })
+
+  return {
+    invitedUser,
+    accountCreated,
+    temporaryPassword
+  }
 }
 
 const rejectOpenTeams = async ({ repository, event, reason, excludeTeamId = null, session, jobs }) => {
@@ -1354,8 +1396,6 @@ export const createTeamService = ({
           eventId: invitation.eventId,
           session
         })
-        const invitedUser = await repository.findUserById(invitation.invitedUserId, { session })
-        if (!invitedUser) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Invitation target not found'])
         ensureEventOpen(event)
 
         if (invitation.status === INVITATION_STATUSES.ACCEPTED) {
@@ -1435,16 +1475,15 @@ export const createTeamService = ({
           }
         }
 
-        if (isSameId(team.leaderId, invitedUser)) {
-          throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team member must not be the team leader'])
-        }
-
-        await ensureParticipantCanJoinEvent({
+        const {
+          invitedUser,
+          accountCreated,
+          temporaryPassword
+        } = await resolveInvitationUser({
           repository,
-          eventId: getId(event),
-          user: invitedUser,
-          targetTeamId: getId(team),
-          excludeInvitationId: getId(invitation),
+          event,
+          team,
+          invitation,
           session
         })
 
@@ -1492,7 +1531,8 @@ export const createTeamService = ({
 
         const acceptedInvitation = await repository.updateInvitationById(getId(invitation), {
           status: INVITATION_STATUSES.ACCEPTED,
-          acceptedAt: new Date()
+          acceptedAt: new Date(),
+          invitedUserId: getId(invitedUser)
         }, { session })
 
         const memberCount = (updatedTeam.memberIds || []).length
@@ -1546,6 +1586,28 @@ export const createTeamService = ({
           }
         }
 
+        if (accountCreated) {
+          jobs.push({
+            kind: 'email',
+            payload: {
+              to: invitedUser.email,
+              template: EMAIL_TEMPLATE_KEYS.TEMPORARY_ACCOUNT,
+              context: {
+                fullName: invitedUser.fullName,
+                email: invitedUser.email,
+                temporaryPassword,
+                loginUrl: buildLoginUrl(logger)
+              },
+              metadata: {
+                eventId: getId(event),
+                teamId: getId(updatedTeam),
+                invitedUserId: getId(invitedUser),
+                invitationId: getId(acceptedInvitation)
+              }
+            }
+          })
+        }
+
         jobs.push({
           kind: 'notification',
           payload: {
@@ -1562,7 +1624,8 @@ export const createTeamService = ({
               eventId: getId(event),
               teamId: getId(updatedTeam),
               invitationId: getId(acceptedInvitation)
-            }
+            },
+            channels: accountCreated ? ['IN_APP'] : undefined
           }
         })
 
