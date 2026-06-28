@@ -1,5 +1,7 @@
 import Repository from '#models/repository.model.js'
 import Commit from '#models/commit.model.js'
+import CommitDiff from '#models/commitDiff.model.js'
+import ImpactDecision from '#models/impactDecision.model.js'
 import StaticAnalysisResult from '#models/staticAnalysisResult.model.js'
 
 const repositoryPopulate = [
@@ -61,6 +63,28 @@ const countStaticAnalysisByRepository = async (repositoryId) => {
   return await StaticAnalysisResult.countDocuments({ repositoryId })
 }
 
+const listCommitDiffsByRepository = async ({ repositoryId, skip = 0, limit = 10 }) => {
+  return await CommitDiff.find({ repositoryId })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+}
+
+const countCommitDiffsByRepository = async (repositoryId) => {
+  return await CommitDiff.countDocuments({ repositoryId })
+}
+
+const listImpactDecisionsByRepository = async ({ repositoryId, skip = 0, limit = 10 }) => {
+  return await ImpactDecision.find({ repositoryId })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+}
+
+const countImpactDecisionsByRepository = async (repositoryId) => {
+  return await ImpactDecision.countDocuments({ repositoryId })
+}
+
 export const REPOSITORY_REPOSITORY = {
   count,
   create,
@@ -71,5 +95,9 @@ export const REPOSITORY_REPOSITORY = {
   listCommitsByRepository,
   countCommitsByRepository,
   listStaticAnalysisByRepository,
-  countStaticAnalysisByRepository
+  countStaticAnalysisByRepository,
+  listCommitDiffsByRepository,
+  countCommitDiffsByRepository,
+  listImpactDecisionsByRepository,
+  countImpactDecisionsByRepository
 }
