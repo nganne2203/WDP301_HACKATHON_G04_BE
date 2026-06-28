@@ -84,7 +84,7 @@ const generateCheckInQr = {
 
 const scanCheckInQr = {
   body: Joi.object({
-    token: Joi.string().trim().min(32).max(512).required()
+    token: Joi.string().trim().min(32).max(1024).required()
   })
 }
 
