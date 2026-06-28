@@ -159,7 +159,8 @@ const createQrTestService = ({ currentTime = new Date('2026-06-22T08:00:00.000Z'
     qrEncoder: { toDataURL: async payload => `data:image/png;base64,${payload}` },
     randomToken: () => 'fixed-check-in-token-with-enough-entropy-123456789',
     now: () => nowValue,
-    qrExpiresMinutes: 5
+    qrExpiresMinutes: 5,
+    checkInUrlBase: 'https://app.example.test'
   })
 
   return {
@@ -186,12 +187,15 @@ test('generateCheckInQr lets a coordinator generate an expiring event QR without
     permissions: ['PARTICIPANT_APPROVE']
   })
   const stored = repository.getCheckInQrSession()
+  const qrUrl = new URL(qr.qrPayload)
 
   assert.equal(qr.eventId, '000000000000000000000201')
-  assert.match(qr.qrPayload, /^wdp301-checkin:/)
+  assert.equal(qrUrl.origin, 'https://app.example.test')
+  assert.equal(qrUrl.pathname, '/participant')
+  assert.equal(qrUrl.searchParams.get('checkInToken'), 'wdp301-checkin:fixed-check-in-token-with-enough-entropy-123456789')
   assert.match(qr.qrCodeDataUrl, /^data:image\/png;base64,/)
   assert.equal(qr.expiresAt.toISOString(), '2026-06-22T08:05:00.000Z')
-  assert.equal(stored.tokenHash, crypto.createHash('sha256').update(qr.qrPayload.replace('wdp301-checkin:', '')).digest('hex'))
+  assert.equal(stored.tokenHash, crypto.createHash('sha256').update('fixed-check-in-token-with-enough-entropy-123456789').digest('hex'))
   assert.equal(stored.tokenHash.includes('fixed-check-in-token'), false)
 })
 

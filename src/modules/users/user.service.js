@@ -18,9 +18,11 @@ import {
 } from '#utils/userAccountUtil.js'
 
 const PROFILE_FIELDS = ['fullName', 'avatarUrl', 'phone', 'bio', 'githubUsername']
+const USER_UPDATE_FIELDS = ['email', 'fullName', 'avatarUrl', 'phone', 'bio', 'githubUsername', 'studentType', 'studentId', 'schoolName']
 const ALLOWED_STATUSES = ['PENDING', 'APPROVED', 'ACTIVE', 'REJECTED', 'SUSPENDED']
 const EMAIL_NOTIFICATION_STATUSES = ['APPROVED', 'REJECTED']
 const PARTICIPANT_ROLES = ['USER', 'PARTICIPANT']
+const ROLE_ASSIGN_PERMISSIONS = ['USER_ROLE_ASSIGN', 'USER_ASSIGN_ROLE']
 
 const getLoginUrl = () => {
   const frontendUrl = env.client.frontendUrl || env.client.urls[0]
@@ -239,6 +241,13 @@ const ensureCanCreateRoles = (actor = {}, roleNames = []) => {
   }
 }
 
+const ensureCanAssignRoles = (actor = {}) => {
+  const actorPermissions = actor.permissions || []
+  if (!ROLE_ASSIGN_PERMISSIONS.some(permission => actorPermissions.includes(permission))) {
+    throw new ApiError(ERROR_CODES.FORBIDDEN, ['You do not have permission to update user roles'])
+  }
+}
+
 const createUser = async (payload = {}, actor = {}) => {
   const roleNames = (payload.roles || []).map(role => String(role).toUpperCase())
   if (roleNames.length === 0) {
@@ -282,6 +291,51 @@ const createUser = async (payload = {}, actor = {}) => {
   const user = await USER_REPOSITORY.findById(createdUser._id)
 
   return normalizeUser(user)
+}
+
+const updateUser = async (id, payload = {}, actor = {}) => {
+  const existingUser = await ensureUserExists(id)
+  const safePayload = pickSafeFields(payload, USER_UPDATE_FIELDS)
+  const updatePayload = { ...safePayload }
+  let roleNames = getRoleNames(existingUser).map(roleName => String(roleName).toUpperCase())
+
+  if (safePayload.email && safePayload.email !== existingUser.email) {
+    const emailOwner = await USER_REPOSITORY.findByEmail(safePayload.email)
+    if (emailOwner && emailOwner._id?.toString() !== id) {
+      throw new ApiError(ERROR_CODES.CONFLICT, ['Email already exists'])
+    }
+  }
+
+  if (payload.roles) {
+    roleNames = payload.roles.map(role => String(role).toUpperCase())
+    ensureCanAssignRoles(actor)
+    ensureCanCreateRoles(actor, roleNames)
+
+    const roles = await USER_REPOSITORY.findRolesByNames(roleNames)
+    if (roles.length !== roleNames.length) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more roles do not exist'])
+    }
+    updatePayload.roles = roles.map(role => role._id)
+  }
+
+  const finalStudentType = safePayload.studentType !== undefined ? safePayload.studentType : existingUser.studentType
+  const finalStudentId = safePayload.studentId !== undefined ? safePayload.studentId : existingUser.studentId
+  const finalSchoolName = safePayload.schoolName !== undefined ? safePayload.schoolName : existingUser.schoolName
+
+  if (roleNames.some(roleName => PARTICIPANT_ROLES.includes(roleName))) {
+    ensureParticipantStudentInfo({
+      studentType: finalStudentType,
+      studentId: finalStudentId,
+      schoolName: finalSchoolName
+    })
+  }
+
+  if (safePayload.studentType && safePayload.studentType !== 'EXTERNAL') {
+    updatePayload.schoolName = null
+  }
+
+  const updatedUser = await USER_REPOSITORY.updateById(id, updatePayload)
+  return normalizeUser(updatedUser)
 }
 
 const updateProfile = async (id, payload = {}) => {
@@ -427,6 +481,7 @@ export const USER_SERVICE = {
   getRawUserById,
   getUserByEmail,
   createUser,
+  updateUser,
   updateProfile,
   updateStatus,
   approveUser,

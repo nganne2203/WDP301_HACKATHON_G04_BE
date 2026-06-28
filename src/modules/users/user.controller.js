@@ -43,6 +43,19 @@ const createUser = async (req, res, next) => {
   }
 }
 
+const updateUser = async (req, res, next) => {
+  try {
+    const user = await USER_SERVICE.updateUser(req.params.id, req.body, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Update user successfully',
+      data: user
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const updateMe = async (req, res, next) => {
   try {
     const user = await USER_SERVICE.updateProfile(req.user.id, req.body)
@@ -152,6 +165,7 @@ export const USER_CONTROLLER = {
   listUsers,
   getUserById,
   createUser,
+  updateUser,
   updateMe,
   updateStatus,
   approveUser,
