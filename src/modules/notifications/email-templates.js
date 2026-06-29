@@ -177,6 +177,15 @@ const temporaryAccount = ({ fullName, email, temporaryPassword, loginUrl }) => b
   actionUrl: loginUrl
 })
 
+const passwordReset = ({ fullName, resetUrl, expiresMinutes }) => buildTemplate({
+  subject: 'Reset your SEAL Hackathon password',
+  fullName,
+  heading: 'Reset your password',
+  message: `We received a request to reset your password. This link expires in ${expiresMinutes || 30} minutes. If you did not request this, you can ignore this email.`,
+  actionLabel: 'Reset password',
+  actionUrl: resetUrl
+})
+
 const teamConfirmationSuccess = ({ fullName, eventTitle, teamName }) => buildTemplate({
   subject: `You joined ${teamName || 'your SEAL Hackathon team'}`,
   fullName,
@@ -207,6 +216,7 @@ export const EMAIL_TEMPLATE_KEYS = {
   TEAM_CONFIRMATION_SUCCESS: 'TEAM_CONFIRMATION_SUCCESS',
   TEAM_REJECTED: 'TEAM_REJECTED',
   TEAM_MEMBER_DECLINED: 'TEAM_MEMBER_DECLINED',
+  PASSWORD_RESET: 'PASSWORD_RESET',
   NOTIFICATION: 'NOTIFICATION'
 }
 
@@ -219,6 +229,7 @@ const TEMPLATES = {
   [EMAIL_TEMPLATE_KEYS.TEAM_CONFIRMATION_SUCCESS]: teamConfirmationSuccess,
   [EMAIL_TEMPLATE_KEYS.TEAM_REJECTED]: teamRejected,
   [EMAIL_TEMPLATE_KEYS.TEAM_MEMBER_DECLINED]: teamMemberDeclined,
+  [EMAIL_TEMPLATE_KEYS.PASSWORD_RESET]: passwordReset,
   [EMAIL_TEMPLATE_KEYS.NOTIFICATION]: notification
 }
 

@@ -387,6 +387,20 @@ router.post(
   AUTH_CONTROLLER.refreshToken
 )
 
+router.post(
+  '/forgot-password',
+  authRateLimiter,
+  validationHandlingMiddleware(AUTH_VALIDATION.requestPasswordReset),
+  AUTH_CONTROLLER.requestPasswordReset
+)
+
+router.post(
+  '/reset-password',
+  authRateLimiter,
+  validationHandlingMiddleware(AUTH_VALIDATION.resetPassword),
+  AUTH_CONTROLLER.resetPassword
+)
+
 /**
  * @swagger
  * /api/auth/me:

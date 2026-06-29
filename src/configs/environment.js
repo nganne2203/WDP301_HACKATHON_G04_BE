@@ -62,6 +62,9 @@ export const env = {
   otp: {
     expiresIn: process.env.OTP_EXPIRES_IN
   },
+  passwordReset: {
+    expiresMinutes: parseNumber(process.env.PASSWORD_RESET_EXPIRES_MINUTES) || 30
+  },
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,

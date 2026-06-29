@@ -5,6 +5,7 @@ import Joi from 'joi'
 import adminMediaRoutes from '#modules/media/admin-media.route.js'
 import auditLogRoutes from '#modules/audit-logs/audit-log.route.js'
 import authRoutes from '#modules/auth/auth.route.js'
+import chatRoutes from '#modules/chat/chat.route.js'
 import aiReviewRoutes from '#modules/ai-reviews/ai-review.route.js'
 import eventRoutes from '#modules/events/event.route.js'
 import githubRoutes from '#modules/github/github.route.js'
@@ -73,6 +74,7 @@ router.use('/admin/media', adminMediaRoutes)
 router.use('/audit-logs', auditLogRoutes)
 router.use('/ai-reviews', aiReviewRoutes)
 router.use('/auth', authRoutes)
+router.use('/chat', chatRoutes)
 router.use('/events', eventRoutes)
 router.use('/github/webhooks', githubWebhookRoutes)
 router.use('/github', githubRoutes)

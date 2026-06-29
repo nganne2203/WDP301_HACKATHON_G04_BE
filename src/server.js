@@ -1,3 +1,5 @@
+import { createServer } from 'node:http'
+
 import { env } from '#configs/environment.js'
 import { validateRuntimeEnvironment } from '#configs/env-validation.js'
 import { CONNECT_DB, CLOSE_DB } from '#configs/mongodb.js'
@@ -6,6 +8,7 @@ import { LOGGER } from '#utils/logger.js'
 import { createApp } from './app.js'
 import { createGithubPushWorker } from '#workers/github-push.worker.js'
 import { QUEUE_SERVICE } from '#services/queue.service.js'
+import { initializeSocketServer } from '#services/socket/socket.js'
 
 const app = createApp()
 
@@ -50,7 +53,10 @@ const startServer = async () => {
     }
   }
 
-  httpServer = app.listen(PORT, HOSTNAME, () => {
+  httpServer = createServer(app)
+  initializeSocketServer(httpServer, app)
+
+  httpServer.listen(PORT, HOSTNAME, () => {
     LOGGER.info('HTTP server started', {
       hostname: HOSTNAME,
       port: PORT

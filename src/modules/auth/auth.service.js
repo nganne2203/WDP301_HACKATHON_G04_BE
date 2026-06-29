@@ -1,5 +1,10 @@
+import crypto from 'node:crypto'
+
 import { AUTH_REPOSITORY } from './auth.repository.js'
 import { USER_SERVICE } from '#modules/users/user.service.js'
+import { EMAIL_SERVICE } from '#modules/notifications/email.service.js'
+import { EMAIL_TEMPLATE_KEYS } from '#modules/notifications/email-templates.js'
+import { env } from '#configs/environment.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
@@ -19,6 +24,10 @@ const FORM_REGISTRATION_FIELDS = [
   'studentType',
   'studentId'
 ]
+
+const PASSWORD_RESET_GENERIC_RESULT = {
+  sent: true
+}
 
 export const isCompleteFormRegistrationPayload = (payload = {}) => {
   const hasRequiredFields = FORM_REGISTRATION_FIELDS.every(field => {
@@ -61,6 +70,41 @@ const ensureApproved = (user) => {
 const ensureAccountCanAccess = (user) => {
   if (!canAccessAuthenticatedRoutes(user)) {
     throw new ApiError(ERROR_CODES.FORBIDDEN, [`Account status is ${user.status}`])
+  }
+}
+
+const hashPasswordResetToken = (token) => {
+  return crypto.createHash('sha256').update(token).digest('hex')
+}
+
+const createPasswordResetToken = () => {
+  return crypto.randomBytes(32).toString('base64url')
+}
+
+const getFrontendUrl = (path) => {
+  const frontendUrl = env.client.frontendUrl || env.client.urls[0]
+  if (!frontendUrl) return null
+
+  try {
+    return new URL(path, frontendUrl).toString()
+  } catch {
+    return null
+  }
+}
+
+const appendSearchParams = (urlString, params = {}) => {
+  if (!urlString) return null
+
+  try {
+    const url = new URL(urlString)
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        url.searchParams.set(key, String(value))
+      }
+    })
+    return url.toString()
+  } catch {
+    return null
   }
 }
 
@@ -205,11 +249,73 @@ const changePassword = async (userId, { currentPassword, newPassword }) => {
   return USER_SERVICE.normalizeUser(updatedUser)
 }
 
+const requestPasswordReset = async ({ email }) => {
+  const user = await AUTH_REPOSITORY.findUserByEmail(email)
+
+  if (!user || !user.passwordHash || user.authProvider !== 'LOCAL') {
+    return PASSWORD_RESET_GENERIC_RESULT
+  }
+
+  const token = createPasswordResetToken()
+  const expiresMinutes = env.passwordReset.expiresMinutes
+  const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000)
+  const resetUrl = appendSearchParams(getFrontendUrl('/reset-password'), { token })
+
+  await AUTH_REPOSITORY.revokeActivePasswordResetTokens(user._id)
+  await AUTH_REPOSITORY.createPasswordResetToken({
+    userId: user._id,
+    tokenHash: hashPasswordResetToken(token),
+    expiresAt
+  })
+
+  await EMAIL_SERVICE.sendTemplateEmail({
+    to: user.email,
+    template: EMAIL_TEMPLATE_KEYS.PASSWORD_RESET,
+    context: {
+      fullName: user.fullName,
+      resetUrl,
+      expiresMinutes
+    },
+    metadata: {
+      source: 'password-reset',
+      userId: user._id.toString()
+    }
+  })
+
+  return PASSWORD_RESET_GENERIC_RESULT
+}
+
+const resetPassword = async ({ token, newPassword }) => {
+  const tokenHash = hashPasswordResetToken(token)
+  const resetToken = await AUTH_REPOSITORY.findPasswordResetTokenByHash(tokenHash)
+
+  if (!resetToken || resetToken.usedAt || resetToken.expiresAt <= new Date()) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Password reset link is invalid or expired'])
+  }
+
+  const user = await AUTH_REPOSITORY.findUserById(resetToken.userId)
+  if (!user || !user.passwordHash) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Password reset link is invalid or expired'])
+  }
+
+  const passwordHash = await BCRYPT_UTILS.hashPassword(newPassword)
+  await AUTH_REPOSITORY.updateUserById(user._id, {
+    passwordHash,
+    mustChangePassword: false
+  })
+  await AUTH_REPOSITORY.markPasswordResetTokenUsed(resetToken._id)
+  await AUTH_REPOSITORY.revokeActivePasswordResetTokens(user._id)
+
+  return { reset: true }
+}
+
 export const AUTH_SERVICE = {
   register,
   login,
   googleLogin,
   refreshToken,
   getMe,
-  changePassword
+  changePassword,
+  requestPasswordReset,
+  resetPassword
 }
