@@ -60,6 +60,19 @@ const changePassword = {
   })
 }
 
+const requestPasswordReset = {
+  body: Joi.object({
+    email: Joi.string().email().trim().lowercase().required()
+  })
+}
+
+const resetPassword = {
+  body: Joi.object({
+    token: Joi.string().trim().required(),
+    newPassword: Joi.string().min(8).max(128).required()
+  })
+}
+
 const googleLogin = {
   body: googleLoginBody
 }
@@ -69,5 +82,7 @@ export const AUTH_VALIDATION = {
   login,
   refreshToken,
   changePassword,
+  requestPasswordReset,
+  resetPassword,
   googleLogin
 }

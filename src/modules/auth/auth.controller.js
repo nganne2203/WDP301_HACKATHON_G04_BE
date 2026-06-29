@@ -90,6 +90,32 @@ const changePassword = async (req, res, next) => {
   }
 }
 
+const requestPasswordReset = async (req, res, next) => {
+  try {
+    const result = await AUTH_SERVICE.requestPasswordReset(req.body)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'If this email exists, a password reset link has been sent.',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const resetPassword = async (req, res, next) => {
+  try {
+    const result = await AUTH_SERVICE.resetPassword(req.body)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Password reset successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const logout = async (req, res, next) => {
   try {
     res.status(StatusCodes.OK).json(responseSuccess({
@@ -108,5 +134,7 @@ export const AUTH_CONTROLLER = {
   refreshToken,
   getMe,
   changePassword,
+  requestPasswordReset,
+  resetPassword,
   logout
 }
