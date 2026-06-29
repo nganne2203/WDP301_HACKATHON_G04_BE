@@ -71,5 +71,8 @@ export const REPOSITORY_VALIDATION = {
   createRepository,
   updateRepository,
   getRepositoryById,
-  listRepositoryCommits: repositoryEvidenceQuery
+  listRepositoryCommits: repositoryEvidenceQuery,
+  syncRepositoryCommits: {
+    params: idParam
+  }
 }
