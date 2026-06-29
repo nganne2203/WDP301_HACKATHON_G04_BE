@@ -6,7 +6,9 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import Event from '#models/event.model.js'
 import Round from '#models/round.model.js'
 import Team from '#models/team.model.js'
+import Commit from '#models/commit.model.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
+import { GITHUB_SERVICE } from '#modules/github/github.service.js'
 
 const ensureObjectId = (id, fieldName = 'repository id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -170,7 +172,8 @@ const ensureRoundBelongsToEvent = async ({ eventId, roundId }) => {
 }
 
 export const createRepositoryService = ({
-  repository = REPOSITORY_REPOSITORY
+  repository = REPOSITORY_REPOSITORY,
+  githubService = GITHUB_SERVICE
 } = {}) => {
   const ensureRepositoryExists = async (id) => {
     ensureObjectId(id)
@@ -416,6 +419,73 @@ export const createRepositoryService = ({
     return normalizeRepository(updatedRepository)
   }
 
+  const syncRepositoryCommits = async ({ repositoryId, requestedBy = null }) => {
+    const existingRepository = await ensureRepositoryExists(repositoryId)
+    const eventId = existingRepository.eventId?._id?.toString?.() || existingRepository.eventId?.toString?.() || existingRepository.eventId
+    const githubOwner = existingRepository.githubOwner || existingRepository.githubOrg
+    const githubRepo = existingRepository.githubRepo || existingRepository.repoName
+    const branch = existingRepository.defaultBranch || 'main'
+
+    if (!githubOwner || !githubRepo) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Repository is missing GitHub owner or repo name'])
+    }
+
+    const githubToken = await githubService.getTokenForN8nDispatch({ eventId })
+    const { data } = await githubService.requestGithub({
+      method: 'GET',
+      path: `/repos/${encodeURIComponent(githubOwner)}/${encodeURIComponent(githubRepo)}/commits?sha=${encodeURIComponent(branch)}&per_page=20`,
+      token: githubToken
+    })
+
+    const commits = Array.isArray(data) ? data : []
+    for (const commit of commits) {
+      await Commit.findOneAndUpdate(
+        {
+          repositoryId,
+          commitSha: commit.sha
+        },
+        {
+          $set: {
+            repositoryId,
+            commitSha: commit.sha,
+            branch,
+            provider: 'GITHUB',
+            repositoryFullName: `${githubOwner}/${githubRepo}`,
+            parentCommitShas: Array.isArray(commit.parents) ? commit.parents.map(parent => parent.sha).filter(Boolean) : [],
+            authorName: commit.commit?.author?.name || commit.author?.login || null,
+            authorEmail: commit.commit?.author?.email || null,
+            authorUsername: commit.author?.login || null,
+            timestamp: commit.commit?.author?.date || null,
+            message: commit.commit?.message || null,
+            commitUrl: commit.html_url || null,
+            linesAdded: 0,
+            linesRemoved: 0,
+            filesChanged: 0,
+            rawStats: null
+          }
+        },
+        {
+          upsert: true,
+          new: true,
+          runValidators: true
+        }
+      )
+    }
+
+    const latestCommitSha = commits[0]?.sha || existingRepository.latestCommitSha || null
+    await repository.updateById(repositoryId, {
+      latestCommitSha,
+      lastSyncAt: new Date()
+    })
+
+    return {
+      repositoryId,
+      syncedCount: commits.length,
+      latestCommitSha,
+      requestedBy
+    }
+  }
+
   return {
     listRepositories,
     getRepositoryById,
@@ -424,7 +494,8 @@ export const createRepositoryService = ({
     listCommitDiffs,
     listImpactDecisions,
     createRepository,
-    updateRepository
+    updateRepository,
+    syncRepositoryCommits
   }
 }
 

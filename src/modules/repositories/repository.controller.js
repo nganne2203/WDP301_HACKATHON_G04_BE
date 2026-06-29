@@ -119,6 +119,22 @@ const listImpactDecisions = async (req, res, next) => {
   }
 }
 
+const syncRepositoryCommits = async (req, res, next) => {
+  try {
+    const result = await REPOSITORY_SERVICE.syncRepositoryCommits({
+      repositoryId: req.params.id,
+      requestedBy: req.user?.id || null
+    })
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Sync repository commits successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const REPOSITORY_CONTROLLER = {
   listRepositories,
   getRepositoryById,
@@ -127,5 +143,6 @@ export const REPOSITORY_CONTROLLER = {
   listRepositoryCommits,
   listStaticAnalysis,
   listCommitDiffs,
-  listImpactDecisions
+  listImpactDecisions,
+  syncRepositoryCommits
 }

@@ -856,6 +856,7 @@ export const createGithubService = ({
   return {
     getConfig,
     getTokenForN8nDispatch,
+    requestGithub,
     saveConfig,
     testConnection,
     createRepository,

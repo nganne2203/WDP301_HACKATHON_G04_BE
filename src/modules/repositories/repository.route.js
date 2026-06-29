@@ -71,6 +71,14 @@ router.get(
   REPOSITORY_CONTROLLER.listImpactDecisions
 )
 
+router.post(
+  '/:id/sync-commits',
+  sensitiveRateLimiter,
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  validationHandlingMiddleware(REPOSITORY_VALIDATION.syncRepositoryCommits),
+  REPOSITORY_CONTROLLER.syncRepositoryCommits
+)
+
 router.patch(
   '/:id',
   sensitiveRateLimiter,
