@@ -10,6 +10,7 @@ import Rubric from '#models/rubric.model.js'
 import Team from '#models/team.model.js'
 import Track from '#models/track.model.js'
 import User from '#models/user.model.js'
+import { JUDGING_BOARD_REPOSITORY } from '#modules/judging-boards/judging-board.repository.js'
 
 const ROUND_FIELDS = [
   'eventId',
@@ -239,6 +240,40 @@ const ensurePromotionRuleConsistency = ({ promotedTeamIds = [], maxPromotedTeams
   }
 }
 
+const extractIds = (values = []) => values.map(value => value?._id?.toString?.() || value?.toString?.() || value).filter(Boolean)
+
+const syncSingleJudgingBoardForRound = async (round) => {
+  if (!round) return
+
+  const roundId = round._id?.toString?.() || round.id?.toString?.() || round._id || round.id
+  const eventId = round.eventId?._id?.toString?.() || round.eventId?.toString?.() || round.eventId
+  const trackId = round.trackId?._id?.toString?.() || round.trackId?.toString?.() || round.trackId || null
+  const teamIds = extractIds(round.assignedTeamIds || [])
+  const judgeIds = extractIds(round.assignedJudgeIds || [])
+
+  const existingBoards = await JUDGING_BOARD_REPOSITORY.findByRoundId(roundId)
+  if (existingBoards.length > 1) return
+
+  const boardPayload = {
+    eventId,
+    roundId,
+    trackId,
+    name: existingBoards[0]?.name || `${round.name} Board`,
+    boardNumber: existingBoards[0]?.boardNumber || 1,
+    teamIds,
+    judgeIds,
+    maxTeams: Math.max(teamIds.length, existingBoards[0]?.maxTeams || 10),
+    status: teamIds.length > 0 ? 'ASSIGNED' : 'DRAFT'
+  }
+
+  if (existingBoards.length === 0) {
+    await JUDGING_BOARD_REPOSITORY.create(boardPayload)
+    return
+  }
+
+  await JUDGING_BOARD_REPOSITORY.updateById(existingBoards[0].id || existingBoards[0]._id, boardPayload)
+}
+
 export const createRoundService = ({
   repository = ROUND_REPOSITORY
 } = {}) => {
@@ -291,6 +326,8 @@ export const createRoundService = ({
     ensurePromotionRuleConsistency(payload)
 
     const round = await repository.create(pickSafeFields(payload, ROUND_FIELDS))
+    const hydratedRound = await repository.findById(round._id)
+    await syncSingleJudgingBoardForRound(hydratedRound)
     return normalizeRound(await repository.findById(round._id))
   }
 
@@ -328,7 +365,8 @@ export const createRoundService = ({
     })
 
     const round = await repository.updateById(id, safePayload)
-    return normalizeRound(round)
+    await syncSingleJudgingBoardForRound(round)
+    return normalizeRound(await repository.findById(id))
   }
 
   const deleteRound = async (id) => {

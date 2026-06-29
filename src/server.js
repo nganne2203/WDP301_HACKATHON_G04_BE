@@ -4,12 +4,15 @@ import { CONNECT_DB, CLOSE_DB } from '#configs/mongodb.js'
 import { verifyMailConnection } from '#configs/mail.js'
 import { LOGGER } from '#utils/logger.js'
 import { createApp } from './app.js'
+import { createGithubPushWorker } from '#workers/github-push.worker.js'
+import { QUEUE_SERVICE } from '#services/queue.service.js'
 
 const app = createApp()
 
 const PORT = env.server.port || 3000
 const HOSTNAME = env.server.hostname || '0.0.0.0'
 let httpServer = null
+let gitWorker = null
 
 const startServer = async () => {
   const validation = validateRuntimeEnvironment({ runtime: 'api' })
@@ -19,6 +22,33 @@ const startServer = async () => {
 
   await CONNECT_DB()
   await verifyMailConnection()
+
+  // Start background worker in the same process if n8n is enabled
+  if (env.n8n?.enabled) {
+    try {
+      gitWorker = createGithubPushWorker()
+      gitWorker.on('completed', (job) => {
+        LOGGER.info('Queue job completed', {
+          jobId: job.id,
+          jobName: job.name
+        })
+      })
+      gitWorker.on('failed', (job, error) => {
+        LOGGER.error('Queue job failed', {
+          jobId: job?.id,
+          jobName: job?.name,
+          error: error.message
+        })
+      })
+      LOGGER.info('Background Worker started inside Server process successfully', {
+        concurrency: env.worker.concurrency
+      })
+    } catch (workerErr) {
+      LOGGER.error('Failed to start Background Worker inside Server', {
+        error: workerErr.message
+      })
+    }
+  }
 
   httpServer = app.listen(PORT, HOSTNAME, () => {
     LOGGER.info('HTTP server started', {
@@ -36,6 +66,11 @@ startServer().catch((error) => {
 })
 
 const shutdown = async () => {
+  if (gitWorker) {
+    await gitWorker.close()
+    await QUEUE_SERVICE.close()
+  }
+
   if (httpServer) {
     await new Promise((resolve, reject) => {
       httpServer.close((error) => {

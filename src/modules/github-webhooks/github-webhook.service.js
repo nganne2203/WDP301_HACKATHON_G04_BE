@@ -20,6 +20,12 @@ const parseBranch = (ref) => {
   return ref.replace(/^refs\/heads\//, '')
 }
 
+// GitHub sends '0000000000000000000000000000000000000000' as the `before` SHA
+// when a branch is pushed for the first time (no previous commit to compare against).
+// This SHA is invalid for the Compare API and causes a 404.
+const ZERO_SHA = '0000000000000000000000000000000000000000'
+const sanitizeSha = (sha) => (sha && sha !== ZERO_SHA ? sha : null)
+
 const buildSignature = ({ secret, rawBody }) => {
   return `sha256=${crypto.createHmac('sha256', secret).update(rawBody).digest('hex')}`
 }
@@ -103,7 +109,7 @@ export const createGithubWebhookService = ({
       repositoryId: linkedRepository?._id,
       teamId: linkedRepository?.teamId,
       branch: parseBranch(payload.ref),
-      beforeCommitSha: payload.before || null,
+      beforeCommitSha: sanitizeSha(payload.before),
       afterCommitSha: payload.after || null,
       payload,
       signatureValid,
@@ -151,7 +157,7 @@ export const createGithubWebhookService = ({
       teamId: linkedRepository?.teamId?.toString?.() || null,
       roundId: linkedRepository?.roundId?.toString?.() || null,
       branch: parseBranch(payload.ref),
-      beforeCommitSha: payload.before || null,
+      beforeCommitSha: sanitizeSha(payload.before),
       afterCommitSha: payload.after || null,
       receivedAt: delivery.receivedAt
     }
