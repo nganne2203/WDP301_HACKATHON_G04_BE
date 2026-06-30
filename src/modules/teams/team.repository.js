@@ -183,6 +183,16 @@ const findUserById = async (id, { session } = {}) => {
   return await withSession(User.findById(id).populate(populateRoles), session)
 }
 
+const findUsersByIds = async (ids = [], { session } = {}) => {
+  if (!Array.isArray(ids) || ids.length === 0) return []
+
+  return await withSession(
+    User.find({ _id: { $in: ids } })
+      .populate(populateRoles),
+    session
+  )
+}
+
 const findUserByEmail = async (email, { session } = {}) => {
   return await withSession(User.findOne({ email: String(email).trim().toLowerCase() }).populate(populateRoles), session)
 }
@@ -286,6 +296,7 @@ export const TEAM_REPOSITORY = {
   findParticipantByEventAndUser,
   upsertParticipant,
   findUserById,
+  findUsersByIds,
   findUserByEmail,
   createUser,
   updateUserById,

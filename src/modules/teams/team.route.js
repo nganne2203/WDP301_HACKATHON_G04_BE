@@ -81,6 +81,20 @@ router.patch(
   TEAM_CONTROLLER.updateTeamPlacement
 )
 
+router.patch(
+  '/mentor-assignments/by-board',
+  permissionMiddleware(PERMISSIONS.TEAM_UPDATE),
+  validationHandlingMiddleware(TEAM_VALIDATION.assignMentorsByBoard),
+  TEAM_CONTROLLER.assignMentorsByBoard
+)
+
+router.patch(
+  '/:id/mentors',
+  permissionMiddleware(PERMISSIONS.TEAM_UPDATE),
+  validationHandlingMiddleware(TEAM_VALIDATION.updateTeamMentors),
+  TEAM_CONTROLLER.updateTeamMentors
+)
+
 router.post(
   '/:id/invitations',
   permissionMiddleware(PERMISSIONS.TEAM_VIEW),

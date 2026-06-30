@@ -196,6 +196,7 @@ const auditLogMiddleware = (req, res, next) => {
       errorMessage: result === AUDIT_RESULTS.FAILURE ? responseBody?.message || responseBody?.errors?.[0] || null : null,
       sourceModule: req.audit.sourceModule || getPathParts(req)[0] || 'system',
       metadata: {
+        ...(req.audit.metadata || {}),
         method: req.method,
         path: req.originalUrl,
         params: sanitize(req.params),

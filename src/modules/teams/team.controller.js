@@ -167,6 +167,75 @@ const updateTeamPlacement = async (req, res, next) => {
   }
 }
 
+const updateTeamMentors = async (req, res, next) => {
+  try {
+    const result = await TEAM_SERVICE.updateTeamMentors(req.params.id, req.body, req.user)
+
+    req.audit = {
+      ...(req.audit || {}),
+      entityType: 'Team',
+      entityId: result.team?.id,
+      oldValue: { mentorIds: result.audit.previousMentorIds },
+      newValue: {
+        mentorIds: result.audit.nextMentorIds,
+        addedMentorIds: result.audit.addedMentorIds,
+        removedMentorIds: result.audit.removedMentorIds
+      },
+      metadata: {
+        previousMentorIds: result.audit.previousMentorIds,
+        nextMentorIds: result.audit.nextMentorIds,
+        addedMentorIds: result.audit.addedMentorIds,
+        removedMentorIds: result.audit.removedMentorIds
+      },
+      description: `Updated mentor assignments for team ${result.team?.name || req.params.id}`,
+      sourceModule: 'teams'
+    }
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Update team mentors successfully',
+      data: result.team
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const assignMentorsByBoard = async (req, res, next) => {
+  try {
+    const result = await TEAM_SERVICE.assignMentorsByBoard(req.body, req.user)
+
+    req.audit = {
+      ...(req.audit || {}),
+      entityType: 'Team',
+      oldValue: null,
+      newValue: {
+        eventId: result.eventId,
+        boardNumber: result.boardNumber,
+        mentorIds: result.mentorIds,
+        updatedCount: result.updatedCount,
+        teamIds: result.teamIds
+      },
+      metadata: {
+        eventId: result.eventId,
+        boardNumber: result.boardNumber,
+        mentorIds: result.mentorIds,
+        updatedCount: result.updatedCount,
+        teamIds: result.teamIds,
+        teamDiffs: result.audit.teamDiffs
+      },
+      description: `Assigned mentors to all teams in board ${result.boardNumber}`,
+      sourceModule: 'teams'
+    }
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Assign mentors by board successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const getEventTeamCapacity = async (req, res, next) => {
   try {
     const capacity = await TEAM_SERVICE.getEventTeamCapacity(req.params.eventId, req.user)
@@ -193,5 +262,7 @@ export const TEAM_CONTROLLER = {
   cancelInvitation,
   updateTeamStatus,
   updateTeamPlacement,
+  updateTeamMentors,
+  assignMentorsByBoard,
   getEventTeamCapacity
 }

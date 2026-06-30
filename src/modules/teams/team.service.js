@@ -13,7 +13,7 @@ import { LOGGER } from '#utils/logger.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { PERMISSIONS } from '#constants/permissions.js'
 import { GITHUB_SERVICE } from '#modules/github/github.service.js'
-import { REGISTRATION_SOURCES } from '#utils/userAccountUtil.js'
+import { ACCESSIBLE_USER_STATUSES, REGISTRATION_SOURCES } from '#utils/userAccountUtil.js'
 
 export const TEAM_STATUSES = {
   PENDING: 'PENDING',
@@ -61,6 +61,10 @@ const isSameId = (left, right) => {
   const leftId = getId(left)
   const rightId = getId(right)
   return Boolean(leftId && rightId && leftId === rightId)
+}
+
+const uniqueIds = (values = []) => {
+  return [...new Set(values.map(getId).filter(Boolean))]
 }
 
 const normalizeTeamName = (name) => {
@@ -461,6 +465,53 @@ const ensureTeamReadable = (team, actor) => {
   }
 
   throw new ApiError(ERROR_CODES.FORBIDDEN, ['You can only view your own team'])
+}
+
+const userHasRole = (user = {}, roleName) => {
+  const normalizedRole = String(roleName || '').toUpperCase()
+  return (user.roles || []).some(role => String(role?.name || role).toUpperCase() === normalizedRole)
+}
+
+const validateMentorAssignments = async ({ repository, mentorIds = [], session }) => {
+  const normalizedMentorIds = uniqueIds(mentorIds)
+  if (normalizedMentorIds.length === 0) {
+    return {
+      mentorIds: [],
+      mentors: []
+    }
+  }
+
+  const mentors = await repository.findUsersByIds(normalizedMentorIds, { session })
+  if (mentors.length !== normalizedMentorIds.length) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more mentor accounts were not found'])
+  }
+
+  for (const mentor of mentors) {
+    if (!ACCESSIBLE_USER_STATUSES.includes(mentor.status)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Mentor ${mentor.fullName || mentor.email} must be APPROVED or ACTIVE`])
+    }
+
+    if (!userHasRole(mentor, 'MENTOR')) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`User ${mentor.fullName || mentor.email} does not have the mentor role`])
+    }
+  }
+
+  return {
+    mentorIds: normalizedMentorIds,
+    mentors
+  }
+}
+
+const buildMentorDiff = ({ previousMentorIds = [], nextMentorIds = [] }) => {
+  const normalizedPreviousMentorIds = uniqueIds(previousMentorIds)
+  const normalizedNextMentorIds = uniqueIds(nextMentorIds)
+
+  return {
+    previousMentorIds: normalizedPreviousMentorIds,
+    nextMentorIds: normalizedNextMentorIds,
+    addedMentorIds: normalizedNextMentorIds.filter(id => !normalizedPreviousMentorIds.includes(id)),
+    removedMentorIds: normalizedPreviousMentorIds.filter(id => !normalizedNextMentorIds.includes(id))
+  }
 }
 
 const ensureConfirmedSlotsNotFull = async ({ event, repository, session }) => {
@@ -1069,6 +1120,9 @@ export const createTeamService = ({
     if (query.trackId) {
       ensureObjectId(query.trackId, 'track id')
       filter.trackId = query.trackId
+    }
+    if (query.boardNumber) {
+      filter.boardNumber = Number(query.boardNumber)
     }
     if (query.status) filter.status = query.status
     if (!hasCoordinatorRole(actor)) {
@@ -1901,6 +1955,106 @@ export const createTeamService = ({
     })
   }
 
+  const updateTeamMentors = async (teamId, payload = {}, actor = {}) => {
+    ensureTeamManagementPermission(actor)
+    ensureObjectId(teamId, 'team id')
+
+    return await runWithOptionalTransaction({
+      repository,
+      logger,
+      work: async (session) => {
+        const team = await repository.findTeamById(teamId, { session })
+        if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
+
+        const previousMentorIds = uniqueIds(team.mentorIds || [])
+        const { mentorIds } = await validateMentorAssignments({
+          repository,
+          mentorIds: payload.mentorIds || [],
+          session
+        })
+
+        const updatedTeam = await repository.updateTeamById(getId(team), {
+          mentorIds
+        }, { session })
+
+        const diff = buildMentorDiff({
+          previousMentorIds,
+          nextMentorIds: updatedTeam.mentorIds || []
+        })
+
+        return {
+          team: await loadTeamDetail({ repository, team: updatedTeam, session }),
+          audit: diff
+        }
+      }
+    })
+  }
+
+  const assignMentorsByBoard = async (payload = {}, actor = {}) => {
+    ensureTeamManagementPermission(actor)
+    ensureObjectId(payload.eventId, 'event id')
+
+    return await runWithOptionalTransaction({
+      repository,
+      logger,
+      work: async (session) => {
+        const event = await repository.findEventById(payload.eventId, { session })
+        if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+
+        const { mentorIds } = await validateMentorAssignments({
+          repository,
+          mentorIds: payload.mentorIds || [],
+          session
+        })
+
+        const teams = await repository.findTeams({
+          filter: {
+            eventId: payload.eventId,
+            boardNumber: Number(payload.boardNumber)
+          },
+          limit: 1000,
+          sort: { boardNumber: 1, placementSlot: 1, createdAt: 1 },
+          session
+        })
+
+        if (teams.length === 0) {
+          throw new ApiError(ERROR_CODES.NOT_FOUND, [`No teams found for board ${payload.boardNumber}`])
+        }
+
+        const updatedTeams = []
+        const teamDiffs = []
+
+        for (const team of teams) {
+          const previousMentorIds = uniqueIds(team.mentorIds || [])
+          const updatedTeam = await repository.updateTeamById(getId(team), { mentorIds }, { session })
+          const diff = buildMentorDiff({
+            previousMentorIds,
+            nextMentorIds: updatedTeam.mentorIds || []
+          })
+
+          teamDiffs.push({
+            teamId: getId(updatedTeam),
+            teamName: updatedTeam.name,
+            ...diff
+          })
+          updatedTeams.push(await loadTeamDetail({ repository, team: updatedTeam, session }))
+        }
+
+        return {
+          eventId: getId(event),
+          boardNumber: Number(payload.boardNumber),
+          mentorIds,
+          updatedCount: updatedTeams.length,
+          teamIds: updatedTeams.map(team => team.id),
+          teams: updatedTeams,
+          audit: {
+            teamDiffs
+          }
+        }
+      }
+    })
+  }
+
   const getEventTeamCapacity = async (eventId, actor = {}) => {
     ensureTeamManagementPermission(actor)
     ensureObjectId(eventId, 'event id')
@@ -1925,6 +2079,8 @@ export const createTeamService = ({
     cancelInvitation,
     updateTeamStatus,
     updateTeamPlacement,
+    updateTeamMentors,
+    assignMentorsByBoard,
     getEventTeamCapacity,
     normalizeTeam
   }

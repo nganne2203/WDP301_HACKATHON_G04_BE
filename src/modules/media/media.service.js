@@ -123,10 +123,11 @@ const buildEnvMediaConfig = () => {
   const inferredProvider = process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET
     ? 'CLOUDINARY'
     : undefined
-  const provider = normalizeProvider(process.env.MEDIA_STORAGE_PROVIDER) || inferredProvider
+  const provider = normalizeProvider(process.env.MEDIA_STORAGE_PROVIDER)
 
   return {
     provider,
+    inferredProvider,
     supabaseUrl: process.env.SUPABASE_URL || process.env.MEDIA_SUPABASE_URL,
     serviceRoleKeyPlain: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.MEDIA_SUPABASE_SERVICE_ROLE_KEY,
     bucket: process.env.SUPABASE_BUCKET || process.env.MEDIA_SUPABASE_BUCKET,
@@ -141,9 +142,10 @@ const normalizeConfigRecords = (records = []) => {
   const configByKey = new Map(records.map(record => [record.key, record]))
   const getValue = (key) => configByKey.get(key)?.value
   const envConfig = buildEnvMediaConfig()
+  const storedProvider = normalizeProvider(getValue(CONFIG_KEYS.provider))
 
   return {
-    provider: envConfig.provider || normalizeProvider(getValue(CONFIG_KEYS.provider)) || DEFAULT_CONFIG.provider,
+    provider: storedProvider || envConfig.provider || envConfig.inferredProvider || DEFAULT_CONFIG.provider,
     supabaseUrl: envConfig.supabaseUrl || getValue(CONFIG_KEYS.supabaseUrl),
     serviceRoleKeyEncrypted: getValue(CONFIG_KEYS.serviceRoleKey),
     serviceRoleKeyPlain: envConfig.serviceRoleKeyPlain,
@@ -438,6 +440,7 @@ const createPagination = ({ page, limit, totalItems }) => {
 
 export const createMediaService = ({
   repository = MEDIA_REPOSITORY,
+  storage,
   storageClients = {
     SUPABASE: SUPABASE_STORAGE,
     CLOUDINARY: CLOUDINARY_STORAGE
@@ -445,6 +448,13 @@ export const createMediaService = ({
   encryption = ENCRYPTION_UTILS,
   logger = LOGGER
 } = {}) => {
+  const resolvedStorageClients = storage
+    ? {
+      SUPABASE: storage,
+      CLOUDINARY: storage
+    }
+    : storageClients
+
   const audit = async ({ actor, action, resourceType = 'Media', resourceId, metadata = {} }) => {
     try {
       await repository.createAuditLog({
@@ -534,7 +544,7 @@ export const createMediaService = ({
 
   const saveStorageConfig = async (payload = {}, actor = {}) => {
     const existingConfig = await loadStoredConfig()
-    const provider = normalizeProvider(payload.provider) || DEFAULT_CONFIG.provider
+    const provider = normalizeProvider(payload.provider) || existingConfig.provider || DEFAULT_CONFIG.provider
     const configUpdates = [
       { key: CONFIG_KEYS.provider, value: provider, isEncrypted: false },
       { key: CONFIG_KEYS.supabaseUrl, value: payload.supabaseUrl || '', isEncrypted: false },
@@ -683,7 +693,7 @@ export const createMediaService = ({
       userId: actor.id,
       originalFileName: fileMetadata.originalFileName
     })
-    const storageClient = storageClients[config.provider]
+    const storageClient = resolvedStorageClients[config.provider]
     if (!storageClient) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Unsupported media storage provider: ${config.provider}`])
     }
@@ -863,7 +873,7 @@ export const createMediaService = ({
     await ensureEventExists(getId(media.eventId))
 
     const config = await loadOperationalConfig()
-    const storageClient = storageClients[config.provider]
+    const storageClient = resolvedStorageClients[config.provider]
     if (!storageClient) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Unsupported media storage provider: ${config.provider}`])
     }
@@ -916,7 +926,7 @@ export const createMediaService = ({
     const media = await ensureMediaExists(mediaId)
     ensureCanDeleteMedia(media, actor)
     const config = await loadOperationalConfig()
-    const storageClient = storageClients[config.provider]
+    const storageClient = resolvedStorageClients[config.provider]
     if (!storageClient) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Unsupported media storage provider: ${config.provider}`])
     }

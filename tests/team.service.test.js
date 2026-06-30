@@ -748,6 +748,137 @@ test('mentor can list only teams assigned to them', async () => {
   assert.deepEqual(result.teams[0].mentorIds, ['mentor-1'])
 })
 
+test('assignMentorsByBoard updates every team in the selected board', async () => {
+  const eventId = '000000000000000000000211'
+  const boardNumber = 2
+  const mentorA = { _id: '000000000000000000000901', email: 'mentor.a@example.com', fullName: 'Mentor A', status: 'APPROVED', roles: [{ name: 'MENTOR' }] }
+  const mentorB = { _id: '000000000000000000000902', email: 'mentor.b@example.com', fullName: 'Mentor B', status: 'ACTIVE', roles: [{ name: 'MENTOR' }] }
+  const teams = [
+    {
+      _id: '000000000000000000000111',
+      eventId: { _id: eventId, title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' },
+      trackId: null,
+      leaderId: { _id: 'leader-1', email: 'leader1@example.com', fullName: 'Leader One', status: 'ACTIVE' },
+      memberIds: [],
+      mentorIds: [{ _id: '000000000000000000000903', email: 'legacy@example.com', fullName: 'Legacy Mentor', status: 'APPROVED', roles: [{ name: 'MENTOR' }] }],
+      name: 'Board Two Alpha',
+      boardNumber,
+      participants: [],
+      invitations: [],
+      status: 'CONFIRMED',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      _id: '000000000000000000000112',
+      eventId: { _id: eventId, title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' },
+      trackId: null,
+      leaderId: { _id: 'leader-2', email: 'leader2@example.com', fullName: 'Leader Two', status: 'ACTIVE' },
+      memberIds: [],
+      mentorIds: [],
+      name: 'Board Two Beta',
+      boardNumber,
+      participants: [],
+      invitations: [],
+      status: 'CONFIRMED',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+  ]
+
+  const updatedTeamsById = new Map()
+  const repository = {
+    createSession,
+    findEventById: async (id) => id === eventId ? { _id: eventId, title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' } : null,
+    findUsersByIds: async (ids) => ids.map((id) => (id === mentorA._id ? mentorA : mentorB)),
+    findTeams: async ({ filter }) => {
+      assert.equal(filter.eventId, eventId)
+      assert.equal(filter.boardNumber, boardNumber)
+      return teams
+    },
+    updateTeamById: async (id, data) => {
+      const source = teams.find((team) => team._id === id)
+      const nextMentors = data.mentorIds.map((mentorId) => (mentorId === mentorA._id ? mentorA : mentorB))
+      const updated = {
+        ...source,
+        mentorIds: nextMentors
+      }
+      updatedTeamsById.set(id, updated)
+      return updated
+    },
+    findParticipantsByTeam: async () => [],
+    findInvitationsByTeam: async () => []
+  }
+
+  const service = createTeamService({ repository, logger: createLogger() })
+  const result = await service.assignMentorsByBoard({
+    eventId,
+    boardNumber,
+    mentorIds: [mentorA._id, mentorB._id]
+  }, {
+    id: 'coord-1',
+    permissions: ['TEAM_UPDATE']
+  })
+
+  assert.equal(result.updatedCount, 2)
+  assert.deepEqual(result.mentorIds, [mentorA._id, mentorB._id])
+  assert.deepEqual(result.teamIds, ['000000000000000000000111', '000000000000000000000112'])
+  assert.equal(result.audit.teamDiffs.length, 2)
+  assert.deepEqual(result.teams[0].mentorIds, [mentorA._id, mentorB._id])
+  assert.deepEqual(result.teams[1].mentorIds, [mentorA._id, mentorB._id])
+  assert.deepEqual(updatedTeamsById.get('000000000000000000000111').mentorIds.map((mentor) => mentor._id), [mentorA._id, mentorB._id])
+})
+
+test('assignMentorsByBoard accepts approved mentor accounts and rejects inaccessible statuses', async () => {
+  const eventId = '000000000000000000000211'
+  const repository = {
+    createSession,
+    findEventById: async () => ({ _id: eventId, title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' }),
+    findUsersByIds: async () => [{ _id: '000000000000000000000901', email: 'mentor@example.com', fullName: 'Mentor', status: 'SUSPENDED', roles: [{ name: 'MENTOR' }] }]
+  }
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.assignMentorsByBoard({
+      eventId,
+      boardNumber: 1,
+      mentorIds: ['000000000000000000000901']
+    }, {
+      id: 'coord-1',
+      permissions: ['TEAM_UPDATE']
+    }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Mentor Mentor must be APPROVED or ACTIVE')
+  )
+})
+
+test('assignMentorsByBoard rejects empty boards', async () => {
+  const eventId = '000000000000000000000211'
+  const mentor = { _id: '000000000000000000000901', email: 'mentor@example.com', fullName: 'Mentor', status: 'APPROVED', roles: [{ name: 'MENTOR' }] }
+  const repository = {
+    createSession,
+    findEventById: async () => ({ _id: eventId, title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' }),
+    findUsersByIds: async () => [mentor],
+    findTeams: async () => []
+  }
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.assignMentorsByBoard({
+      eventId,
+      boardNumber: 9,
+      mentorIds: [mentor._id]
+    }, {
+      id: 'coord-1',
+      permissions: ['TEAM_UPDATE']
+    }),
+    (error) => error instanceof ApiError &&
+      error.code === 'NOT_FOUND' &&
+      error.errors.includes('No teams found for board 9')
+  )
+})
+
 test('updateTeamStatus rejects actors without team management permission', async () => {
   const service = createTeamService({
     repository: {

@@ -30,6 +30,7 @@ const listTeams = {
   query: Joi.object({
     eventId: objectId,
     trackId: objectId,
+    boardNumber: Joi.number().integer().min(1),
     status: teamStatus,
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(20)
@@ -107,6 +108,21 @@ const updateTeamPlacement = {
   }).min(1)
 }
 
+const updateTeamMentors = {
+  params: idParam,
+  body: Joi.object({
+    mentorIds: Joi.array().items(objectId).unique().required()
+  })
+}
+
+const assignMentorsByBoard = {
+  body: Joi.object({
+    eventId: objectId.required(),
+    boardNumber: Joi.number().integer().min(1).required(),
+    mentorIds: Joi.array().items(objectId).unique().required()
+  })
+}
+
 const getEventCapacity = {
   params: Joi.object({
     eventId: objectId.required()
@@ -132,6 +148,8 @@ export const TEAM_VALIDATION = {
   getTeamById,
   updateTeamStatus,
   updateTeamPlacement,
+  updateTeamMentors,
+  assignMentorsByBoard,
   getEventCapacity,
   acceptInvitation,
   declineInvitation
