@@ -23,14 +23,14 @@ export const permissionMiddleware = (...requiredPermissions) => {
     try {
       const user = req.user
       if (!user) {
-        throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Bạn cần đăng nhập để thực hiện hành động này'])
+        throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['You must sign in to perform this action'])
       }
 
       const userPermissions = new Set(normalizePermissions(user))
       const hasPermission = requiredPermissions.every(permission => userPermissions.has(permission))
 
       if (!hasPermission) {
-        throw new ApiError(ERROR_CODES.FORBIDDEN, ['Bạn không có quyền thực hiện hành động này'])
+        throw new ApiError(ERROR_CODES.FORBIDDEN, ['You do not have permission to perform this action'])
       }
 
       next()

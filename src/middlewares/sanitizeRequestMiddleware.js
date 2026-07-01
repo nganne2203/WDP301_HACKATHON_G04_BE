@@ -4,7 +4,6 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 
 export const sanitizeRequest = (allowedFields = [], requiredFields = []) => {
   return (req, res, next) => {
-
     if (allowedFields.length === 0 && requiredFields.length === 0) {
       return next()
     }
@@ -13,7 +12,7 @@ export const sanitizeRequest = (allowedFields = [], requiredFields = []) => {
       return next(
         new ApiError(
           ERROR_CODES.INVALID_REQUEST_DATA,
-          ['Dữ liệu không hợp lệ: body không hợp lệ']
+          ['Invalid request data: body must be a valid object']
         )
       )
     }
@@ -28,7 +27,7 @@ export const sanitizeRequest = (allowedFields = [], requiredFields = []) => {
       return next(
         new ApiError(
           ERROR_CODES.INVALID_REQUEST_DATA,
-          [`Dữ liệu không hợp lệ: ${invalidFields.join(', ')}`]
+          [`Invalid request data: unexpected fields ${invalidFields.join(', ')}`]
         )
       )
     }
@@ -41,7 +40,7 @@ export const sanitizeRequest = (allowedFields = [], requiredFields = []) => {
       return next(
         new ApiError(
           ERROR_CODES.INVALID_REQUEST_DATA,
-          [`Thiếu trường bắt buộc: ${missingFields.join(', ')}`]
+          [`Missing required fields: ${missingFields.join(', ')}`]
         )
       )
     }

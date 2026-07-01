@@ -27,7 +27,7 @@ const router = Router()
  *           example: VALIDATION_ERROR
  *         message:
  *           type: string
- *           example: Có lỗi xác thực trong yêu cầu.
+ *           example: The request contains validation errors.
  *         errors:
  *           type: array
  *           items:
