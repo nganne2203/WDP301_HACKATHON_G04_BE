@@ -32,6 +32,7 @@ Implement a stable mentor assignment workflow on top of `team.mentorIds`, keep o
 - RN Team Home and Team Chat now display assigned mentors
 - FE team and mentor assignment cards now use a 3-column responsive grid with 12 cards per page
 - Mentor assignment dialogs and cards were adjusted to reduce truncation and improve small-screen behavior
+- Mentor web `My Teams` now uses a 12-team paginated grid and includes an in-page team chat workspace for assigned mentors
 - Phase 4 verification completed: BE full test suite passed, FE production build passed, RN `tsc --noEmit` passed after dependency sync
 
 ## Blockers
@@ -50,6 +51,13 @@ Implement a stable mentor assignment workflow on top of `team.mentorIds`, keep o
 - Updated mentor eligibility from `ACTIVE` only to `APPROVED` or `ACTIVE` to match the current account-access model in BE
 - Re-verified mentor-specific backend tests and FE build after the status-rule change
 - Tuned mentor assignment dialogs, card headers, card actions, and grid density for better responsive behavior
+- Added mentor-side FE team pagination plus a shared team chat workspace on the web, backed by existing BE chat rooms and messages APIs
 - Fixed media service provider precedence and storage-client compatibility so the full BE test suite passes again
 - Synced RN dependencies and re-ran `npx tsc --noEmit` successfully
 - Closed Phase 4 after BE tests, FE build, and RN type-check all passed
+
+### 2026-07-01
+- Replaced FE web participant chat polling with shared `Socket.IO` room subscriptions so room lists, unread badges, and open conversations now update live
+- Replaced FE mentor web chat polling with shared `Socket.IO` room subscriptions so mentor team cards and in-sheet chat messages now stay in sync with the RN realtime flow
+- Added FE socket provider, shared socket events, and cache helpers for live room/message updates plus low-churn read-state syncing
+- Re-ran FE production build successfully after the realtime chat migration

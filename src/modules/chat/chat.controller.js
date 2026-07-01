@@ -52,6 +52,22 @@ const sendMessage = async (req, res, next) => {
   }
 }
 
+const markRoomSeen = async (req, res, next) => {
+  try {
+    const seen = await CHAT_SERVICE.markRoomSeen({
+      chatRoomId: req.params.id,
+      actor: req.user
+    })
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Mark chat room seen successfully',
+      data: seen
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const getUnreadCount = async (req, res, next) => {
   try {
     const unread = await CHAT_SERVICE.getUnreadCount({ actor: req.user })
@@ -69,5 +85,6 @@ export const CHAT_CONTROLLER = {
   getUnreadCount,
   listMessages,
   listRooms,
+  markRoomSeen,
   sendMessage
 }

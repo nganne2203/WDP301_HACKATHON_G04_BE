@@ -27,8 +27,15 @@ const sendMessage = {
   }).or('teamId', 'chatRoomId')
 }
 
+const markRoomSeen = {
+  params: Joi.object({
+    id: objectId.required()
+  })
+}
+
 export const CHAT_VALIDATION = {
   listMessages,
   listRooms,
+  markRoomSeen,
   sendMessage
 }
