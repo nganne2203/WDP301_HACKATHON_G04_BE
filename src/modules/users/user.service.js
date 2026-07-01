@@ -16,12 +16,12 @@ import {
   getRegistrationSource,
   isGoogleAccount
 } from '#utils/userAccountUtil.js'
+import { migrateLegacyUserRoleNames, REMOVED_USER_ROLE_NAME, requiresParticipantProfile } from '#utils/userRoleMigrationUtil.js'
 
 const PROFILE_FIELDS = ['fullName', 'avatarUrl', 'phone', 'bio', 'githubUsername']
 const USER_UPDATE_FIELDS = ['email', 'fullName', 'avatarUrl', 'phone', 'bio', 'githubUsername', 'studentType', 'studentId', 'schoolName']
 const ALLOWED_STATUSES = ['PENDING', 'APPROVED', 'ACTIVE', 'REJECTED', 'SUSPENDED']
 const EMAIL_NOTIFICATION_STATUSES = ['APPROVED', 'REJECTED']
-const PARTICIPANT_ROLES = ['USER', 'PARTICIPANT']
 const ROLE_ASSIGN_PERMISSIONS = ['USER_ROLE_ASSIGN', 'USER_ASSIGN_ROLE']
 
 const getLoginUrl = () => {
@@ -72,7 +72,42 @@ const buildUserFilter = (query = {}) => {
 const normalizeRoleQuery = (roles) => {
   if (!roles) return []
   const values = Array.isArray(roles) ? roles : String(roles).split(',')
-  return [...new Set(values.map(role => String(role).trim().toUpperCase()).filter(Boolean))]
+  return migrateLegacyUserRoleNames(values.map(role => String(role).trim().toUpperCase()).filter(Boolean))
+}
+
+const cloneNormalizedRole = (role, normalizedName) => {
+  if (typeof role === 'string' || role instanceof mongoose.Types.ObjectId) {
+    return normalizedName
+  }
+
+  const plainRole = typeof role?.toObject === 'function'
+    ? role.toObject({ getters: true, virtuals: false })
+    : role
+
+  return {
+    ...plainRole,
+    name: normalizedName,
+    code: normalizedName
+  }
+}
+
+const getNormalizedRoles = (user = {}) => {
+  const roles = Array.isArray(user?.roles) ? user.roles : []
+  if (roles.length === 0) return []
+
+  const normalizedRoleNames = migrateLegacyUserRoleNames(
+    roles.map(role => String(role?.name || role?.code || role).trim().toUpperCase()).filter(Boolean)
+  )
+
+  return normalizedRoleNames.map((normalizedRoleName) => {
+    const matchingRole = roles.find((role) => {
+      const currentRoleName = String(role?.name || role?.code || role).trim().toUpperCase()
+      if (currentRoleName === normalizedRoleName) return true
+      return normalizedRoleName === 'PARTICIPANT' && currentRoleName === 'USER'
+    })
+
+    return cloneNormalizedRole(matchingRole, normalizedRoleName)
+  }).filter(Boolean)
 }
 
 const normalizeUser = (user) => {
@@ -82,7 +117,7 @@ const normalizeUser = (user) => {
     ? user.toObject({ getters: true, virtuals: false })
     : user
 
-  const roles = (plainUser.roles || []).map(role => {
+  const roles = getNormalizedRoles(plainUser).map(role => {
     if (typeof role === 'string' || role instanceof mongoose.Types.ObjectId) {
       return { id: role.toString() }
     }
@@ -151,14 +186,14 @@ const normalizeUser = (user) => {
 }
 
 const getRoleNames = (user) => {
-  return (user?.roles || [])
+  return getNormalizedRoles(user)
     .map(role => role.name || role)
     .filter(Boolean)
 }
 
 const getPermissionCodes = (user) => {
   const directPermissions = user?.permissions || []
-  const activeRoles = (user?.roles || []).filter(role => {
+  const activeRoles = getNormalizedRoles(user).filter(role => {
     if (typeof role === 'string' || role instanceof mongoose.Types.ObjectId) return true
     return role.isActive !== false
   })
@@ -260,8 +295,15 @@ const ensureCanAssignRoles = (actor = {}) => {
   }
 }
 
+const ensureRemovedUserRoleIsNotRequested = (roleNames = []) => {
+  if (roleNames.includes(REMOVED_USER_ROLE_NAME)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['The USER role has been removed. Use PARTICIPANT instead.'])
+  }
+}
+
 const createUser = async (payload = {}, actor = {}) => {
   const roleNames = (payload.roles || []).map(role => String(role).toUpperCase())
+  ensureRemovedUserRoleIsNotRequested(roleNames)
   if (roleNames.length === 0) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['At least one role is required'])
   }
@@ -278,7 +320,7 @@ const createUser = async (payload = {}, actor = {}) => {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more roles do not exist'])
   }
 
-  if (roleNames.some(roleName => PARTICIPANT_ROLES.includes(roleName))) {
+  if (requiresParticipantProfile(roleNames)) {
     ensureParticipantStudentInfo(payload)
   }
 
@@ -320,6 +362,7 @@ const updateUser = async (id, payload = {}, actor = {}) => {
 
   if (payload.roles) {
     roleNames = payload.roles.map(role => String(role).toUpperCase())
+    ensureRemovedUserRoleIsNotRequested(roleNames)
     ensureCanAssignRoles(actor)
     ensureCanCreateRoles(actor, roleNames)
 
@@ -334,7 +377,7 @@ const updateUser = async (id, payload = {}, actor = {}) => {
   const finalStudentId = safePayload.studentId !== undefined ? safePayload.studentId : existingUser.studentId
   const finalSchoolName = safePayload.schoolName !== undefined ? safePayload.schoolName : existingUser.schoolName
 
-  if (roleNames.some(roleName => PARTICIPANT_ROLES.includes(roleName))) {
+  if (requiresParticipantProfile(roleNames)) {
     ensureParticipantStudentInfo({
       studentType: finalStudentType,
       studentId: finalStudentId,
@@ -433,6 +476,7 @@ const writeRoleAssignmentAudit = ({ actorId, userId, before, after, method }) =>
 
 const assignRoles = async (id, roleNames = [], actorId = null) => {
   const existingUser = await ensureUserExists(id)
+  ensureRemovedUserRoleIsNotRequested(roleNames)
 
   const roles = await USER_REPOSITORY.findRolesByNames(roleNames)
   if (roles.length !== roleNames.length) {
@@ -461,6 +505,7 @@ const assignRolesByIds = async (id, roleIds = [], actorId = null) => {
   if (roles.length !== roleIds.length) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more role IDs are invalid or inactive'])
   }
+  ensureRemovedUserRoleIsNotRequested(roles.map((role) => role.name))
 
   const updatedUser = await USER_REPOSITORY.updateById(id, {
     roles: roles.map(role => role._id)

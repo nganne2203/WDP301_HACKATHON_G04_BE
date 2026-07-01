@@ -75,3 +75,40 @@ test('Google login does not create a user when no matching account exists', asyn
   )
   assert.equal(createCalls, 0)
 })
+
+test('register creates participant accounts instead of the removed USER role', async (context) => {
+  const participantRole = { _id: 'role-participant' }
+  let createPayload = null
+
+  context.mock.method(AUTH_REPOSITORY, 'findUserByEmail', async () => null)
+  context.mock.method(AUTH_REPOSITORY, 'findRoleByName', async (name) => {
+    assert.equal(name, 'PARTICIPANT')
+    return participantRole
+  })
+  context.mock.method(AUTH_REPOSITORY, 'createUser', async (payload) => {
+    createPayload = payload
+    return { _id: 'user-1' }
+  })
+  context.mock.method(AUTH_REPOSITORY, 'findUserById', async () => ({
+    _id: 'user-1',
+    email: formPayload.email,
+    authProvider: 'LOCAL',
+    registrationSource: 'FORM',
+    fullName: formPayload.fullName,
+    status: 'PENDING',
+    mustChangePassword: false,
+    roles: [{
+      _id: 'role-participant',
+      name: 'PARTICIPANT',
+      code: 'PARTICIPANT',
+      permissions: []
+    }],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }))
+
+  const result = await AUTH_SERVICE.register(formPayload)
+
+  assert.deepEqual(createPayload.roles, ['role-participant'])
+  assert.deepEqual(result.roles.map((role) => role.name), ['PARTICIPANT'])
+})

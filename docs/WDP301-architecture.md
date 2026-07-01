@@ -849,7 +849,7 @@ SystemConfig
 For SEAL Hackathon Fall 2025, the database models represent the official competition rules as follows:
 
 - `Permission` stores the authorization actions used by routes, such as `EVENT_CREATE`, `TRACK_VIEW`, `USER_ROLE_ASSIGN`, `SCORE_CREATE`, and `RESULT_PUBLISH`.
-- `Role` stores permission groups only. Seeded roles include `ADMIN`, `EVENT_COORDINATOR`, `COORDINATOR`, `JUDGE`, `MENTOR`, `USER`, and `PARTICIPANT`.
+- `Role` stores permission groups only. Seeded roles include `ADMIN`, `EVENT_COORDINATOR`, `COORDINATOR`, `JUDGE`, `MENTOR`, and `PARTICIPANT`.
 - `User.roles` stores assigned role references. Services resolve and deduplicate permissions from all assigned roles before JWT generation and request authorization.
 - `Event` stores the hackathon season, year, theme, registration window, event schedule, team size rule, and finalist slot rule.
 - `Track` represents the preliminary competition groups. Fall 2025 has:

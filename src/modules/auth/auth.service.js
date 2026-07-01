@@ -15,6 +15,7 @@ import {
   getRegistrationSource,
   isGoogleAccount
 } from '#utils/userAccountUtil.js'
+import { PARTICIPANT_ROLE_NAME } from '#utils/userRoleMigrationUtil.js'
 
 const FORM_REGISTRATION_FIELDS = [
   'email',
@@ -118,7 +119,7 @@ const register = async (payload) => {
     throw new ApiError(ERROR_CODES.CONFLICT, ['Email already exists'])
   }
 
-  const userRole = await AUTH_REPOSITORY.findRoleByName('USER')
+  const participantRole = await AUTH_REPOSITORY.findRoleByName(PARTICIPANT_ROLE_NAME)
   const passwordHash = await BCRYPT_UTILS.hashPassword(payload.password)
 
   const createdUser = await AUTH_REPOSITORY.createUser({
@@ -132,7 +133,7 @@ const register = async (payload) => {
     authProvider: 'LOCAL',
     registrationSource: REGISTRATION_SOURCES.FORM,
     status: 'PENDING',
-    roles: userRole ? [userRole._id] : []
+    roles: participantRole ? [participantRole._id] : []
   })
 
   const user = await AUTH_REPOSITORY.findUserById(createdUser._id)

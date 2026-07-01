@@ -14,6 +14,7 @@ import { normalizePaginationQuery } from '#utils/pagination.js'
 import { PERMISSIONS } from '#constants/permissions.js'
 import { GITHUB_SERVICE } from '#modules/github/github.service.js'
 import { ACCESSIBLE_USER_STATUSES, REGISTRATION_SOURCES } from '#utils/userAccountUtil.js'
+import { PARTICIPANT_ROLE_NAME } from '#utils/userRoleMigrationUtil.js'
 
 export const TEAM_STATUSES = {
   PENDING: 'PENDING',
@@ -332,6 +333,16 @@ const normalizeTeam = ({ team, participants = [], invitations = [] } = {}) => {
   const plainTeam = typeof team.toObject === 'function'
     ? team.toObject({ getters: true, virtuals: false })
     : team
+  const normalizedMentorEntries = (plainTeam.mentorIds || []).filter((mentor) => {
+    if (!mentor) return false
+    if (typeof mentor === 'string' || mentor instanceof mongoose.Types.ObjectId) return true
+    if (!Array.isArray(mentor.roles)) return true
+    return userHasRole(mentor, 'MENTOR')
+  })
+  const normalizedMentorUsers = (plainTeam.mentorIds || [])
+    .filter((mentor) => normalizedMentorEntries.includes(mentor))
+    .map(normalizeUserSummary)
+    .filter(Boolean)
 
   return {
     id: getId(plainTeam._id) || plainTeam.id,
@@ -342,8 +353,8 @@ const normalizeTeam = ({ team, participants = [], invitations = [] } = {}) => {
     leader: normalizeUserSummary(plainTeam.leaderId),
     leaderId: getId(plainTeam.leaderId),
     members: (plainTeam.memberIds || []).map(normalizeUserSummary).filter(Boolean),
-    assignedMentors: (plainTeam.mentorIds || []).map(normalizeUserSummary).filter(Boolean),
-    mentorIds: (plainTeam.mentorIds || []).map(getId).filter(Boolean),
+    assignedMentors: normalizedMentorUsers,
+    mentorIds: normalizedMentorEntries.map(getId).filter(Boolean),
     name: plainTeam.name,
     chapterName: plainTeam.chapterName,
     projectName: plainTeam.projectName,
@@ -991,7 +1002,7 @@ const resolveInvitationUser = async ({
     }
 
     if (!invitedUser) {
-      const userRole = await repository.findRoleByName('USER', { session })
+      const participantRole = await repository.findRoleByName(PARTICIPANT_ROLE_NAME, { session })
       temporaryPassword = env.teamInvitation.temporaryPassword
       invitedUser = await repository.createUser({
         email: invitedEmail,
@@ -1002,7 +1013,7 @@ const resolveInvitationUser = async ({
         registrationSource: REGISTRATION_SOURCES.FORM,
         status: 'APPROVED',
         mustChangePassword: true,
-        roles: userRole ? [userRole._id] : []
+        roles: participantRole ? [participantRole._id] : []
       }, { session })
       accountCreated = true
     }

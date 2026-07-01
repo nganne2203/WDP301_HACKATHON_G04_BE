@@ -3,6 +3,7 @@ import mongoose from 'mongoose'
 import { env } from '#configs/environment.js'
 import { ALL_PERMISSIONS, ROLE_PERMISSION_MAP } from '#constants/permissions.js'
 import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
+import { migrateUsersOffRemovedUserRole } from '#utils/removeUserRoleMigration.js'
 
 import User from '#models/user.model.js'
 import Role from '#models/role.model.js'
@@ -170,35 +171,12 @@ const ROLE_SEEDS = [
   ['JUDGE', 'Judge role'],
   ['MENTOR', 'Mentor role'],
   ['SPEAKER', 'Workshop speaker role'],
-  ['USER', 'Basic authenticated user'],
   ['PARTICIPANT', 'Hackathon participant']
 ]
-
-const LEGACY_ROLE_NAME_MAP = {
-  ADMIN: 'ADMIN',
-  COORDINATOR: 'COORDINATOR',
-  EVENT_COORDINATOR: 'EVENT_COORDINATOR',
-  JUDGE: 'JUDGE',
-  MENTOR: 'MENTOR',
-  SPEAKER: 'SPEAKER',
-  USER: 'USER',
-  PARTICIPANT: 'PARTICIPANT',
-  TEAM_LEADER: 'PARTICIPANT'
-}
 
 const SEED_EMAIL_DOMAIN = 'seal-hackathon.example.com'
 
 const buildSeedEmail = (localPart) => `${localPart}@${SEED_EMAIL_DOMAIN}`
-
-const getLegacyRoleName = (value) => {
-  if (!value) return null
-  if (typeof value === 'object' && value.name) {
-    return getLegacyRoleName(value.name)
-  }
-
-  const normalizedRole = String(value).trim().toUpperCase()
-  return LEGACY_ROLE_NAME_MAP[normalizedRole] || null
-}
 
 const seedPermissions = async () => {
   const permissionRecords = await Promise.all(ALL_PERMISSIONS.map((code) => {
@@ -243,69 +221,6 @@ const seedRoles = async (permissionByCode) => {
   }))
 
   return new Map(roleRecords.map((role) => [role.name, role]))
-}
-
-const normalizeLegacyRoleIds = (user, roleByName) => {
-  const roleIds = []
-  const seenRoleIds = new Set()
-  const rawRoles = Array.isArray(user.roles) ? user.roles : []
-  const roleValues = [user.role, ...rawRoles]
-
-  for (const roleValue of roleValues) {
-    if (!roleValue) continue
-
-    let roleId = null
-    if (roleValue instanceof mongoose.Types.ObjectId) {
-      roleId = roleValue
-    } else if (typeof roleValue === 'object' && roleValue._id) {
-      roleId = roleValue._id
-    } else if (typeof roleValue === 'string' && mongoose.Types.ObjectId.isValid(roleValue)) {
-      roleId = new mongoose.Types.ObjectId(roleValue)
-    } else {
-      const roleName = getLegacyRoleName(roleValue)
-      roleId = roleName ? roleByName.get(roleName)?._id : null
-    }
-
-    if (!roleId) continue
-    const roleIdValue = roleId.toString()
-    if (seenRoleIds.has(roleIdValue)) continue
-    seenRoleIds.add(roleIdValue)
-    roleIds.push(roleId)
-  }
-
-  return roleIds
-}
-
-const repairLegacyUserRoles = async (roleByName) => {
-  const users = await User.collection.find({}, { projection: { _id: 1, role: 1, roles: 1 } }).toArray()
-  const operations = users
-    .map((user) => {
-      const roleIds = normalizeLegacyRoleIds(user, roleByName)
-      if (roleIds.length === 0) return null
-
-      const currentRoleIds = (Array.isArray(user.roles) ? user.roles : []).map(role => role?.toString()).filter(Boolean)
-      const nextRoleIds = roleIds.map(role => role.toString())
-      const hasSameRoles = currentRoleIds.length === nextRoleIds.length &&
-        currentRoleIds.every((roleId, index) => roleId === nextRoleIds[index])
-      const hasLegacyRoleField = Object.prototype.hasOwnProperty.call(user, 'role')
-
-      if (hasSameRoles && !hasLegacyRoleField) return null
-
-      return {
-        updateOne: {
-          filter: { _id: user._id },
-          update: {
-            $set: { roles: roleIds },
-            $unset: { role: '' }
-          }
-        }
-      }
-    })
-    .filter(Boolean)
-
-  if (operations.length > 0) {
-    await User.collection.bulkWrite(operations)
-  }
 }
 
 const seedUser = async ({ email, legacyEmail, fullName, roleIds, passwordHash, status = 'APPROVED', extra = {} }) => {
@@ -356,7 +271,6 @@ const seedRuntimeDevScenarios = async ({
   mentorUser,
   speakerUser
 }) => {
-  const userRole = roleByName.get('USER')
   const participantRole = roleByName.get('PARTICIPANT')
   const now = new Date()
   const runtimeYear = now.getFullYear() + 1
@@ -484,21 +398,21 @@ const seedRuntimeDevScenarios = async ({
     scoringLeadB,
     scoringJudgeParticipantUser
   ] = await Promise.all([
-    seedUser({ email: buildSeedEmail('runtime.registration.lead'), fullName: 'Runtime Registration Leader', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
-    seedUser({ email: buildSeedEmail('runtime.registration.accepted.a'), fullName: 'Runtime Accepted Member A', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
-    seedUser({ email: buildSeedEmail('runtime.registration.accepted.b'), fullName: 'Runtime Accepted Member B', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
-    seedUser({ email: buildSeedEmail('runtime.registration.waiting.lead'), fullName: 'Runtime Waiting Leader', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
-    seedUser({ email: buildSeedEmail('runtime.registration.waitlist.lead'), fullName: 'Runtime Waitlist Leader', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
-    seedUser({ email: buildSeedEmail('runtime.registration.rejected.lead'), fullName: 'Runtime Rejected Leader', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
-    seedUser({ email: buildSeedEmail('runtime.registration.solo'), fullName: 'Runtime Solo Participant', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
-    seedUser({ email: buildSeedEmail('runtime.registration.invited'), fullName: 'Runtime Invited Participant', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
-    seedUser({ email: buildSeedEmail('runtime.registration.checkedin'), fullName: 'Runtime Checked In Participant', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
-    seedUser({ email: buildSeedEmail('runtime.approval.pending'), fullName: 'Runtime Pending Approval', roleIds: [userRole._id], passwordHash: seededPasswordHash, status: 'PENDING' }),
-    seedUser({ email: buildSeedEmail('runtime.approval.rejected'), fullName: 'Runtime Rejected Approval', roleIds: [userRole._id], passwordHash: seededPasswordHash, status: 'REJECTED' }),
-    seedUser({ email: buildSeedEmail('runtime.suspended.user'), fullName: 'Runtime Suspended User', roleIds: [userRole._id], passwordHash: seededPasswordHash, status: 'SUSPENDED' }),
-    seedUser({ email: buildSeedEmail('runtime.scoring.lead.a'), fullName: 'Runtime Scoring Leader A', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
-    seedUser({ email: buildSeedEmail('runtime.scoring.lead.b'), fullName: 'Runtime Scoring Leader B', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash }),
-    seedUser({ email: buildSeedEmail('runtime.scoring.judge.participant'), fullName: 'Runtime Judge Participant', roleIds: [userRole._id, participantRole._id], passwordHash: seededPasswordHash })
+    seedUser({ email: buildSeedEmail('runtime.registration.lead'), fullName: 'Runtime Registration Leader', roleIds: [participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.accepted.a'), fullName: 'Runtime Accepted Member A', roleIds: [participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.accepted.b'), fullName: 'Runtime Accepted Member B', roleIds: [participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.waiting.lead'), fullName: 'Runtime Waiting Leader', roleIds: [participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.waitlist.lead'), fullName: 'Runtime Waitlist Leader', roleIds: [participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.rejected.lead'), fullName: 'Runtime Rejected Leader', roleIds: [participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.solo'), fullName: 'Runtime Solo Participant', roleIds: [participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.invited'), fullName: 'Runtime Invited Participant', roleIds: [participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.registration.checkedin'), fullName: 'Runtime Checked In Participant', roleIds: [participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.approval.pending'), fullName: 'Runtime Pending Approval', roleIds: [participantRole._id], passwordHash: seededPasswordHash, status: 'PENDING' }),
+    seedUser({ email: buildSeedEmail('runtime.approval.rejected'), fullName: 'Runtime Rejected Approval', roleIds: [participantRole._id], passwordHash: seededPasswordHash, status: 'REJECTED' }),
+    seedUser({ email: buildSeedEmail('runtime.suspended.user'), fullName: 'Runtime Suspended User', roleIds: [participantRole._id], passwordHash: seededPasswordHash, status: 'SUSPENDED' }),
+    seedUser({ email: buildSeedEmail('runtime.scoring.lead.a'), fullName: 'Runtime Scoring Leader A', roleIds: [participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.scoring.lead.b'), fullName: 'Runtime Scoring Leader B', roleIds: [participantRole._id], passwordHash: seededPasswordHash }),
+    seedUser({ email: buildSeedEmail('runtime.scoring.judge.participant'), fullName: 'Runtime Judge Participant', roleIds: [participantRole._id], passwordHash: seededPasswordHash })
   ])
   void [pendingApprovalUser, rejectedApprovalUser, suspendedUser]
 
@@ -1417,14 +1331,14 @@ const seedRuntimeDevScenarios = async ({
 const seedSampleData = async () => {
   const permissionByCode = await seedPermissions()
   const roleByName = await seedRoles(permissionByCode)
-  await repairLegacyUserRoles(roleByName)
+  await migrateUsersOffRemovedUserRole({ userModel: User, roleModel: Role })
 
   const adminRole = roleByName.get('ADMIN')
   const coordinatorRole = roleByName.get('COORDINATOR')
   const judgeRole = roleByName.get('JUDGE')
   const mentorRole = roleByName.get('MENTOR')
   const speakerRole = roleByName.get('SPEAKER')
-  const userRole = roleByName.get('USER')
+  const participantRole = roleByName.get('PARTICIPANT')
 
   const seededPasswordHash = await BCRYPT_UTILS.hashPassword('Password123!')
   const adminUser = await seedBaseUser({ email: buildSeedEmail('admin'), legacyEmail: 'admin@seal.local', fullName: 'Admin User', roleId: adminRole._id, passwordHash: seededPasswordHash })
@@ -1565,9 +1479,7 @@ const seedSampleData = async () => {
   const participantRecords = []
 
   for (const [teamName, chapterName, track, projectName, preliminaryScore, preliminaryRank, isFinalist] of teamDefinitions) {
-    const assignedMentorIds = track._id.equals(trackA._id)
-      ? [mentorUser._id]
-      : [mentorUser._id, speakerUser._id]
+    const assignedMentorIds = [mentorUser._id]
     let team = await upsertOne(Team, { eventId: event._id, name: teamName }, {
       eventId: event._id,
       trackId: track._id,
@@ -1599,7 +1511,7 @@ const seedSampleData = async () => {
         email,
         legacyEmail,
         fullName: `${teamName} Member ${memberIndex}`,
-        roleId: userRole._id,
+        roleId: participantRole._id,
         passwordHash: seededPasswordHash,
         extra
       })

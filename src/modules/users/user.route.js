@@ -99,7 +99,7 @@ const router = Router()
  *           uniqueItems: true
  *           items:
  *             type: string
- *             enum: [ADMIN, EVENT_COORDINATOR, COORDINATOR, JUDGE, MENTOR, USER, PARTICIPANT]
+ *             enum: [ADMIN, EVENT_COORDINATOR, COORDINATOR, JUDGE, MENTOR, SPEAKER, PARTICIPANT]
  *           example: [JUDGE]
  *         status:
  *           type: string
@@ -115,11 +115,11 @@ const router = Router()
  *         studentType:
  *           type: string
  *           enum: [FPT, EXTERNAL]
- *           description: Required when roles includes USER
+ *           description: Required when roles includes PARTICIPANT
  *           example: FPT
  *         studentId:
  *           type: string
- *           description: Required when roles includes USER
+ *           description: Required when roles includes PARTICIPANT
  *           example: SE123456
  *         schoolName:
  *           type: string
@@ -143,8 +143,8 @@ const router = Router()
  *           uniqueItems: true
  *           items:
  *             type: string
- *             enum: [ADMIN, EVENT_COORDINATOR, COORDINATOR, JUDGE, MENTOR, USER, PARTICIPANT]
- *           example: [USER, JUDGE]
+ *             enum: [ADMIN, EVENT_COORDINATOR, COORDINATOR, JUDGE, MENTOR, SPEAKER, PARTICIPANT]
+ *           example: [PARTICIPANT, JUDGE]
  */
 
 router.use(authorizationMiddleware)

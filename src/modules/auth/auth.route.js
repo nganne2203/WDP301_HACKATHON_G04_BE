@@ -54,7 +54,7 @@ const router = Router()
  *           example: 664c3f6a3a6d4a5f3f93b002
  *         name:
  *           type: string
- *           example: USER
+ *           example: PARTICIPANT
  *         description:
  *           type: string
  *           example: Basic authenticated user
