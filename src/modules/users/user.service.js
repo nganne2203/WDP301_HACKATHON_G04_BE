@@ -8,6 +8,7 @@ import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
+import { EMAIL_SERVICE } from '#modules/notifications/email.service.js'
 import { EMAIL_TEMPLATE_KEYS } from '#modules/notifications/email-templates.js'
 import { AUDIT_LOG_SERVICE } from '#modules/audit-logs/audit-log.service.js'
 import { env } from '#configs/environment.js'
@@ -329,9 +330,10 @@ const createUser = async (payload = {}, actor = {}) => {
     email: payload.email,
     fullName: payload.fullName,
     passwordHash,
+    mustChangePassword: true,
     authProvider: 'LOCAL',
     registrationSource: REGISTRATION_SOURCES.FORM,
-    status: payload.status || 'PENDING',
+    status: payload.status || 'APPROVED',
     roles: roles.map(role => role._id),
     phone: payload.phone,
     bio: payload.bio,
@@ -343,8 +345,27 @@ const createUser = async (payload = {}, actor = {}) => {
   })
 
   const user = await USER_REPOSITORY.findById(createdUser._id)
+  const normalizedUser = normalizeUser(user)
 
-  return normalizeUser(user)
+  if (user?.status === 'APPROVED') {
+    normalizedUser.emailNotification = await EMAIL_SERVICE.sendTemplateEmail({
+      to: user.email,
+      template: EMAIL_TEMPLATE_KEYS.TEMPORARY_ACCOUNT,
+      context: {
+        fullName: user.fullName,
+        email: user.email,
+        temporaryPassword: payload.password,
+        loginUrl: getLoginUrl()
+      },
+      metadata: {
+        source: 'admin-create-user',
+        actorId: actor.id || actor._id?.toString?.() || null,
+        userId: user._id?.toString()
+      }
+    })
+  }
+
+  return normalizedUser
 }
 
 const updateUser = async (id, payload = {}, actor = {}) => {

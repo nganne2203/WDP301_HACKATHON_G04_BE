@@ -88,6 +88,9 @@ test('team invitation templates include required accept, decline, and temporary 
   assert.match(temporaryAccount.text, /member@example.com/)
   assert.match(temporaryAccount.text, /test/)
   assert.match(temporaryAccount.text, /change your password/i)
+  assert.match(temporaryAccount.html, /Temporary password/i)
+  assert.match(temporaryAccount.html, /Open sign in/i)
+  assert.match(temporaryAccount.html, /contact the organizing team/i)
 })
 
 test('createTeam rejects duplicate team creation for the same event leader', async () => {
