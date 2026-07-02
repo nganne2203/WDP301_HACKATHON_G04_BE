@@ -33,7 +33,7 @@ const teamSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED', 'REJECTED', 'ACTIVE', 'INACTIVE', 'DISQUALIFIED'],
+      enum: ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED', 'REJECTED'],
       default: 'WAITING_FOR_MEMBERS'
     },
     confirmedAt: { type: Date },

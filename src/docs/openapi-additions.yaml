@@ -438,7 +438,7 @@ components:
       properties:
         status:
           type: string
-          enum: [PENDING, WAITING_FOR_MEMBERS, WAITLISTED, CONFIRMED, REJECTED, ACTIVE, INACTIVE, DISQUALIFIED]
+          enum: [CONFIRMED, REJECTED]
         trackId:
           type: string
           nullable: true

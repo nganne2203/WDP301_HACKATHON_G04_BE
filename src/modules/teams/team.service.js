@@ -17,14 +17,10 @@ import { ACCESSIBLE_USER_STATUSES, REGISTRATION_SOURCES } from '#utils/userAccou
 import { PARTICIPANT_ROLE_NAME } from '#utils/userRoleMigrationUtil.js'
 
 export const TEAM_STATUSES = {
-  PENDING: 'PENDING',
   WAITING_FOR_MEMBERS: 'WAITING_FOR_MEMBERS',
   WAITLISTED: 'WAITLISTED',
   CONFIRMED: 'CONFIRMED',
-  REJECTED: 'REJECTED',
-  ACTIVE: 'ACTIVE',
-  INACTIVE: 'INACTIVE',
-  DISQUALIFIED: 'DISQUALIFIED'
+  REJECTED: 'REJECTED'
 }
 
 export const INVITATION_STATUSES = {
@@ -35,8 +31,8 @@ export const INVITATION_STATUSES = {
   CANCELLED: 'CANCELLED'
 }
 
-const CONFIRMED_TEAM_STATUSES = [TEAM_STATUSES.CONFIRMED, TEAM_STATUSES.ACTIVE]
-const OPEN_TEAM_STATUSES = [TEAM_STATUSES.PENDING, TEAM_STATUSES.WAITING_FOR_MEMBERS, TEAM_STATUSES.WAITLISTED]
+const CONFIRMED_TEAM_STATUSES = [TEAM_STATUSES.CONFIRMED]
+const OPEN_TEAM_STATUSES = [TEAM_STATUSES.WAITING_FOR_MEMBERS, TEAM_STATUSES.WAITLISTED]
 const ACTIVE_PARTICIPANT_STATUSES = ['INVITED', 'ACTIVE']
 const COORDINATOR_ROLES = ['ADMIN', 'COORDINATOR', 'EVENT_COORDINATOR']
 const MENTOR_SCOPED_ROLES = ['MENTOR', 'SPEAKER']
@@ -1918,10 +1914,13 @@ export const createTeamService = ({
             rejectedAt: new Date(),
             rejectionReason: payload.rejectionReason || 'Rejected by coordinator'
           }, { session })
+        } else if (nextStatus === TEAM_STATUSES.WAITING_FOR_MEMBERS || nextStatus === TEAM_STATUSES.WAITLISTED) {
+          throw new ApiError(
+            ERROR_CODES.BAD_REQUEST,
+            ['Use invitation acceptance flow or placement update flow instead of setting this status manually']
+          )
         } else {
-          updatedTeam = await repository.updateTeamById(getId(team), {
-            status: nextStatus
-          }, { session })
+          throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Unsupported team status transition'])
         }
 
         return await loadTeamDetail({ repository, team: updatedTeam, session })
