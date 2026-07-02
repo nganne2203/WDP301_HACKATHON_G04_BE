@@ -85,8 +85,8 @@ const router = Router()
  *           example: Participant User
  *         status:
  *           type: string
- *           enum: [PENDING, APPROVED, ACTIVE, REJECTED, SUSPENDED]
- *           example: APPROVED
+ *           enum: [PENDING, ACTIVE, REJECTED, SUSPENDED]
+ *           example: ACTIVE
  *         roles:
  *           type: array
  *           items:
@@ -312,7 +312,7 @@ router.post(
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  *       403:
- *         description: Account is not approved
+ *         description: Account is not active
  *         content:
  *           application/json:
  *             schema:

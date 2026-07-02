@@ -14,15 +14,14 @@ import { AUDIT_LOG_SERVICE } from '#modules/audit-logs/audit-log.service.js'
 import { env } from '#configs/environment.js'
 import {
   REGISTRATION_SOURCES,
-  getRegistrationSource,
-  isGoogleAccount
+  getRegistrationSource
 } from '#utils/userAccountUtil.js'
 import { migrateLegacyUserRoleNames, REMOVED_USER_ROLE_NAME, requiresParticipantProfile } from '#utils/userRoleMigrationUtil.js'
 
 const PROFILE_FIELDS = ['fullName', 'avatarUrl', 'phone', 'bio', 'githubUsername']
 const USER_UPDATE_FIELDS = ['email', 'fullName', 'avatarUrl', 'phone', 'bio', 'githubUsername', 'studentType', 'studentId', 'schoolName']
-const ALLOWED_STATUSES = ['PENDING', 'APPROVED', 'ACTIVE', 'REJECTED', 'SUSPENDED']
-const EMAIL_NOTIFICATION_STATUSES = ['APPROVED', 'REJECTED']
+const ALLOWED_STATUSES = ['PENDING', 'ACTIVE', 'REJECTED', 'SUSPENDED']
+const EMAIL_NOTIFICATION_STATUSES = ['ACTIVE', 'REJECTED']
 const ROLE_ASSIGN_PERMISSIONS = ['USER_ROLE_ASSIGN', 'USER_ASSIGN_ROLE']
 
 const getLoginUrl = () => {
@@ -33,10 +32,10 @@ const getLoginUrl = () => {
 }
 
 const buildStatusNotification = (status) => {
-  if (status === 'APPROVED') {
+  if (status === 'ACTIVE') {
     return {
-      title: 'Account approved',
-      message: 'Your SEAL Hackathon account has been approved.',
+      title: 'Account activated',
+      message: 'Your SEAL Hackathon account is now active.',
       emailTemplate: EMAIL_TEMPLATE_KEYS.ACCOUNT_APPROVED,
       emailContext: {
         loginUrl: getLoginUrl()
@@ -333,7 +332,7 @@ const createUser = async (payload = {}, actor = {}) => {
     mustChangePassword: true,
     authProvider: 'LOCAL',
     registrationSource: REGISTRATION_SOURCES.FORM,
-    status: payload.status || 'APPROVED',
+    status: payload.status || 'ACTIVE',
     roles: roles.map(role => role._id),
     phone: payload.phone,
     bio: payload.bio,
@@ -347,7 +346,7 @@ const createUser = async (payload = {}, actor = {}) => {
   const user = await USER_REPOSITORY.findById(createdUser._id)
   const normalizedUser = normalizeUser(user)
 
-  if (user?.status === 'APPROVED') {
+  if (user?.status === 'ACTIVE') {
     normalizedUser.emailNotification = await EMAIL_SERVICE.sendTemplateEmail({
       to: user.email,
       template: EMAIL_TEMPLATE_KEYS.TEMPORARY_ACCOUNT,
@@ -430,14 +429,6 @@ const updateStatus = async (id, status) => {
 
   const existingUser = await ensureUserExists(id)
 
-  if (isGoogleAccount(existingUser) && ['PENDING', 'APPROVED', 'REJECTED'].includes(status)) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Google accounts do not use the approval workflow'])
-  }
-
-  if (!isGoogleAccount(existingUser) && status === 'ACTIVE') {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Form registrations must be approved instead of activated'])
-  }
-
   const updatedUser = await USER_REPOSITORY.updateById(id, { status })
   const normalizedUser = normalizeUser(updatedUser)
 
@@ -464,7 +455,7 @@ const updateStatus = async (id, status) => {
 }
 
 const approveUser = async (id) => {
-  return await updateStatus(id, 'APPROVED')
+  return await updateStatus(id, 'ACTIVE')
 }
 
 const rejectUser = async (id) => {

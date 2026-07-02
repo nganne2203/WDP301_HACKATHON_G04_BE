@@ -33,7 +33,7 @@ export const INVITATION_STATUSES = {
 
 const CONFIRMED_TEAM_STATUSES = [TEAM_STATUSES.CONFIRMED]
 const OPEN_TEAM_STATUSES = [TEAM_STATUSES.WAITING_FOR_MEMBERS, TEAM_STATUSES.WAITLISTED]
-const ACTIVE_PARTICIPANT_STATUSES = ['INVITED', 'ACTIVE']
+const ACTIVE_PARTICIPANT_STATUSES = ['INVITED', 'JOINED']
 const COORDINATOR_ROLES = ['ADMIN', 'COORDINATOR', 'EVENT_COORDINATOR']
 const MENTOR_SCOPED_ROLES = ['MENTOR', 'SPEAKER']
 const EVENT_STATUSES = {
@@ -495,7 +495,7 @@ const validateMentorAssignments = async ({ repository, mentorIds = [], session }
 
   for (const mentor of mentors) {
     if (!ACCESSIBLE_USER_STATUSES.includes(mentor.status)) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Mentor ${mentor.fullName || mentor.email} must be APPROVED or ACTIVE`])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Mentor ${mentor.fullName || mentor.email} must be ACTIVE`])
     }
 
     if (!userHasRole(mentor, 'MENTOR')) {
@@ -1007,7 +1007,7 @@ const resolveInvitationUser = async ({
         passwordHash: await BCRYPT_UTILS.hashPassword(temporaryPassword),
         authProvider: 'LOCAL',
         registrationSource: REGISTRATION_SOURCES.FORM,
-        status: 'APPROVED',
+        status: 'ACTIVE',
         mustChangePassword: true,
         roles: participantRole ? [participantRole._id] : []
       }, { session })
@@ -1268,7 +1268,7 @@ export const createTeamService = ({
           })
 
           const leader = await repository.findUserById(actor.id, { session })
-          if (!leader || !['APPROVED', 'ACTIVE'].includes(leader.status)) {
+          if (!leader || leader.status !== 'ACTIVE') {
             throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only active users can create teams'])
           }
 
@@ -1321,7 +1321,7 @@ export const createTeamService = ({
             data: {
               teamId: getId(team),
               teamRole: 'LEADER',
-              status: 'ACTIVE',
+              status: 'JOINED',
               joinedAt: new Date()
             }
           }, { session })
@@ -1554,7 +1554,7 @@ export const createTeamService = ({
           data: {
             teamId: getId(team),
             teamRole: 'MEMBER',
-            status: 'ACTIVE',
+            status: 'JOINED',
             joinedAt: new Date()
           }
         }, { session })

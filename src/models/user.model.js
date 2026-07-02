@@ -47,7 +47,7 @@ const userSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'APPROVED', 'ACTIVE', 'REJECTED', 'SUSPENDED'],
+      enum: ['PENDING', 'ACTIVE', 'REJECTED', 'SUSPENDED'],
       default: 'PENDING'
     },
     roles: [{ type: Schema.Types.ObjectId, ref: 'Role' }],

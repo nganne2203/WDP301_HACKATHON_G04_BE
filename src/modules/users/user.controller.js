@@ -87,7 +87,7 @@ const approveUser = async (req, res, next) => {
     const user = await USER_SERVICE.approveUser(req.params.id)
 
     res.status(StatusCodes.OK).json(responseSuccess({
-      message: 'Approve user successfully',
+      message: 'Activate user successfully',
       data: user
     }))
   } catch (error) {

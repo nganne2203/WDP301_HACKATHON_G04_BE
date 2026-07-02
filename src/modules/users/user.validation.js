@@ -11,7 +11,7 @@ const listUsers = {
   query: Joi.object({
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10),
-    status: Joi.string().valid('PENDING', 'APPROVED', 'ACTIVE', 'REJECTED', 'SUSPENDED'),
+    status: Joi.string().valid('PENDING', 'ACTIVE', 'REJECTED', 'SUSPENDED'),
     search: Joi.string().trim().max(100),
     roles: Joi.alternatives().try(
       Joi.array().items(Joi.string().trim().uppercase().valid('ADMIN', 'EVENT_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'PARTICIPANT')).min(1).unique(),
@@ -44,7 +44,7 @@ const createUser = {
       .min(1)
       .unique()
       .required(),
-    status: Joi.string().valid('PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED').default('PENDING'),
+    status: Joi.string().valid('PENDING', 'ACTIVE', 'REJECTED', 'SUSPENDED').default('ACTIVE'),
     avatarUrl: Joi.string().uri().allow('', null),
     phone: Joi.string().trim().max(30).allow('', null),
     bio: Joi.string().trim().max(500).allow('', null),
@@ -89,7 +89,7 @@ const updateUser = {
 const updateStatus = {
   params: idParam,
   body: Joi.object({
-    status: Joi.string().valid('PENDING', 'APPROVED', 'ACTIVE', 'REJECTED', 'SUSPENDED').required()
+    status: Joi.string().valid('PENDING', 'ACTIVE', 'REJECTED', 'SUSPENDED').required()
   })
 }
 

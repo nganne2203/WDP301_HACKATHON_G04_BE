@@ -12,8 +12,7 @@ import { JWT_UTILS } from '#utils/jwtUtil.js'
 import {
   REGISTRATION_SOURCES,
   canAccessAuthenticatedRoutes,
-  getRegistrationSource,
-  isGoogleAccount
+  getRegistrationSource
 } from '#utils/userAccountUtil.js'
 import { PARTICIPANT_ROLE_NAME } from '#utils/userRoleMigrationUtil.js'
 
@@ -62,8 +61,8 @@ const buildAuthResponse = (user) => {
   }
 }
 
-const ensureApproved = (user) => {
-  if (user.status !== 'APPROVED') {
+const ensureActive = (user) => {
+  if (user.status !== 'ACTIVE') {
     throw new ApiError(ERROR_CODES.FORBIDDEN, [`Account status is ${user.status}`])
   }
 }
@@ -167,25 +166,20 @@ const googleLogin = async ({ googleId, email, name, avatar }) => {
     throw new ApiError(ERROR_CODES.CONFLICT, ['This email is linked to a different Google account'])
   }
 
-  const registrationSource = getRegistrationSource(existingUser)
-  if (isGoogleAccount(existingUser)) {
-    if (['REJECTED', 'SUSPENDED'].includes(existingUser.status)) {
-      throw new ApiError(ERROR_CODES.FORBIDDEN, [`Account status is ${existingUser.status}`])
-    }
-  } else {
-    ensureApproved(existingUser)
+  if (['REJECTED', 'SUSPENDED'].includes(existingUser.status)) {
+    throw new ApiError(ERROR_CODES.FORBIDDEN, [`Account status is ${existingUser.status}`])
   }
+  ensureAccountCanAccess(existingUser)
 
   const updates = {
     googleId,
     googleAuth,
-    registrationSource,
+    registrationSource: existingUser.registrationSource || getRegistrationSource(existingUser),
     avatarUrl: existingUser.avatarUrl || avatar || undefined
   }
 
-  if (registrationSource === REGISTRATION_SOURCES.GOOGLE) {
+  if (!existingUser.passwordHash) {
     updates.authProvider = 'GOOGLE'
-    updates.status = 'ACTIVE'
   }
 
   const user = await AUTH_REPOSITORY.updateUserById(existingUser._id, updates)
@@ -203,7 +197,7 @@ const login = async ({ email, password }) => {
     throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Email or password is incorrect'])
   }
 
-  ensureApproved(user)
+  ensureActive(user)
 
   return buildAuthResponse(user)
 }

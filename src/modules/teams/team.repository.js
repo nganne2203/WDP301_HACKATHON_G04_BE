@@ -127,7 +127,7 @@ const findTeamForUserInEvent = async ({ eventId, userId }, { session } = {}) => 
     Participant.findOne({
       eventId,
       userId,
-      status: { $in: ['INVITED', 'ACTIVE'] }
+      status: { $in: ['INVITED', 'JOINED'] }
     }),
     session
   )
@@ -157,7 +157,7 @@ const updateTeamById = async (id, data, { session } = {}) => {
 
 const findParticipantsByTeam = async (teamId, { session } = {}) => {
   return await withSession(
-    Participant.find({ teamId, status: { $in: ['INVITED', 'ACTIVE'] } })
+    Participant.find({ teamId, status: { $in: ['INVITED', 'JOINED'] } })
       .populate({ path: 'userId', select: 'email fullName status roles', populate: populateRoles[0] })
       .sort({ teamRole: -1, createdAt: 1 }),
     session

@@ -223,7 +223,7 @@ const seedRoles = async (permissionByCode) => {
   return new Map(roleRecords.map((role) => [role.name, role]))
 }
 
-const seedUser = async ({ email, legacyEmail, fullName, roleIds, passwordHash, status = 'APPROVED', extra = {} }) => {
+const seedUser = async ({ email, legacyEmail, fullName, roleIds, passwordHash, status = 'ACTIVE', extra = {} }) => {
   const filter = legacyEmail ? { $or: [{ email }, { email: legacyEmail }] } : { email }
 
   return await upsertOne(User, filter, {
@@ -237,7 +237,7 @@ const seedUser = async ({ email, legacyEmail, fullName, roleIds, passwordHash, s
   })
 }
 
-const seedBaseUser = async ({ email, legacyEmail, fullName, roleId, passwordHash, status = 'APPROVED', extra = {} }) => {
+const seedBaseUser = async ({ email, legacyEmail, fullName, roleId, passwordHash, status = 'ACTIVE', extra = {} }) => {
   return await seedUser({
     email,
     legacyEmail,
@@ -552,7 +552,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'ELIGIBLE',
       checkInStatus: 'CHECKED_IN',
       githubAccessStatus: 'GRANTED',
-      status: 'ACTIVE',
+      status: 'JOINED',
       joinedAt: addTime(now, { days: -5 })
     }),
     upsertOne(Participant, { eventId: registrationEvent._id, userId: registrationAcceptedA._id }, {
@@ -578,7 +578,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'ELIGIBLE',
       checkInStatus: 'CHECKED_IN',
       githubAccessStatus: 'GRANTED',
-      status: 'ACTIVE',
+      status: 'JOINED',
       joinedAt: addTime(now, { days: -3 })
     }),
     upsertOne(Participant, { eventId: registrationEvent._id, userId: waitingLead._id }, {
@@ -591,7 +591,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'ELIGIBLE',
       checkInStatus: 'NOT_CHECKED_IN',
       githubAccessStatus: 'NOT_GRANTED',
-      status: 'ACTIVE',
+      status: 'JOINED',
       joinedAt: addTime(now, { days: -2 })
     }),
     upsertOne(Participant, { eventId: registrationEvent._id, userId: waitlistedLead._id }, {
@@ -650,7 +650,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'ELIGIBLE',
       checkInStatus: 'CHECKED_IN',
       githubAccessStatus: 'NOT_GRANTED',
-      status: 'ACTIVE',
+      status: 'JOINED',
       joinedAt: addTime(now, { days: -1 })
     })
   ])
@@ -2044,7 +2044,7 @@ const seedSampleData = async () => {
     fileSize: 1024,
     fileExtension: 'jpg',
     tags: ['event', 'fall-2025', 'awards'],
-    status: 'APPROVED',
+    status: 'ACTIVE',
     reviewedBy: coordinatorUser._id,
     reviewedAt: buildDate('2025-11-02T20:30:00+07:00'),
     uploadedAt: buildDate('2025-11-02T20:00:00+07:00')

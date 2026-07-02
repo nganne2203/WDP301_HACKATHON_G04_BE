@@ -103,8 +103,8 @@ const router = Router()
  *           example: [JUDGE]
  *         status:
  *           type: string
- *           enum: [PENDING, APPROVED, ACTIVE, REJECTED, SUSPENDED]
- *           default: PENDING
+ *           enum: [PENDING, ACTIVE, REJECTED, SUSPENDED]
+ *           default: ACTIVE
  *         githubUsername:
  *           type: string
  *           nullable: true
@@ -131,8 +131,8 @@ const router = Router()
  *       properties:
  *         status:
  *           type: string
- *           enum: [PENDING, APPROVED, ACTIVE, REJECTED, SUSPENDED]
- *           example: APPROVED
+ *           enum: [PENDING, ACTIVE, REJECTED, SUSPENDED]
+ *           example: ACTIVE
  *     AssignRolesRequest:
  *       type: object
  *       required: [roles]
@@ -175,7 +175,7 @@ router.use(authorizationMiddleware)
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, APPROVED, ACTIVE, REJECTED, SUSPENDED]
+ *           enum: [PENDING, ACTIVE, REJECTED, SUSPENDED]
  *       - in: query
  *         name: search
  *         schema:
@@ -404,7 +404,7 @@ router.patch(
  * @swagger
  * /api/users/{id}/approve:
  *   patch:
- *     summary: Approve a user
+ *     summary: Activate a user
  *     tags: [Users]
  *     security:
  *       - BearerAuth: []
@@ -417,7 +417,7 @@ router.patch(
  *           pattern: '^[a-fA-F0-9]{24}$'
  *     responses:
  *       200:
- *         description: User approved successfully
+ *         description: User activated successfully
  *         content:
  *           application/json:
  *             schema:
