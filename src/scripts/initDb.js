@@ -565,7 +565,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'ELIGIBLE',
       checkInStatus: 'NOT_CHECKED_IN',
       githubAccessStatus: 'NOT_GRANTED',
-      status: 'INVITED',
+      status: 'JOINED',
       joinedAt: addTime(now, { days: -4 })
     }),
     upsertOne(Participant, { eventId: registrationEvent._id, userId: registrationAcceptedB._id }, {
@@ -604,7 +604,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'PENDING',
       checkInStatus: 'NOT_CHECKED_IN',
       githubAccessStatus: 'NOT_GRANTED',
-      status: 'INVITED',
+      status: 'JOINED',
       joinedAt: addTime(now, { days: -1 })
     }),
     upsertOne(Participant, { eventId: registrationEvent._id, userId: rejectedLead._id }, {
@@ -617,7 +617,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'INELIGIBLE',
       checkInStatus: 'NOT_CHECKED_IN',
       githubAccessStatus: 'REVOKED',
-      status: 'WITHDRAWN',
+      status: 'JOINED',
       joinedAt: addTime(now, { days: -1 })
     }),
     upsertOne(Participant, { eventId: registrationEvent._id, userId: soloParticipant._id }, {
@@ -814,7 +814,7 @@ const seedRuntimeDevScenarios = async ({
     projectName: 'Board Scope Viewer',
     trackAssignmentMethod: 'MANUAL',
     qualificationStatus: 'PRELIMINARY',
-    status: 'ACTIVE',
+    status: 'CONFIRMED',
     confirmedAt: addTime(now, { days: -8 })
   })
 
@@ -829,7 +829,7 @@ const seedRuntimeDevScenarios = async ({
     projectName: 'Submission Review Console',
     trackAssignmentMethod: 'MANUAL',
     qualificationStatus: 'PRELIMINARY',
-    status: 'ACTIVE',
+    status: 'CONFIRMED',
     confirmedAt: addTime(now, { days: -8 })
   })
 
@@ -844,7 +844,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'ELIGIBLE',
       checkInStatus: 'CHECKED_IN',
       githubAccessStatus: 'GRANTED',
-      status: 'ACTIVE',
+      status: 'JOINED',
       joinedAt: addTime(now, { days: -10 })
     }),
     upsertOne(Participant, { eventId: scoringEvent._id, userId: scoringLeadB._id }, {
@@ -857,7 +857,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'ELIGIBLE',
       checkInStatus: 'CHECKED_IN',
       githubAccessStatus: 'NOT_GRANTED',
-      status: 'ACTIVE',
+      status: 'JOINED',
       joinedAt: addTime(now, { days: -10 })
     }),
     upsertOne(Participant, { eventId: scoringEvent._id, userId: scoringJudgeParticipantUser._id }, {
@@ -870,7 +870,7 @@ const seedRuntimeDevScenarios = async ({
       eligibilityStatus: 'ELIGIBLE',
       checkInStatus: 'NOT_CHECKED_IN',
       githubAccessStatus: 'REVOKED',
-      status: 'INVITED',
+      status: 'JOINED',
       joinedAt: addTime(now, { days: -9 })
     })
   ])
@@ -1490,7 +1490,8 @@ const seedSampleData = async () => {
       trackAssignmentMethod: 'DRAW',
       trackAssignedAt: buildDate('2025-11-01T15:00:00+07:00'),
       qualificationStatus: isFinalist ? 'FINALIST' : 'ELIMINATED',
-      status: 'ACTIVE'
+      status: 'CONFIRMED',
+      confirmedAt: buildDate('2025-10-10T09:00:00+07:00')
     })
 
     const members = []
@@ -1528,7 +1529,7 @@ const seedSampleData = async () => {
         attendedActivities: ['WORKSHOP', 'OPENING', 'TEAM_MEETING', 'CODING', 'PRESENTATION', 'CLOSING'],
         checkInStatus: 'CHECKED_IN',
         githubAccessStatus: 'GRANTED',
-        status: 'ACTIVE',
+        status: 'JOINED',
         joinedAt: buildDate('2025-10-10T09:00:00+07:00')
       })
 

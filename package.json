@@ -19,9 +19,6 @@
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f api worker",
     "db:init": "node src/scripts/initDb.js",
-    "db:normalize-user-participant-statuses": "node src/scripts/normalizeUserAndParticipantStatuses.js",
-    "db:normalize-team-statuses": "node src/scripts/normalizeTeamStatuses.js",
-    "db:remove-user-role": "node src/scripts/removeUserRole.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "node --test tests/*.test.js"
