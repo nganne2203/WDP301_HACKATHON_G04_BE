@@ -22,7 +22,7 @@ router.get(
 router.post(
   '/generate',
   sensitiveRateLimiter,
-  permissionMiddleware(PERMISSIONS.RESULT_PUBLISH),
+  permissionMiddleware(PERMISSIONS.RANKING_GENERATE),
   validationHandlingMiddleware(RANKING_VALIDATION.generateRankings),
   RANKING_CONTROLLER.generateRankings
 )

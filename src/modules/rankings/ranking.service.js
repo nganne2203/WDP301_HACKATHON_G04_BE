@@ -321,16 +321,22 @@ export const createRankingService = ({
 
     const selectedIds = new Set(selected.map(item => item.teamId))
     const updatedSelections = []
+    const promotedTeamIds = []
     for (const ranking of rankings) {
       const teamId = ranking.teamId?._id?.toString?.() || ranking.teamId?.toString?.()
       if (!selectedIds.has(teamId)) continue
       const selectedEntry = selected.find(item => item.teamId === teamId)
+      promotedTeamIds.push(teamId)
       updatedSelections.push(await repository.updateRankingById(ranking._id, {
         isSelectedForFinal: true,
         selectionReason: selectedEntry.customReason
           || `Selected by ${mode} using official judge scores only`
       }))
     }
+
+    await roundModel.findByIdAndUpdate(roundId, {
+      promotedTeamIds
+    })
 
     await auditLogRepository.create({
       userId: actor.id || null,
@@ -341,6 +347,7 @@ export const createRankingService = ({
         roundId,
         finalistSelectionMode: mode,
         finalistCount: updatedSelections.length,
+        promotedTeamIds,
         source: 'OFFICIAL_JUDGE_SCORES_ONLY',
         aiReviewUsed: false
       }
@@ -351,6 +358,7 @@ export const createRankingService = ({
       summary: {
         finalistSelectionMode: mode,
         finalistCount: updatedSelections.length,
+        promotedTeamIds,
         source: 'OFFICIAL_JUDGE_SCORES_ONLY'
       }
     }
@@ -474,7 +482,11 @@ export const createRankingService = ({
     )
     await roundModel.findByIdAndUpdate(roundId, {
       status: 'COMPLETED',
-      publishTime: publishedAt
+      publishTime: publishedAt,
+      promotedTeamIds: rankings
+        .filter(item => item.isSelectedForFinal)
+        .map(item => item.teamId?._id?.toString?.() || item.teamId?.toString?.())
+        .filter(Boolean)
     })
     const repositoryActionSummary = await applyRepositoryAccessAction({
       eventId,

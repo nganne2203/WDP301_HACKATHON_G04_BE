@@ -22,7 +22,7 @@ router.get(
 router.post(
   '/select',
   sensitiveRateLimiter,
-  permissionMiddleware(PERMISSIONS.RESULT_PUBLISH),
+  permissionMiddleware(PERMISSIONS.FINALIST_SELECT),
   validationHandlingMiddleware(FINALIST_VALIDATION.selectFinalists),
   FINALIST_CONTROLLER.selectFinalists
 )
