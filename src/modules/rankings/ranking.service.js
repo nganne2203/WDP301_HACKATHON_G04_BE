@@ -388,6 +388,82 @@ export const createRankingService = ({
     }
   }
 
+  const selectManualFinalists = async ({ eventId, roundId, teamIds = [], selectionReason }, actor = {}) => {
+    await ensureEventRoundContext({ eventId, roundId })
+
+    const requestedTeamIds = [...new Set(teamIds.map(teamId => teamId.toString()))]
+    const rankings = await repository.findRankings({
+      filter: { eventId, roundId, rankingType: 'TEAM' },
+      limit: 500
+    })
+    if (rankings.length === 0) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Generate rankings before selecting finalists'])
+    }
+
+    const rankingTeamIds = new Set(rankings
+      .map(item => item.teamId?._id?.toString?.() || item.teamId?.toString?.())
+      .filter(Boolean))
+    const missingTeamIds = requestedTeamIds.filter(teamId => !rankingTeamIds.has(teamId))
+    if (missingTeamIds.length > 0) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Selected teams must exist in the generated rankings for this round'])
+    }
+
+    await repository.updateManyRankings(
+      { eventId, roundId, rankingType: 'TEAM' },
+      { isSelectedForFinal: false, selectionReason: null }
+    )
+
+    const reason = selectionReason?.trim() || 'Manually selected by organizer review'
+    for (const ranking of rankings) {
+      const teamId = ranking.teamId?._id?.toString?.() || ranking.teamId?.toString?.()
+      if (!requestedTeamIds.includes(teamId)) continue
+
+      await repository.updateRankingById(ranking._id, {
+        isSelectedForFinal: true,
+        selectionReason: reason
+      })
+    }
+
+    await roundModel.findByIdAndUpdate(roundId, {
+      promotedTeamIds: requestedTeamIds
+    })
+
+    await auditLogRepository.create({
+      userId: actor.id || null,
+      action: 'FINALISTS_SELECTED_MANUALLY',
+      resourceType: 'Ranking',
+      metadata: {
+        eventId,
+        roundId,
+        finalistSelectionMode: 'CUSTOM',
+        finalistCount: requestedTeamIds.length,
+        promotedTeamIds: requestedTeamIds,
+        source: 'OFFICIAL_JUDGE_SCORES_ONLY',
+        aiReviewUsed: false
+      }
+    })
+
+    const updatedFinalists = await repository.findRankings({
+      filter: {
+        eventId,
+        roundId,
+        rankingType: 'TEAM',
+        isSelectedForFinal: true
+      },
+      limit: 500
+    })
+
+    return {
+      finalists: updatedFinalists.map(normalizeRanking),
+      summary: {
+        finalistSelectionMode: 'CUSTOM',
+        finalistCount: updatedFinalists.length,
+        promotedTeamIds: requestedTeamIds,
+        source: 'OFFICIAL_JUDGE_SCORES_ONLY'
+      }
+    }
+  }
+
   const applyRepositoryAccessAction = async ({ eventId, roundId, teamIds = [], action, publishedAt }, actor = {}) => {
     if (action === 'NONE' || teamIds.length === 0) {
       return {
@@ -527,6 +603,7 @@ export const createRankingService = ({
     listRankings,
     generateRankings,
     selectFinalists,
+    selectManualFinalists,
     listFinalists,
     publishResults
   }

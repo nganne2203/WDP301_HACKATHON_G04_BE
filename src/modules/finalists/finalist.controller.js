@@ -28,7 +28,20 @@ const selectFinalists = async (req, res, next) => {
   }
 }
 
+const selectManualFinalists = async (req, res, next) => {
+  try {
+    const result = await RANKING_SERVICE.selectManualFinalists(req.body, req.user)
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Select manual finalists successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const FINALIST_CONTROLLER = {
   listFinalists,
-  selectFinalists
+  selectFinalists,
+  selectManualFinalists
 }

@@ -27,4 +27,12 @@ router.post(
   FINALIST_CONTROLLER.selectFinalists
 )
 
+router.post(
+  '/manual',
+  sensitiveRateLimiter,
+  permissionMiddleware(PERMISSIONS.FINALIST_SELECT),
+  validationHandlingMiddleware(FINALIST_VALIDATION.selectManualFinalists),
+  FINALIST_CONTROLLER.selectManualFinalists
+)
+
 export default router

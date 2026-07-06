@@ -17,5 +17,13 @@ export const FINALIST_VALIDATION = {
       eventId: objectId.required(),
       roundId: objectId.required()
     })
+  },
+  selectManualFinalists: {
+    body: Joi.object({
+      eventId: objectId.required(),
+      roundId: objectId.required(),
+      teamIds: Joi.array().items(objectId.required()).unique().min(1).max(200).required(),
+      selectionReason: Joi.string().trim().max(500).allow('', null)
+    })
   }
 }
