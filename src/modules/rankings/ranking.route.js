@@ -14,7 +14,7 @@ router.use(authorizationMiddleware)
 
 router.get(
   '/',
-  permissionMiddleware(PERMISSIONS.SCORE_VIEW),
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
   validationHandlingMiddleware(RANKING_VALIDATION.listRankings),
   RANKING_CONTROLLER.listRankings
 )

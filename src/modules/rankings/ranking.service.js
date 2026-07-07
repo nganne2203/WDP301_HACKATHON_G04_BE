@@ -4,6 +4,7 @@ import { RANKING_REPOSITORY } from './ranking.repository.js'
 import { AUDIT_LOG_REPOSITORY } from '#modules/audit-logs/audit-log.repository.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
+import { PERMISSIONS } from '#constants/permissions.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { LOGGER } from '#utils/logger.js'
 import Event from '#models/event.model.js'
@@ -68,6 +69,34 @@ const buildRankingFilter = (query = {}) => {
   if (query.teamId) filter.teamId = query.teamId
   filter.rankingType = query.rankingType || 'TEAM'
   return filter
+}
+
+const actorHasAnyPermission = (actor = {}, permissions = []) => {
+  const actorPermissions = new Set([
+    ...(actor.effectivePermissions || []),
+    ...(actor.permissions || [])
+  ].map(permission => {
+    if (typeof permission === 'string') return permission
+    return permission?.code
+  }).filter(Boolean))
+
+  return permissions.some(permission => actorPermissions.has(permission))
+}
+
+const canViewUnpublishedRankings = (actor = {}) => {
+  return actorHasAnyPermission(actor, [
+    PERMISSIONS.RANKING_GENERATE,
+    PERMISSIONS.FINALIST_SELECT,
+    PERMISSIONS.RESULT_PUBLISH
+  ])
+}
+
+const applyPublishedVisibility = (filter, actor = {}) => {
+  if (canViewUnpublishedRankings(actor)) return filter
+  return {
+    ...filter,
+    publishedAt: { $ne: null }
+  }
 }
 
 const sortTeamGroups = (groups = []) => {
@@ -138,10 +167,10 @@ export const createRankingService = ({
     return { event, round }
   }
 
-  const listRankings = async (query = {}) => {
+  const listRankings = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
     const skip = (page - 1) * limit
-    const filter = buildRankingFilter(query)
+    const filter = applyPublishedVisibility(buildRankingFilter(query), actor)
 
     const [rankings, totalItems] = await Promise.all([
       repository.findRankings({ filter, skip, limit }),
@@ -364,13 +393,13 @@ export const createRankingService = ({
     }
   }
 
-  const listFinalists = async (query = {}) => {
+  const listFinalists = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
     const skip = (page - 1) * limit
-    const filter = {
+    const filter = applyPublishedVisibility({
       ...buildRankingFilter(query),
       isSelectedForFinal: true
-    }
+    }, actor)
 
     const [rankings, totalItems] = await Promise.all([
       repository.findRankings({ filter, skip, limit }),

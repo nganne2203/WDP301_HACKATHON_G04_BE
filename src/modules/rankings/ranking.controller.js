@@ -5,7 +5,7 @@ import { responseSuccess } from '#utils/responseUtil.js'
 
 const listRankings = async (req, res, next) => {
   try {
-    const { rankings, pagination } = await RANKING_SERVICE.listRankings(req.validated?.query || req.query)
+    const { rankings, pagination } = await RANKING_SERVICE.listRankings(req.validated?.query || req.query, req.user)
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get rankings successfully',
       data: rankings,
