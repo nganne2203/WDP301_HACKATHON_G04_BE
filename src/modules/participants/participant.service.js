@@ -107,7 +107,9 @@ const normalizeEvent = (event) => {
     semester: event.semester,
     season: event.season,
     year: event.year,
-    status: event.status
+    status: event.status,
+    startDate: event.startDate,
+    endDate: event.endDate
   }
 }
 

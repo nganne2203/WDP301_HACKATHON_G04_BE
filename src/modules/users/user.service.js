@@ -227,6 +227,27 @@ const ensureUserExists = async (id) => {
   return user
 }
 
+const normalizeOptionalProfileValue = (value) => {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  const trimmed = String(value).trim()
+  return trimmed || null
+}
+
+const ensureGithubUsernameCanBeChanged = async (userId, existingGithubUsername, nextGithubUsername) => {
+  const currentValue = normalizeOptionalProfileValue(existingGithubUsername)
+  const nextValue = normalizeOptionalProfileValue(nextGithubUsername)
+  if (currentValue === nextValue) return
+
+  const blockingParticipant = await USER_REPOSITORY.findStartedJoinedParticipantByUserId(userId)
+  if (!blockingParticipant) return
+
+  const eventTitle = blockingParticipant.eventId?.title || 'a started event'
+  throw new ApiError(ERROR_CODES.FORBIDDEN, [
+    `GitHub username cannot be changed after joining ${eventTitle} because the event has already started`
+  ])
+}
+
 const listUsers = async (query = {}) => {
   const { page, limit } = normalizePaginationQuery(query)
   const filter = buildUserFilter(query)
@@ -414,9 +435,13 @@ const updateUser = async (id, payload = {}, actor = {}) => {
 }
 
 const updateProfile = async (id, payload = {}) => {
-  await ensureUserExists(id)
+  const existingUser = await ensureUserExists(id)
 
   const safePayload = pickSafeFields(payload, PROFILE_FIELDS)
+  if (Object.prototype.hasOwnProperty.call(safePayload, 'githubUsername')) {
+    await ensureGithubUsernameCanBeChanged(id, existingUser.githubUsername, safePayload.githubUsername)
+  }
+
   const updatedUser = await USER_REPOSITORY.updateById(id, safePayload)
 
   return normalizeUser(updatedUser)
