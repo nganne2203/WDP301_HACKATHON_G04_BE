@@ -429,6 +429,10 @@ const buildStoragePath = ({ eventId, userId, originalFileName }) => {
   return `events/${eventId}/users/${userId}/${Date.now()}-${sanitizeFileName(originalFileName)}`
 }
 
+const buildAvatarStoragePath = ({ userId, originalFileName }) => {
+  return `avatars/users/${userId}/${Date.now()}-${sanitizeFileName(originalFileName)}`
+}
+
 const createPagination = ({ page, limit, totalItems }) => {
   return {
     currentPage: page,
@@ -790,6 +794,53 @@ export const createMediaService = ({
     return normalizeMedia(await repository.findMediaById(media._id))
   }
 
+  const uploadProfileAvatar = async (file, actor = {}) => {
+    if (!actor.id) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authentication is required'])
+    }
+
+    const config = await loadOperationalConfig()
+    const fileMetadata = validateMediaFile({ file, config })
+    if (fileMetadata.mediaType !== 'IMAGE') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Avatar must be an image file'])
+    }
+
+    const storagePath = buildAvatarStoragePath({
+      userId: actor.id,
+      originalFileName: fileMetadata.originalFileName
+    })
+    const storageClient = resolvedStorageClients[config.provider]
+    if (!storageClient) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Unsupported media storage provider: ${config.provider}`])
+    }
+
+    const uploadResult = config.provider === 'CLOUDINARY'
+      ? await storageClient.uploadObject({
+        cloudName: config.cloudinaryCloudName,
+        apiKey: config.cloudinaryApiKey,
+        apiSecret: config.cloudinaryApiSecret,
+        folder: config.cloudinaryFolder,
+        storagePath,
+        buffer: file.buffer,
+        mimeType: fileMetadata.mimeType,
+        mediaType: fileMetadata.mediaType
+      })
+      : await storageClient.uploadObject({
+        supabaseUrl: config.supabaseUrl,
+        serviceRoleKey: config.serviceRoleKey,
+        bucket: config.bucket,
+        storagePath,
+        buffer: file.buffer,
+        mimeType: fileMetadata.mimeType
+      })
+
+    return {
+      avatarUrl: uploadResult.fileUrl,
+      storageProvider: config.provider,
+      storagePath: uploadResult.storagePath || storagePath
+    }
+  }
+
   const listMyHistory = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
     const filter = {
@@ -1120,6 +1171,7 @@ export const createMediaService = ({
     getStorageConfig,
     saveStorageConfig,
     uploadMedia,
+    uploadProfileAvatar,
     listMyHistory,
     listAdminMedia,
     getEventGallery,

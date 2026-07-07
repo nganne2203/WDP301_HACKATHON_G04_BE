@@ -6,6 +6,7 @@ import { PERMISSIONS } from '#constants/permissions.js'
 import { authorizationMiddleware } from '#middlewares/authHandlingMiddleware.js'
 import { validationHandlingMiddleware } from '#middlewares/validationHandlingMiddleware.js'
 import { permissionMiddleware } from '#middlewares/permission.middleware.js'
+import { MEDIA_MULTIPART } from '#modules/media/media.multipart.js'
 
 const router = Router()
 
@@ -294,6 +295,13 @@ router.patch(
   '/me',
   validationHandlingMiddleware(USER_VALIDATION.updateProfile),
   USER_CONTROLLER.updateMe
+)
+
+router.post(
+  '/me/avatar',
+  MEDIA_MULTIPART.multipartBodyParser,
+  MEDIA_MULTIPART.mediaMultipartMiddleware,
+  USER_CONTROLLER.updateMyAvatar
 )
 
 /**

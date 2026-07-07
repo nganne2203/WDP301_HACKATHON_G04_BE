@@ -48,7 +48,7 @@ const createGithubClient = ({ fetchImpl = globalThis.fetch } = {}) => {
     const response = await fetchImpl(`${GITHUB_API_BASE_URL}${path}`, {
       method,
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': GITHUB_API_VERSION,
         ...(body ? { 'Content-Type': 'application/json' } : {})
@@ -233,6 +233,76 @@ export const createGithubService = ({
 
   const requestGithub = async ({ method, path, token, body }) => {
     return await githubClient({ method, path, token, body })
+  }
+
+  const requestGithubWithPublicFallback = async ({ method = 'GET', path, body, context = {} }) => {
+    try {
+      return await requestGithub({
+        method,
+        path,
+        body,
+        token: env.github.token || undefined
+      })
+    } catch (error) {
+      const message = String(error?.errors?.[0] || error?.message || '').toLowerCase()
+      const canRetryWithoutToken = Boolean(env.github.token) &&
+        message.includes('401') &&
+        message.includes('bad credentials')
+
+      if (!canRetryWithoutToken) throw error
+
+      logger.warn('Configured GitHub token was rejected; retrying public GitHub request without token', context)
+      return await requestGithub({ method, path, body })
+    }
+  }
+
+  const normalizeGithubUser = (data) => ({
+    login: data?.login,
+    id: data?.id,
+    name: data?.name || null,
+    email: data?.email || null,
+    avatarUrl: data?.avatar_url || null,
+    htmlUrl: data?.html_url || null,
+    bio: data?.bio || null,
+    company: data?.company || null,
+    location: data?.location || null,
+    publicRepos: data?.public_repos ?? null,
+    followers: data?.followers ?? null
+  })
+
+  const getUserProfile = async (username) => {
+    const normalizedUsername = normalizeString(username)
+    const path = `/users/${encodeURIComponent(normalizedUsername)}`
+    const response = await requestGithubWithPublicFallback({
+      method: 'GET',
+      path,
+      context: { username: normalizedUsername }
+    })
+    const { data } = response
+
+    return normalizeGithubUser(data)
+  }
+
+  const searchUsers = async ({ query, limit = 8 } = {}) => {
+    const normalizedQuery = normalizeString(query)
+    const perPage = Math.min(Math.max(Number(limit) || 8, 1), 10)
+    const searchPath = `/search/users?q=${encodeURIComponent(normalizedQuery)}&per_page=${perPage}`
+    const { data } = await requestGithubWithPublicFallback({
+      method: 'GET',
+      path: searchPath,
+      context: { query: normalizedQuery }
+    })
+    const items = Array.isArray(data?.items) ? data.items : []
+
+    const profiles = await Promise.all(items.map(async (item) => {
+      try {
+        return await getUserProfile(item.login)
+      } catch {
+        return normalizeGithubUser(item)
+      }
+    }))
+
+    return profiles.filter(profile => profile?.login)
   }
 
   const updateInternalRepository = async ({ eventId, organizationName, repoName, updates }) => {
@@ -855,6 +925,8 @@ export const createGithubService = ({
 
   return {
     getConfig,
+    getUserProfile,
+    searchUsers,
     getTokenForN8nDispatch,
     requestGithub,
     saveConfig,

@@ -11,6 +11,7 @@ import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.servic
 import { EMAIL_SERVICE } from '#modules/notifications/email.service.js'
 import { EMAIL_TEMPLATE_KEYS } from '#modules/notifications/email-templates.js'
 import { AUDIT_LOG_SERVICE } from '#modules/audit-logs/audit-log.service.js'
+import { MEDIA_SERVICE } from '#modules/media/media.service.js'
 import { env } from '#configs/environment.js'
 import {
   REGISTRATION_SOURCES,
@@ -447,6 +448,15 @@ const updateProfile = async (id, payload = {}) => {
   return normalizeUser(updatedUser)
 }
 
+const updateProfileAvatar = async (id, file, actor = {}) => {
+  await ensureUserExists(id)
+
+  const upload = await MEDIA_SERVICE.uploadProfileAvatar(file, actor)
+  const updatedUser = await USER_REPOSITORY.updateById(id, { avatarUrl: upload.avatarUrl })
+
+  return normalizeUser(updatedUser)
+}
+
 const updateStatus = async (id, status) => {
   if (!ALLOWED_STATUSES.includes(status)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Invalid user status'])
@@ -577,6 +587,7 @@ export const USER_SERVICE = {
   createUser,
   updateUser,
   updateProfile,
+  updateProfileAvatar,
   updateStatus,
   approveUser,
   rejectUser,

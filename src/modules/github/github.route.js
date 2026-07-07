@@ -13,6 +13,18 @@ const router = Router()
 router.use(authorizationMiddleware)
 
 router.get(
+  '/users',
+  validationHandlingMiddleware(GITHUB_VALIDATION.searchUsers),
+  GITHUB_CONTROLLER.searchUsers
+)
+
+router.get(
+  '/users/:username',
+  validationHandlingMiddleware(GITHUB_VALIDATION.userProfile),
+  GITHUB_CONTROLLER.getUserProfile
+)
+
+router.get(
   '/config',
   permissionMiddleware(PERMISSIONS.GITHUB_CONFIGURE),
   validationHandlingMiddleware(GITHUB_VALIDATION.eventQuery),
