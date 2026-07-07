@@ -1461,7 +1461,6 @@ export const createTeamService = ({
             memberIds: [getId(leader)],
             name: payload.name,
             chapterName: payload.chapterName,
-            projectName: payload.projectName,
             trackAssignmentMethod: payload.trackId ? 'MANUAL' : 'SYSTEM',
             status: TEAM_STATUSES.WAITING_FOR_MEMBERS
           }, { session })

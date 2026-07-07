@@ -44,7 +44,6 @@ const createTeam = {
     name: Joi.string().trim().min(2).max(120).required(),
     trackId: objectId.allow(null),
     chapterName: Joi.string().trim().max(120).allow('', null),
-    projectName: Joi.string().trim().max(200).allow('', null),
     invitedEmails: Joi.array().items(email).max(20).unique().default([]),
     invitedMembers: Joi.array().items(invitedMember).max(20).default([])
   })

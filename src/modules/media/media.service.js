@@ -212,6 +212,18 @@ const normalizeTeamSummary = (team) => {
   }
 }
 
+const normalizeMediaSummary = (media) => {
+  if (!media) return null
+  if (typeof media === 'string' || media instanceof mongoose.Types.ObjectId) return { id: media.toString() }
+
+  return {
+    id: getId(media),
+    title: media.title,
+    originalFileName: media.originalFileName,
+    mediaType: media.mediaType
+  }
+}
+
 const normalizeMedia = (media) => {
   if (!media) return null
   const plainMedia = typeof media.toObject === 'function'
@@ -1145,6 +1157,21 @@ export const createMediaService = ({
       ])
     ])
 
+    const participantIds = byParticipant
+      .map(item => item._id)
+      .filter(Boolean)
+    const mediaIds = mostViewedMedia
+      .map(item => item._id)
+      .filter(Boolean)
+
+    const [participantUsers, viewedMediaSummaries] = await Promise.all([
+      participantIds.length > 0 ? repository.findUsersByIds(participantIds) : [],
+      mediaIds.length > 0 ? repository.findMediaSummariesByIds(mediaIds) : []
+    ])
+
+    const usersById = new Map(participantUsers.map(user => [getId(user), normalizeActorSummary(user)]))
+    const mediaById = new Map(viewedMediaSummaries.map(media => [getId(media), normalizeMediaSummary(media)]))
+
     const statusCounts = Object.fromEntries(MEDIA_STATUSES.map(status => [status, 0]))
     for (const item of byStatus) {
       if (item._id) statusCounts[item._id] = item.count
@@ -1162,8 +1189,22 @@ export const createMediaService = ({
       uploadsByWeek: byWeek.map(item => ({ week: item._id, count: item.count })),
       uploadsByMonth: byMonth.map(item => ({ month: item._id, count: item.count })),
       uploadsByMediaType: byMediaType.map(item => ({ mediaType: item._id, count: item.count })),
-      mostActiveParticipants: byParticipant.slice(0, 10).map(item => ({ participantId: getId(item._id), uploads: item.count })),
-      mostViewedMedia: mostViewedMedia.map(item => ({ mediaId: getId(item._id), views: item.views }))
+      mostActiveParticipants: byParticipant.slice(0, 10).map(item => {
+        const participantId = getId(item._id)
+        return {
+          participantId,
+          participant: usersById.get(participantId) || null,
+          uploads: item.count
+        }
+      }),
+      mostViewedMedia: mostViewedMedia.map(item => {
+        const mediaId = getId(item._id)
+        return {
+          mediaId,
+          media: mediaById.get(mediaId) || null,
+          views: item.views
+        }
+      })
     }
   }
 
