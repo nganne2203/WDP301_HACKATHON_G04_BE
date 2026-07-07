@@ -197,6 +197,20 @@ const findUserByEmail = async (email, { session } = {}) => {
   return await withSession(User.findOne({ email: String(email).trim().toLowerCase() }).populate(populateRoles), session)
 }
 
+const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const findUserByGithubUsername = async (githubUsername, { session } = {}) => {
+  const username = String(githubUsername || '').trim()
+  if (!username) return null
+
+  return await withSession(
+    User.findOne({
+      githubUsername: { $regex: new RegExp(`^${escapeRegex(username)}$`, 'i') }
+    }).populate(populateRoles),
+    session
+  )
+}
+
 const createUser = async (data, { session } = {}) => {
   if (session) {
     const [user] = await User.create([data], { session })
@@ -264,6 +278,26 @@ const findBlockingInvitation = async ({ eventId, email, userId, excludeInvitatio
   return await withSession(TeamInvitation.findOne(filter), session)
 }
 
+const findActiveInvitationByGithubUsername = async ({ githubUsername, email, excludeInvitationId }, { session } = {}) => {
+  const username = String(githubUsername || '').trim()
+  if (!username) return null
+
+  const filter = {
+    status: { $in: ['PENDING', 'ACCEPTED'] },
+    'metadata.invitedGithubUsername': { $regex: new RegExp(`^${escapeRegex(username)}$`, 'i') }
+  }
+
+  if (email) {
+    filter.invitedEmail = { $ne: String(email).trim().toLowerCase() }
+  }
+
+  if (excludeInvitationId) {
+    filter._id = { $ne: excludeInvitationId }
+  }
+
+  return await withSession(TeamInvitation.findOne(filter), session)
+}
+
 const updateInvitationById = async (id, data, { session } = {}) => {
   return await withSession(
     TeamInvitation.findByIdAndUpdate(id, data, {
@@ -298,6 +332,7 @@ export const TEAM_REPOSITORY = {
   findUserById,
   findUsersByIds,
   findUserByEmail,
+  findUserByGithubUsername,
   createUser,
   updateUserById,
   findRoleByName,
@@ -306,6 +341,7 @@ export const TEAM_REPOSITORY = {
   findInvitationById,
   findInvitationsByTeam,
   findBlockingInvitation,
+  findActiveInvitationByGithubUsername,
   updateInvitationById,
   updateInvitations
 }

@@ -54,6 +54,13 @@ router.get(
 )
 
 router.get(
+  '/invite-eligibility',
+  permissionMiddleware(PERMISSIONS.TEAM_VIEW),
+  validationHandlingMiddleware(TEAM_VALIDATION.checkInviteEligibility),
+  TEAM_CONTROLLER.checkInviteEligibility
+)
+
+router.get(
   '/:id',
   permissionMiddleware(PERMISSIONS.TEAM_VIEW),
   validationHandlingMiddleware(TEAM_VALIDATION.getTeamById),

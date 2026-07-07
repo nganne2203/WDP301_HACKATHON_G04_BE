@@ -39,6 +39,15 @@ const findByEmail = async (email) => {
   return await User.findOne({ email }).populate(populateRoles)
 }
 
+const findByGithubUsername = async (githubUsername) => {
+  const username = String(githubUsername || '').trim()
+  if (!username) return null
+
+  return await User.findOne({
+    githubUsername: { $regex: new RegExp(`^${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+  }).populate(populateRoles)
+}
+
 const findRoleByName = async (name) => {
   return await Role.findOne({ name: String(name).toUpperCase() })
 }
@@ -83,6 +92,7 @@ export const USER_REPOSITORY = {
   findAll,
   findById,
   findByEmail,
+  findByGithubUsername,
   findRoleByName,
   findRolesByNames,
   findRolesByIds,

@@ -6,6 +6,8 @@ import { env } from '#configs/environment.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { ENCRYPTION_UTILS } from '#utils/encryption.util.js'
 import { LOGGER } from '#utils/logger.js'
+import User from '#models/user.model.js'
+import TeamInvitation from '#models/teamInvitation.model.js'
 
 const buildEventConfigKey = (eventId) => `github.event.${eventId}.organization`
 
@@ -15,6 +17,8 @@ const GITHUB_API_VERSION = '2022-11-28'
 const normalizeString = (value) => {
   return typeof value === 'string' ? value.trim() : value
 }
+
+const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const normalizeConfig = (record, eventId) => {
   const value = record?.value || {}
@@ -303,6 +307,44 @@ export const createGithubService = ({
     }))
 
     return profiles.filter(profile => profile?.login)
+  }
+
+  const checkUsernameAvailability = async ({ username, excludeSelf = false } = {}, actor = {}) => {
+    const normalizedUsername = normalizeString(username)
+    const errors = []
+
+    const user = await User.findOne({
+      githubUsername: { $regex: new RegExp(`^${escapeRegex(normalizedUsername)}$`, 'i') }
+    })
+
+    const actorId = actor.id || actor._id?.toString?.()
+    if (user && (!excludeSelf || user._id.toString() !== actorId)) {
+      errors.push('GitHub username is already used by another account')
+    }
+
+    const invitationFilter = {
+      status: { $in: ['PENDING', 'ACCEPTED'] },
+      'metadata.invitedGithubUsername': { $regex: new RegExp(`^${escapeRegex(normalizedUsername)}$`, 'i') }
+    }
+
+    if (excludeSelf) {
+      const selfConditions = []
+      if (actorId) selfConditions.push({ invitedUserId: { $ne: actorId } })
+      if (actor.email) selfConditions.push({ invitedEmail: { $ne: String(actor.email).trim().toLowerCase() } })
+      if (selfConditions.length > 0) invitationFilter.$and = selfConditions
+    }
+
+    const invitation = await TeamInvitation.findOne(invitationFilter)
+
+    if (invitation) {
+      errors.push('GitHub username is already used by another active invitation')
+    }
+
+    return {
+      username: normalizedUsername,
+      available: errors.length === 0,
+      errors
+    }
   }
 
   const updateInternalRepository = async ({ eventId, organizationName, repoName, updates }) => {
@@ -927,6 +969,7 @@ export const createGithubService = ({
     getConfig,
     getUserProfile,
     searchUsers,
+    checkUsernameAvailability,
     getTokenForN8nDispatch,
     requestGithub,
     saveConfig,

@@ -42,6 +42,19 @@ const searchUsers = async (req, res, next) => {
   }
 }
 
+const checkUsernameAvailability = async (req, res, next) => {
+  try {
+    const availability = await GITHUB_SERVICE.checkUsernameAvailability(req.validated.query, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Check GitHub username availability successfully',
+      data: availability
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const saveConfig = async (req, res, next) => {
   try {
     const config = await GITHUB_SERVICE.saveConfig(req.body, req.user)
@@ -201,6 +214,7 @@ export const GITHUB_CONTROLLER = {
   getConfig,
   getUserProfile,
   searchUsers,
+  checkUsernameAvailability,
   saveConfig,
   testConnection,
   createRepository,

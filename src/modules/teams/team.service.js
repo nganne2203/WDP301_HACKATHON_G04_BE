@@ -116,9 +116,17 @@ export const normalizeInvitationMembers = ({ members = [], emails = [] } = {}) =
 
   const uniqueMembers = []
   const seenEmails = new Set()
+  const seenGithubUsernames = new Set()
   for (const member of normalizedMembers) {
     if (seenEmails.has(member.email)) continue
     seenEmails.add(member.email)
+    const normalizedGithubUsername = member.githubUsername.toLowerCase()
+    if (normalizedGithubUsername) {
+      if (seenGithubUsernames.has(normalizedGithubUsername)) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['GitHub username cannot be duplicated in invited members'])
+      }
+      seenGithubUsernames.add(normalizedGithubUsername)
+    }
     uniqueMembers.push(member)
   }
 
@@ -790,6 +798,43 @@ const ensureParticipantCanJoinEvent = async ({
   }
 }
 
+const ensureGithubUsernameAvailableForInvite = async ({
+  repository,
+  githubUsername,
+  email,
+  invitedUser = null,
+  excludeInvitationId = null,
+  session
+}) => {
+  const username = String(githubUsername || '').trim()
+  if (!username) return
+
+  const githubOwner = await repository.findUserByGithubUsername(username, { session })
+  if (githubOwner && (!invitedUser || !isSameId(githubOwner, invitedUser))) {
+    throw new ApiError(ERROR_CODES.CONFLICT, ['GitHub username is already used by another account'])
+  }
+
+  const blockingInvitation = await repository.findActiveInvitationByGithubUsername({
+    githubUsername: username,
+    email,
+    excludeInvitationId
+  }, { session })
+
+  if (blockingInvitation) {
+    throw new ApiError(ERROR_CODES.CONFLICT, ['GitHub username is already used by another active invitation'])
+  }
+}
+
+const ensureGithubUsernameMatchesExistingUser = (user, githubUsername) => {
+  const existingUsername = String(user?.githubUsername || '').trim()
+  const nextUsername = String(githubUsername || '').trim()
+  if (!existingUsername || !nextUsername) return
+
+  if (existingUsername.toLowerCase() !== nextUsername.toLowerCase()) {
+    throw new ApiError(ERROR_CODES.CONFLICT, ['This email belongs to an account with a different GitHub username'])
+  }
+}
+
 const buildInvitationEmailContext = ({ event, team, leader, token, invitedUser, fullName, email, logger = LOGGER }) => {
   const { acceptUrl, declineUrl } = buildInvitationUrls(token, logger)
 
@@ -916,6 +961,17 @@ const createInvitationForEmail = async ({
       session
     })
 
+    ensureGithubUsernameMatchesExistingUser(invitedUser, githubUsername)
+
+    await ensureGithubUsernameAvailableForInvite({
+      repository,
+      githubUsername,
+      email,
+      invitedUser,
+      excludeInvitationId,
+      session
+    })
+
     if (!invitedUser.githubUsername && githubUsername) {
       invitedUser = await repository.updateUserById(invitedUser._id, { githubUsername }, { session })
     }
@@ -928,6 +984,14 @@ const createInvitationForEmail = async ({
     if (blockingInvitation) {
       throw new ApiError(ERROR_CODES.CONFLICT, ['User already has an active invitation for this event'])
     }
+
+    await ensureGithubUsernameAvailableForInvite({
+      repository,
+      githubUsername,
+      email,
+      excludeInvitationId,
+      session
+    })
   }
 
   const token = createInvitationToken()
@@ -990,6 +1054,17 @@ const resolveInvitationUser = async ({
     if (!invitedUser) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Invitation target not found'])
   } else {
     invitedUser = await repository.findUserByEmail(invitedEmail, { session })
+
+    await ensureGithubUsernameAvailableForInvite({
+      repository,
+      githubUsername: invitedGithubUsername,
+      email: invitedEmail,
+      invitedUser,
+      excludeInvitationId: getId(invitation),
+      session
+    })
+
+    ensureGithubUsernameMatchesExistingUser(invitedUser, invitedGithubUsername)
 
     if (invitedUser && !invitedUser.githubUsername && invitedGithubUsername) {
       invitedUser = await repository.updateUserById(invitedUser._id, {
@@ -1240,6 +1315,82 @@ export const createTeamService = ({
       available: errors.length === 0,
       nameAvailable: !existingTeam,
       leaderAvailable: !existingLeaderTeam,
+      errors
+    }
+  }
+
+  const checkInviteEligibility = async (query = {}, actor = {}) => {
+    ensureObjectId(query.eventId, 'event id')
+    if (!actor.id) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['User context is required to validate invitation eligibility'])
+    }
+
+    const event = await repository.findEventById(query.eventId)
+    if (!event) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+    }
+
+    const email = normalizeEmailAddress(query.email)
+    const errors = []
+
+    const actorEmail = normalizeEmailAddress(actor.email)
+    if (actorEmail && email === actorEmail) {
+      errors.push('You cannot invite your own email as a team member')
+    }
+
+    const invitedUser = await repository.findUserByEmail(email)
+    let participant = null
+    if (invitedUser) {
+      participant = await repository.findParticipantByEventAndUser({
+        eventId: getId(event),
+        userId: getId(invitedUser)
+      })
+
+      if (participant && ACTIVE_PARTICIPANT_STATUSES.includes(participant.status)) {
+        errors.push('This user already belongs to a team in this event')
+      }
+    }
+
+    const blockingInvitation = await repository.findBlockingInvitation({
+      eventId: getId(event),
+      email,
+      userId: getId(invitedUser)
+    })
+
+    if (blockingInvitation) {
+      errors.push('This email already has an active invitation for this event')
+    }
+
+    if (query.githubUsername) {
+      const existingGithubUsername = String(invitedUser?.githubUsername || '').trim()
+      if (
+        existingGithubUsername &&
+        existingGithubUsername.toLowerCase() !== String(query.githubUsername).trim().toLowerCase()
+      ) {
+        errors.push('This email belongs to an account with a different GitHub username')
+      }
+
+      const githubOwner = await repository.findUserByGithubUsername(query.githubUsername)
+      if (githubOwner && (!invitedUser || !isSameId(githubOwner, invitedUser))) {
+        errors.push('GitHub username is already used by another account')
+      }
+
+      const githubInvitation = await repository.findActiveInvitationByGithubUsername({
+        githubUsername: query.githubUsername,
+        email
+      })
+      if (githubInvitation) {
+        errors.push('GitHub username is already used by another active invitation')
+      }
+    }
+
+    return {
+      eventId: getId(event),
+      email,
+      available: errors.length === 0,
+      userExists: Boolean(invitedUser),
+      hasTeam: Boolean(participant && ACTIVE_PARTICIPANT_STATUSES.includes(participant.status)),
+      hasActiveInvitation: Boolean(blockingInvitation),
       errors
     }
   }
@@ -2081,6 +2232,7 @@ export const createTeamService = ({
     getMyTeamByEvent,
     rejectUnconfirmedTeamsForRegistrationClosure,
     checkTeamAvailability,
+    checkInviteEligibility,
     createTeam,
     inviteMembers,
     acceptInvitation,

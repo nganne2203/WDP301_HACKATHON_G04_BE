@@ -23,6 +23,13 @@ const searchUsers = {
   })
 }
 
+const usernameAvailability = {
+  query: Joi.object({
+    username: githubUsername.required(),
+    excludeSelf: Joi.boolean().default(false)
+  })
+}
+
 const saveConfig = {
   body: Joi.object({
     eventId: objectId.required(),
@@ -113,6 +120,7 @@ export const GITHUB_VALIDATION = {
   eventQuery,
   userProfile,
   searchUsers,
+  usernameAvailability,
   saveConfig,
   testConnection,
   createRepository,

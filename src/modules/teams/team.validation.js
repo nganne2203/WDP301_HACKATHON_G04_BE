@@ -77,6 +77,14 @@ const checkTeamAvailability = {
   })
 }
 
+const checkInviteEligibility = {
+  query: Joi.object({
+    eventId: objectId.required(),
+    email: email.required(),
+    githubUsername: githubUsername.allow('', null)
+  })
+}
+
 const replaceInvitation = {
   params: teamInvitationParam,
   body: Joi.object({
@@ -144,6 +152,7 @@ export const TEAM_VALIDATION = {
   inviteMembers,
   getMyTeam,
   checkTeamAvailability,
+  checkInviteEligibility,
   replaceInvitation,
   cancelInvitation,
   getTeamById,

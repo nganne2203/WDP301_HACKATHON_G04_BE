@@ -19,6 +19,12 @@ router.get(
 )
 
 router.get(
+  '/username-availability',
+  validationHandlingMiddleware(GITHUB_VALIDATION.usernameAvailability),
+  GITHUB_CONTROLLER.checkUsernameAvailability
+)
+
+router.get(
   '/users/:username',
   validationHandlingMiddleware(GITHUB_VALIDATION.userProfile),
   GITHUB_CONTROLLER.getUserProfile

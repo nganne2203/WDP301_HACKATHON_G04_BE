@@ -25,6 +25,8 @@ const ALLOWED_STATUSES = ['PENDING', 'ACTIVE', 'REJECTED', 'SUSPENDED']
 const EMAIL_NOTIFICATION_STATUSES = ['ACTIVE', 'REJECTED']
 const ROLE_ASSIGN_PERMISSIONS = ['USER_ROLE_ASSIGN', 'USER_ASSIGN_ROLE']
 
+const getId = (value) => value?._id?.toString?.() || value?.id || value?.toString?.()
+
 const getLoginUrl = () => {
   const frontendUrl = env.client.frontendUrl || env.client.urls[0]
   if (!frontendUrl) return null
@@ -249,6 +251,16 @@ const ensureGithubUsernameCanBeChanged = async (userId, existingGithubUsername, 
   ])
 }
 
+const ensureGithubUsernameIsUnique = async (githubUsername, excludeUserId = null) => {
+  const username = normalizeOptionalProfileValue(githubUsername)
+  if (!username) return
+
+  const existingUser = await USER_REPOSITORY.findByGithubUsername(username)
+  if (existingUser && (!excludeUserId || getId(existingUser) !== String(excludeUserId))) {
+    throw new ApiError(ERROR_CODES.CONFLICT, ['GitHub username is already used by another account'])
+  }
+}
+
 const listUsers = async (query = {}) => {
   const { page, limit } = normalizePaginationQuery(query)
   const filter = buildUserFilter(query)
@@ -346,6 +358,8 @@ const createUser = async (payload = {}, actor = {}) => {
     ensureParticipantStudentInfo(payload)
   }
 
+  await ensureGithubUsernameIsUnique(payload.githubUsername)
+
   const passwordHash = await BCRYPT_UTILS.hashPassword(payload.password)
   const createdUser = await USER_REPOSITORY.create({
     email: payload.email,
@@ -402,6 +416,10 @@ const updateUser = async (id, payload = {}, actor = {}) => {
     }
   }
 
+  if (Object.prototype.hasOwnProperty.call(safePayload, 'githubUsername')) {
+    await ensureGithubUsernameIsUnique(safePayload.githubUsername, id)
+  }
+
   if (payload.roles) {
     roleNames = payload.roles.map(role => String(role).toUpperCase())
     ensureRemovedUserRoleIsNotRequested(roleNames)
@@ -441,6 +459,7 @@ const updateProfile = async (id, payload = {}) => {
   const safePayload = pickSafeFields(payload, PROFILE_FIELDS)
   if (Object.prototype.hasOwnProperty.call(safePayload, 'githubUsername')) {
     await ensureGithubUsernameCanBeChanged(id, existingUser.githubUsername, safePayload.githubUsername)
+    await ensureGithubUsernameIsUnique(safePayload.githubUsername, id)
   }
 
   const updatedUser = await USER_REPOSITORY.updateById(id, safePayload)

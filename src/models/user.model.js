@@ -63,6 +63,14 @@ userSchema.index({ googleId: 1 }, { unique: true, sparse: true })
 userSchema.index({ 'googleAuth.googleId': 1 }, { unique: true, sparse: true })
 userSchema.index({ 'googleCalendar.connected': 1 })
 userSchema.index({ roles: 1 })
+userSchema.index(
+  { githubUsername: 1 },
+  {
+    unique: true,
+    sparse: true,
+    collation: { locale: 'en', strength: 2 }
+  }
+)
 
 const User = mongoose.model('User', userSchema)
 
