@@ -1,5 +1,18 @@
 # WDP Next Feature Implementation Plan
 
+## 0. Status Update - 2026-07-08
+
+This plan is older than the current codebase. The modules below are now implemented in `src/modules` and mounted in `src/routes/index.js`: timelines, participants, teams, rounds, judging boards, repositories/GitHub/webhooks, submissions, rubrics, score sheets, rankings, finalists/results, AI reviews, notifications, audit logs, operations, roles, and permissions.
+
+Recent compatibility gap fixed:
+
+* Workshop rating stats now has a backend compatibility endpoint at `GET /api/workshops/:id/ratings/stats`.
+* The frontend workshop client now treats `GET /workshops/:id/ratings` as `{ ratings, stats }` and maps stats consistently.
+
+Remaining intentional TODO:
+
+* Team-confirmation repository provisioning hooks are not auto-enabled yet. Current business flow provisions repositories/collaborators after registration closes, so automatic provisioning at `CONFIRMED` time would be too early.
+
 ## 1. Current Implementation Summary
 
 * Implemented modules: authentication/local login/register/Google login/JWT refresh, user approval/status/role assignment, Google Calendar connect, event CRUD, track CRUD, workshop CRUD/questions/votes/ratings/feedback/Google Meet, backend media upload/gallery/history/moderation/statistics with Supabase Storage integration, frontend media upload/history/gallery/moderation/statistics screens.

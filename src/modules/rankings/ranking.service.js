@@ -10,6 +10,10 @@ import { LOGGER } from '#utils/logger.js'
 import Event from '#models/event.model.js'
 import Repository from '#models/repository.model.js'
 import Round from '#models/round.model.js'
+import Team from '#models/team.model.js'
+import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
+
+const IN_APP_ONLY = ['IN_APP']
 
 const normalizeRanking = (ranking) => {
   if (!ranking) return null
@@ -69,6 +73,26 @@ const buildRankingFilter = (query = {}) => {
   if (query.teamId) filter.teamId = query.teamId
   filter.rankingType = query.rankingType || 'TEAM'
   return filter
+}
+
+const getId = (value) => {
+  return value?._id?.toString?.() || value?.id || value?.toString?.()
+}
+
+const uniqueUsersFromTeam = (team = {}) => {
+  const users = []
+  const seen = new Set()
+  const addUser = (user) => {
+    const userId = getId(user)
+    if (!userId || seen.has(userId)) return
+    seen.add(userId)
+    users.push(typeof user === 'object' ? user : { _id: userId })
+  }
+
+  addUser(team.leaderId)
+  for (const member of team.memberIds || []) addUser(member)
+
+  return users
 }
 
 const actorHasAnyPermission = (actor = {}, permissions = []) => {
@@ -147,6 +171,8 @@ export const createRankingService = ({
   auditLogRepository = AUDIT_LOG_REPOSITORY,
   eventModel = Event,
   roundModel = Round,
+  teamModel = Team,
+  notificationService = null,
   repositoryModel = Repository
 } = {}) => {
   const ensureEventRoundContext = async ({ eventId, roundId }) => {
@@ -568,7 +594,7 @@ export const createRankingService = ({
   }
 
   const publishResults = async ({ eventId, roundId, repositoryAccessAction = 'NONE' }, actor = {}) => {
-    await ensureEventRoundContext({ eventId, roundId })
+    const { event, round } = await ensureEventRoundContext({ eventId, roundId })
     const rankings = await repository.findRankings({
       filter: { eventId, roundId, rankingType: 'TEAM' },
       limit: 500
@@ -621,11 +647,71 @@ export const createRankingService = ({
       limit: 500
     })
 
+    await notifyResultsPublished({
+      eventId,
+      roundId,
+      event,
+      round,
+      rankings: publishedRankings
+    })
+
     return {
       publishedAt,
       rankings: publishedRankings.map(normalizeRanking),
       repositoryAccessAction: repositoryActionSummary
     }
+  }
+
+  const findTeamForNotification = async (teamId) => {
+    if (!teamId || !teamModel?.findById) return null
+
+    const query = teamModel.findById(teamId)
+    if (query && typeof query.populate === 'function') {
+      return await query.populate([
+        { path: 'leaderId', select: 'email fullName status' },
+        { path: 'memberIds', select: 'email fullName status' }
+      ])
+    }
+
+    return await query
+  }
+
+  const notifyResultsPublished = async ({ eventId, roundId, event, round, rankings = [] }) => {
+    if (!notificationService?.notifyUser) return
+
+    const teamIds = [...new Set(rankings.map(item => getId(item.teamId)).filter(Boolean))]
+    const jobs = []
+
+    for (const teamId of teamIds) {
+      const team = await findTeamForNotification(teamId)
+      const users = uniqueUsersFromTeam(team)
+      const ranking = rankings.find(item => getId(item.teamId) === teamId)
+      const teamName = team?.name || ranking?.teamId?.name || 'your team'
+      const roundName = round?.name || ranking?.roundId?.name || 'the round'
+      const eventTitle = event?.title || ranking?.eventId?.title || 'the event'
+      const rank = ranking?.rank ? ` Rank: #${ranking.rank}.` : ''
+
+      for (const user of users) {
+        jobs.push(notificationService.notifyUser({
+          user,
+          title: 'Results published',
+          message: `${eventTitle} results for ${roundName} are now available for ${teamName}.${rank}`,
+          type: 'RESULT',
+          dedupeKey: `results-published:${eventId}:${roundId}:${teamId}:${getId(user)}`,
+          metadata: {
+            action: 'RESULTS_PUBLISHED',
+            eventId,
+            roundId,
+            teamId,
+            rankingId: getId(ranking),
+            targetPath: '/participant/results'
+          },
+          channels: IN_APP_ONLY
+        }))
+      }
+    }
+
+    await Promise.all(jobs)
   }
 
   return {
@@ -639,6 +725,6 @@ export const createRankingService = ({
 }
 
 export const RANKING_SERVICE = {
-  ...createRankingService(),
+  ...createRankingService({ notificationService: NOTIFICATION_SERVICE }),
   normalizeRanking
 }

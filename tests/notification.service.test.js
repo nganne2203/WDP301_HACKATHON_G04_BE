@@ -13,6 +13,7 @@ const createLogger = () => ({
 test('notifyUser creates in-app notification and sends email', async () => {
   const created = []
   const sent = []
+  const emitted = []
   const service = createNotificationService({
     repository: {
       create: async (payload) => {
@@ -29,6 +30,12 @@ test('notifyUser creates in-app notification and sends email', async () => {
       sendTemplateEmail: async (payload) => {
         sent.push(payload)
         return { sent: true, status: 'SENT', accepted: [payload.to], rejected: [] }
+      }
+    },
+    socketEmitter: {
+      emitToUser: (userId, event, payload) => {
+        emitted.push({ userId, event, payload })
+        return true
       }
     },
     logger: createLogger()
@@ -51,6 +58,10 @@ test('notifyUser creates in-app notification and sends email', async () => {
   assert.equal(result.email.sent, true)
   assert.equal(sent[0].to, 'participant@example.com')
   assert.equal(sent[0].template, EMAIL_TEMPLATE_KEYS.ACCOUNT_APPROVED)
+  assert.equal(emitted.length, 1)
+  assert.equal(emitted[0].userId, 'user-1')
+  assert.equal(emitted[0].event, 'notification_created')
+  assert.equal(emitted[0].payload.title, 'Account approved')
 })
 
 test('notifyUser does not fail main flow when notification repository fails', async () => {
@@ -80,6 +91,97 @@ test('notifyUser does not fail main flow when notification repository fails', as
   assert.equal(result.notification, null)
   assert.equal(result.email.sent, true)
   assert.deepEqual(result.errors, ['database unavailable'])
+})
+
+test('notifyUser reuses existing in-app notification when dedupeKey matches', async () => {
+  const created = []
+  const emitted = []
+  const existing = {
+    _id: 'notification-1',
+    userId: 'user-1',
+    title: 'Event starts soon',
+    message: 'Your event starts in 1 hour.',
+    type: 'DEADLINE',
+    status: 'UNREAD',
+    dedupeKey: 'event-start:event-1:1h:user-1',
+    createdAt: new Date('2026-05-30T00:00:00.000Z')
+  }
+
+  const service = createNotificationService({
+    repository: {
+      findByDedupeKey: async (dedupeKey) => dedupeKey === existing.dedupeKey ? existing : null,
+      create: async (payload) => {
+        created.push(payload)
+        return { _id: 'notification-2', ...payload, status: 'UNREAD' }
+      }
+    },
+    emailService: {
+      sendTemplateEmail: async () => ({ sent: true, status: 'SENT', accepted: ['participant@example.com'] })
+    },
+    socketEmitter: {
+      emitToUser: (userId, event, payload) => {
+        emitted.push({ userId, event, payload })
+        return true
+      }
+    },
+    logger: createLogger()
+  })
+
+  const result = await service.notifyUser({
+    user: {
+      _id: 'user-1',
+      email: 'participant@example.com',
+      fullName: 'Participant User'
+    },
+    title: 'Event starts soon',
+    message: 'Your event starts in 1 hour.',
+    type: 'DEADLINE',
+    dedupeKey: existing.dedupeKey,
+    channels: ['IN_APP']
+  })
+
+  assert.equal(created.length, 0)
+  assert.equal(result.notification.id, 'notification-1')
+  assert.equal(result.notification.dedupeKey, existing.dedupeKey)
+  assert.equal(result.email, null)
+  assert.equal(emitted.length, 0)
+})
+
+test('mark read operations emit notification socket events', async () => {
+  const emitted = []
+  const service = createNotificationService({
+    repository: {
+      markAsRead: async ({ id, userId }) => ({
+        _id: id,
+        userId,
+        title: 'Read me',
+        message: 'Marked as read',
+        type: 'SYSTEM',
+        status: 'READ',
+        createdAt: new Date('2026-05-30T00:00:00.000Z')
+      }),
+      markAllAsRead: async () => ({ matchedCount: 3, modifiedCount: 2 })
+    },
+    socketEmitter: {
+      emitToUser: (userId, event, payload) => {
+        emitted.push({ userId, event, payload })
+        return true
+      }
+    },
+    logger: createLogger()
+  })
+
+  await service.markAsRead({
+    id: '000000000000000000000001',
+    userId: '000000000000000000000002'
+  })
+  await service.markAllAsRead('000000000000000000000002')
+
+  assert.equal(emitted.length, 2)
+  assert.equal(emitted[0].event, 'notification_read')
+  assert.equal(emitted[0].payload.status, 'READ')
+  assert.equal(emitted[1].event, 'notifications_read_all')
+  assert.equal(emitted[1].payload.modifiedCount, 2)
 })
 
 test('sendEventInvitations deduplicates recipients and summarizes delivery', async () => {

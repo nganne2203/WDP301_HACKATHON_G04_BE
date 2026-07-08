@@ -19,7 +19,9 @@ const ids = {
   judge2: '777777777777777777777777',
   rubric: '888888888888888888888888',
   criterion1: '999999999999999999999991',
-  criterion2: '999999999999999999999992'
+  criterion2: '999999999999999999999992',
+  leader1: 'aaaaaaaaaaaaaaaaaaaaaa01',
+  member1: 'aaaaaaaaaaaaaaaaaaaaaa02'
 }
 
 const createModel = (items) => ({
@@ -154,7 +156,7 @@ const createScoreSheetFixture = ({ allowTeam = true } = {}) => {
   }
 }
 
-const createRankingFixture = () => {
+const createRankingFixture = ({ notificationService = null } = {}) => {
   const events = new Map()
   const rounds = new Map()
   const teams = new Map()
@@ -178,7 +180,14 @@ const createRankingFixture = () => {
     eventId: ids.event,
     tieBreakRule: '10-minute mini test'
   })
-  teams.set(ids.team1, { _id: ids.team1, name: 'Alpha', boardNumber: 1, chapterName: 'A' })
+  teams.set(ids.team1, {
+    _id: ids.team1,
+    name: 'Alpha',
+    boardNumber: 1,
+    chapterName: 'A',
+    leaderId: { _id: ids.leader1, email: 'leader@example.com', fullName: 'Leader One' },
+    memberIds: [{ _id: ids.member1, email: 'member@example.com', fullName: 'Member One' }]
+  })
   teams.set(ids.team2, { _id: ids.team2, name: 'Beta', boardNumber: 1, chapterName: 'B' })
   teams.set(ids.team3, { _id: ids.team3, name: 'Gamma', boardNumber: 2, chapterName: 'C' })
   teams.set(ids.team4, { _id: ids.team4, name: 'Delta', boardNumber: 2, chapterName: 'D' })
@@ -251,6 +260,7 @@ const createRankingFixture = () => {
       eventModel: createModel(events),
       roundModel: createModel(rounds),
       teamModel: createModel(teams),
+      notificationService,
       repositoryModel: {
         async updateMany(filter, data) {
           let modifiedCount = 0
@@ -408,6 +418,36 @@ test('result publication works and audit log is written for critical ranking act
     'FINALISTS_SELECTED',
     'RESULTS_PUBLISHED'
   ])
+})
+
+test('publishResults notifies ranked team members', async () => {
+  const notifications = []
+  const { service } = createRankingFixture({
+    notificationService: {
+      notifyUser: async (payload) => {
+        notifications.push(payload)
+        return { notification: { id: `notification-${notifications.length}` }, email: null, errors: [] }
+      }
+    }
+  })
+
+  await service.generateRankings({
+    eventId: ids.event,
+    roundId: ids.round,
+    rankingType: 'TEAM'
+  }, { id: ids.judge1 })
+
+  await service.publishResults({
+    eventId: ids.event,
+    roundId: ids.round
+  }, { id: ids.judge1 })
+
+  const teamOneNotifications = notifications.filter(item => item.metadata.teamId === ids.team1)
+  assert.equal(teamOneNotifications.length, 2)
+  assert.deepEqual(teamOneNotifications.map(item => item.user._id), [ids.leader1, ids.member1])
+  assert.equal(teamOneNotifications[0].type, 'RESULT')
+  assert.equal(teamOneNotifications[0].channels[0], 'IN_APP')
+  assert.equal(teamOneNotifications[0].metadata.targetPath, '/participant/results')
 })
 
 test('publishResults can revoke repository access for ranked teams', async () => {

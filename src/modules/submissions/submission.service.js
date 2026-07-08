@@ -10,6 +10,7 @@ import Event from '#models/event.model.js'
 import Repository from '#models/repository.model.js'
 import Round from '#models/round.model.js'
 import Team from '#models/team.model.js'
+import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 
 const SUBMISSION_FIELDS = [
   'repositoryId',
@@ -31,6 +32,7 @@ const SUBMISSION_CREATE_FIELDS = [
 
 const SUBMISSION_EDITABLE_STATUSES = new Set(['DRAFT'])
 const SUBMISSION_REVIEWABLE_STATUSES = new Set(['ACCEPTED', 'REJECTED'])
+const IN_APP_ONLY = ['IN_APP']
 
 const ensureObjectId = (id, fieldName = 'id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -93,6 +95,26 @@ const normalizeSubmission = (submission) => {
   }
 }
 
+const getId = (value) => {
+  return value?._id?.toString?.() || value?.id || value?.toString?.()
+}
+
+const uniqueUsersFromTeam = (team = {}) => {
+  const users = []
+  const seen = new Set()
+  const addUser = (user) => {
+    const userId = getId(user)
+    if (!userId || seen.has(userId)) return
+    seen.add(userId)
+    users.push(typeof user === 'object' ? user : { _id: userId })
+  }
+
+  addUser(team.leaderId)
+  for (const member of team.memberIds || []) addUser(member)
+
+  return users
+}
+
 const buildSubmissionFilter = (query = {}) => {
   const filter = {}
   if (query.eventId) filter.eventId = query.eventId
@@ -109,7 +131,8 @@ export const createSubmissionService = ({
   eventModel = Event,
   roundModel = Round,
   teamModel = Team,
-  repositoryModel = Repository
+  repositoryModel = Repository,
+  notificationService = null
 } = {}) => {
   const ensureSubmissionExists = async (id) => {
     ensureObjectId(id, 'submission id')
@@ -212,6 +235,52 @@ export const createSubmissionService = ({
       resourceId,
       metadata
     })
+  }
+
+  const findTeamForNotification = async (teamId) => {
+    if (!teamId || !teamModel?.findById) return null
+
+    const query = teamModel.findById(teamId)
+    if (query && typeof query.populate === 'function') {
+      return await query.populate([
+        { path: 'leaderId', select: 'email fullName status' },
+        { path: 'memberIds', select: 'email fullName status' }
+      ])
+    }
+
+    return await query
+  }
+
+  const notifySubmissionReviewed = async ({ submission, status }) => {
+    if (!notificationService?.notifyUser) return
+
+    const teamId = getId(submission.teamId)
+    const team = await findTeamForNotification(teamId)
+    const users = uniqueUsersFromTeam(team)
+    if (users.length === 0) return
+
+    const roundName = submission.roundId?.name || 'the round'
+    const teamName = team?.name || submission.teamId?.name || 'your team'
+    const title = status === 'ACCEPTED' ? 'Submission accepted' : 'Submission rejected'
+    const message = `${teamName}'s submission for ${roundName} was ${status.toLowerCase()}.`
+
+    await Promise.all(users.map(user => notificationService.notifyUser({
+      user,
+      title,
+      message,
+      type: 'FEEDBACK',
+      dedupeKey: `submission-reviewed:${getId(submission)}:${status}:${getId(user)}`,
+      metadata: {
+        action: 'SUBMISSION_REVIEWED',
+        eventId: getId(submission.eventId),
+        roundId: getId(submission.roundId),
+        teamId,
+        submissionId: getId(submission),
+        status,
+        targetPath: '/participant/submissions'
+      },
+      channels: IN_APP_ONLY
+    })))
   }
 
   const listSubmissions = async (query = {}) => {
@@ -424,6 +493,11 @@ export const createSubmissionService = ({
       }
     })
 
+    await notifySubmissionReviewed({
+      submission: updatedSubmission,
+      status
+    })
+
     return normalizeSubmission(updatedSubmission)
   }
 
@@ -438,6 +512,6 @@ export const createSubmissionService = ({
 }
 
 export const SUBMISSION_SERVICE = {
-  ...createSubmissionService(),
+  ...createSubmissionService({ notificationService: NOTIFICATION_SERVICE }),
   normalizeSubmission
 }

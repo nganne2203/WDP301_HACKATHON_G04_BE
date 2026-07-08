@@ -39,6 +39,7 @@ const ACTIVE_TEAM_STATUSES = [TEAM_STATUSES.WAITING_FOR_MEMBERS, TEAM_STATUSES.W
 const ACTIVE_PARTICIPANT_STATUSES = ['INVITED', 'JOINED']
 const COORDINATOR_ROLES = ['ADMIN', 'COORDINATOR', 'EVENT_COORDINATOR']
 const MENTOR_SCOPED_ROLES = ['MENTOR', 'SPEAKER']
+const IN_APP_ONLY = ['IN_APP']
 const EVENT_STATUSES = {
   OPEN_REGISTRATION: 'OPEN_REGISTRATION',
   REGISTRATION_CLOSED: 'REGISTRATION_CLOSED'
@@ -555,6 +556,84 @@ const buildMentorDiff = ({ previousMentorIds = [], nextMentorIds = [] }) => {
     addedMentorIds: normalizedNextMentorIds.filter(id => !normalizedPreviousMentorIds.includes(id)),
     removedMentorIds: normalizedPreviousMentorIds.filter(id => !normalizedNextMentorIds.includes(id))
   }
+}
+
+const getJoinedParticipantUsers = (team = {}) => {
+  const participants = Array.isArray(team.participants) ? team.participants : []
+  const users = participants
+    .filter(participant => participant?.status === 'JOINED')
+    .map(participant => participant.user)
+    .filter(Boolean)
+
+  return Array.from(new Map(users.map(user => [getId(user), user])).values())
+}
+
+const buildBoardMentorAssignmentJobs = ({ result, mentorUsers = [] } = {}) => {
+  const jobs = []
+  const addedMentorIds = uniqueIds(
+    (result?.audit?.teamDiffs || []).flatMap(diff => diff.addedMentorIds || [])
+  )
+  if (addedMentorIds.length === 0) return jobs
+
+  const addedMentors = mentorUsers.filter(mentor => addedMentorIds.includes(getId(mentor)))
+  const eventTitle = result?.eventTitle || 'the event'
+  const boardNumber = result?.boardNumber
+
+  for (const mentor of addedMentors) {
+    jobs.push({
+      kind: 'notification',
+      payload: {
+        user: mentor,
+        title: 'Mentor board assignment',
+        message: `You were assigned to board ${boardNumber} for ${eventTitle}.`,
+        type: 'SYSTEM',
+        dedupeKey: `mentor-board-assigned:${result.eventId}:${boardNumber}:${getId(mentor)}`,
+        metadata: {
+          action: 'MENTOR_BOARD_ASSIGNED',
+          eventId: result.eventId,
+          boardNumber,
+          teamIds: result.teamIds,
+          targetPath: '/mentor/teams'
+        },
+        channels: IN_APP_ONLY
+      }
+    })
+  }
+
+  for (const team of result?.teams || []) {
+    const users = getJoinedParticipantUsers(team)
+    const mentorNames = mentorUsers
+      .map(mentor => mentor.fullName || mentor.email)
+      .filter(Boolean)
+      .join(', ')
+    const message = mentorNames
+      ? `${mentorNames} ${mentorUsers.length === 1 ? 'has' : 'have'} been assigned to ${team.name}.`
+      : `Mentors have been assigned to ${team.name}.`
+
+    for (const user of users) {
+      jobs.push({
+        kind: 'notification',
+        payload: {
+          user,
+          title: 'Team mentors assigned',
+          message,
+          type: 'SYSTEM',
+          dedupeKey: `team-mentors-assigned:${result.eventId}:${boardNumber}:${team.id}:${getId(user)}`,
+          metadata: {
+            action: 'TEAM_MENTORS_ASSIGNED',
+            eventId: result.eventId,
+            boardNumber,
+            teamId: team.id,
+            mentorIds: result.mentorIds,
+            targetPath: '/participant/team'
+          },
+          channels: IN_APP_ONLY
+        }
+      })
+    }
+  }
+
+  return jobs
 }
 
 const ensureConfirmedSlotsNotFull = async ({ event, repository, session }) => {
@@ -1274,6 +1353,7 @@ export const createTeamService = ({
   chatRepository = CHAT_REPOSITORY,
   emailService = EMAIL_SERVICE,
   notificationService = NOTIFICATION_SERVICE,
+  assignmentNotificationsEnabled = false,
   logger = LOGGER
 } = {}) => {
   const listTeams = async (query = {}, actor = {}) => {
@@ -2346,7 +2426,7 @@ export const createTeamService = ({
     ensureTeamManagementPermission(actor)
     ensureObjectId(payload.eventId, 'event id')
 
-    return await runWithOptionalTransaction({
+    const result = await runWithOptionalTransaction({
       repository,
       logger,
       work: async (session) => {
@@ -2394,6 +2474,7 @@ export const createTeamService = ({
 
         return {
           eventId: getId(event),
+          eventTitle: event.title,
           boardNumber: Number(payload.boardNumber),
           mentorIds,
           updatedCount: updatedTeams.length,
@@ -2405,6 +2486,19 @@ export const createTeamService = ({
         }
       }
     })
+
+    if (assignmentNotificationsEnabled && notificationService?.notifyUser) {
+      const addedMentorIds = uniqueIds(
+        (result.audit?.teamDiffs || []).flatMap(diff => diff.addedMentorIds || [])
+      )
+      const mentorUsers = addedMentorIds.length > 0
+        ? await repository.findUsersByIds(result.mentorIds)
+        : []
+      const jobs = buildBoardMentorAssignmentJobs({ result, mentorUsers })
+      await sendJobs({ jobs, emailService, notificationService, logger })
+    }
+
+    return result
   }
 
   const getEventTeamCapacity = async (eventId, actor = {}) => {
@@ -2440,4 +2534,4 @@ export const createTeamService = ({
   }
 }
 
-export const TEAM_SERVICE = createTeamService()
+export const TEAM_SERVICE = createTeamService({ assignmentNotificationsEnabled: true })

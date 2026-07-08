@@ -4,6 +4,11 @@ const create = async (data) => {
   return await Notification.create(data)
 }
 
+const findByDedupeKey = async (dedupeKey) => {
+  if (!dedupeKey) return null
+  return await Notification.findOne({ dedupeKey })
+}
+
 const countByUser = async (userId, filter = {}) => {
   return await Notification.countDocuments({ ...filter, userId })
 }
@@ -32,6 +37,7 @@ const markAllAsRead = async (userId) => {
 
 export const NOTIFICATION_REPOSITORY = {
   create,
+  findByDedupeKey,
   countByUser,
   findByUser,
   markAsRead,
