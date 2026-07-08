@@ -22,6 +22,12 @@ router.get(
 )
 
 router.post(
+  '/rooms/:id/seen',
+  validationHandlingMiddleware(CHAT_VALIDATION.markRoomSeen),
+  CHAT_CONTROLLER.markRoomSeen
+)
+
+router.post(
   '/messages',
   validationHandlingMiddleware(CHAT_VALIDATION.sendMessage),
   CHAT_CONTROLLER.sendMessage

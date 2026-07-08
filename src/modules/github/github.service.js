@@ -6,6 +6,9 @@ import { env } from '#configs/environment.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { ENCRYPTION_UTILS } from '#utils/encryption.util.js'
 import { LOGGER } from '#utils/logger.js'
+import User from '#models/user.model.js'
+import Team from '#models/team.model.js'
+import TeamInvitation from '#models/teamInvitation.model.js'
 
 const buildEventConfigKey = (eventId) => `github.event.${eventId}.organization`
 
@@ -14,6 +17,16 @@ const GITHUB_API_VERSION = '2022-11-28'
 
 const normalizeString = (value) => {
   return typeof value === 'string' ? value.trim() : value
+}
+
+const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const ACTIVE_TEAM_STATUSES = ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED']
+
+const getInvitationEmail = (invitation = {}) => {
+  const plainInvitation = typeof invitation.toObject === 'function'
+    ? invitation.toObject({ getters: true, virtuals: false })
+    : invitation
+  return String(plainInvitation?.invitedEmail || plainInvitation?.invitedUserId?.email || '').trim().toLowerCase()
 }
 
 const normalizeConfig = (record, eventId) => {
@@ -48,7 +61,7 @@ const createGithubClient = ({ fetchImpl = globalThis.fetch } = {}) => {
     const response = await fetchImpl(`${GITHUB_API_BASE_URL}${path}`, {
       method,
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': GITHUB_API_VERSION,
         ...(body ? { 'Content-Type': 'application/json' } : {})
@@ -233,6 +246,121 @@ export const createGithubService = ({
 
   const requestGithub = async ({ method, path, token, body }) => {
     return await githubClient({ method, path, token, body })
+  }
+
+  const requestGithubWithPublicFallback = async ({ method = 'GET', path, body, context = {} }) => {
+    try {
+      return await requestGithub({
+        method,
+        path,
+        body,
+        token: env.github.token || undefined
+      })
+    } catch (error) {
+      const message = String(error?.errors?.[0] || error?.message || '').toLowerCase()
+      const canRetryWithoutToken = Boolean(env.github.token) &&
+        message.includes('401') &&
+        message.includes('bad credentials')
+
+      if (!canRetryWithoutToken) throw error
+
+      logger.warn('Configured GitHub token was rejected; retrying public GitHub request without token', context)
+      return await requestGithub({ method, path, body })
+    }
+  }
+
+  const normalizeGithubUser = (data) => ({
+    login: data?.login,
+    id: data?.id,
+    name: data?.name || null,
+    email: data?.email || null,
+    avatarUrl: data?.avatar_url || null,
+    htmlUrl: data?.html_url || null,
+    bio: data?.bio || null,
+    company: data?.company || null,
+    location: data?.location || null,
+    publicRepos: data?.public_repos ?? null,
+    followers: data?.followers ?? null
+  })
+
+  const getUserProfile = async (username) => {
+    const normalizedUsername = normalizeString(username)
+    const path = `/users/${encodeURIComponent(normalizedUsername)}`
+    const response = await requestGithubWithPublicFallback({
+      method: 'GET',
+      path,
+      context: { username: normalizedUsername }
+    })
+    const { data } = response
+
+    return normalizeGithubUser(data)
+  }
+
+  const searchUsers = async ({ query, limit = 8 } = {}) => {
+    const normalizedQuery = normalizeString(query)
+    const perPage = Math.min(Math.max(Number(limit) || 8, 1), 10)
+    const searchPath = `/search/users?q=${encodeURIComponent(normalizedQuery)}&per_page=${perPage}`
+    const { data } = await requestGithubWithPublicFallback({
+      method: 'GET',
+      path: searchPath,
+      context: { query: normalizedQuery }
+    })
+    const items = Array.isArray(data?.items) ? data.items : []
+
+    const profiles = await Promise.all(items.map(async (item) => {
+      try {
+        return await getUserProfile(item.login)
+      } catch {
+        return normalizeGithubUser(item)
+      }
+    }))
+
+    return profiles.filter(profile => profile?.login)
+  }
+
+  const checkUsernameAvailability = async ({ username, excludeSelf = false } = {}, actor = {}) => {
+    const normalizedUsername = normalizeString(username)
+    const errors = []
+
+    const user = await User.findOne({
+      githubUsername: { $regex: new RegExp(`^${escapeRegex(normalizedUsername)}$`, 'i') }
+    })
+
+    const actorId = actor.id || actor._id?.toString?.()
+    if (user && (!excludeSelf || user._id.toString() !== actorId)) {
+      errors.push(`GitHub username is already used by ${String(user.email || '').trim().toLowerCase() || 'another account'}`)
+    }
+
+    const activeTeamIds = await Team.find({
+      status: { $in: ACTIVE_TEAM_STATUSES }
+    }).distinct('_id')
+
+    const invitationFilter = {
+      teamId: { $in: activeTeamIds },
+      status: { $in: ['PENDING', 'ACCEPTED'] },
+      'metadata.invitedGithubUsername': { $regex: new RegExp(`^${escapeRegex(normalizedUsername)}$`, 'i') }
+    }
+
+    if (excludeSelf) {
+      const selfConditions = []
+      if (actorId) selfConditions.push({ invitedUserId: { $ne: actorId } })
+      if (actor.email) selfConditions.push({ invitedEmail: { $ne: String(actor.email).trim().toLowerCase() } })
+      if (selfConditions.length > 0) invitationFilter.$and = selfConditions
+    }
+
+    const invitation = activeTeamIds.length > 0
+      ? await TeamInvitation.findOne(invitationFilter).populate({ path: 'invitedUserId', select: 'email fullName status' })
+      : null
+
+    if (invitation) {
+      errors.push(`GitHub username is already used by another active invitation for ${getInvitationEmail(invitation) || 'another email'}`)
+    }
+
+    return {
+      username: normalizedUsername,
+      available: errors.length === 0,
+      errors
+    }
   }
 
   const updateInternalRepository = async ({ eventId, organizationName, repoName, updates }) => {
@@ -855,6 +983,9 @@ export const createGithubService = ({
 
   return {
     getConfig,
+    getUserProfile,
+    searchUsers,
+    checkUsernameAvailability,
     getTokenForN8nDispatch,
     requestGithub,
     saveConfig,

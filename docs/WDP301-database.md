@@ -68,7 +68,7 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 - `EVENT_COORDINATOR` and `COORDINATOR`: event, track, workshop, team view, participant approval, judging assignment, GitHub, AI review, result publishing, audit view, and user management permissions.
 - `JUDGE`: event, track, workshop, team view, scoring, and AI review view permissions.
 - `MENTOR`: event, track, workshop, team view, and AI review view permissions.
-- `USER` and `PARTICIPANT`: event, track, workshop, team create, and team view permissions.
+- `PARTICIPANT`: event, track, workshop, team create, and team view permissions.
 
 Routes must not authorize by role name. Routes authorize through permission codes.
 

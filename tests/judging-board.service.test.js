@@ -56,7 +56,7 @@ test('previewRandomizedBoards only includes eligible teams and builds board A/B 
   TeamModel.find = () => ({
     sort: async () => [
       { _id: '000000000000000000000301', name: 'Team 1', status: 'CONFIRMED', trackId: '000000000000000000000401' },
-      { _id: '000000000000000000000302', name: 'Team 2', status: 'ACTIVE', trackId: '000000000000000000000402' },
+      { _id: '000000000000000000000302', name: 'Team 2', status: 'CONFIRMED', trackId: '000000000000000000000402' },
       { _id: '000000000000000000000303', name: 'Team 3', status: 'WAITING_FOR_MEMBERS', trackId: '000000000000000000000403' }
     ]
   })
@@ -99,7 +99,7 @@ test('confirmRandomizedBoards persists boardNumber and placementSlot only after 
 
   const teamState = new Map([
     ['000000000000000000000301', { _id: '000000000000000000000301', name: 'Team 1', status: 'CONFIRMED' }],
-    ['000000000000000000000302', { _id: '000000000000000000000302', name: 'Team 2', status: 'ACTIVE' }]
+    ['000000000000000000000302', { _id: '000000000000000000000302', name: 'Team 2', status: 'CONFIRMED' }]
   ])
   const storedBoards = new Map()
   let seq = 1

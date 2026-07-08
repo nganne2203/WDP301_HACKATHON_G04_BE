@@ -33,12 +33,14 @@ const teamSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED', 'REJECTED', 'ACTIVE', 'INACTIVE', 'DISQUALIFIED'],
+      enum: ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED', 'REJECTED', 'CANCELLED'],
       default: 'WAITING_FOR_MEMBERS'
     },
     confirmedAt: { type: Date },
     rejectedAt: { type: Date },
-    rejectionReason: { type: String, trim: true }
+    rejectionReason: { type: String, trim: true },
+    cancelledAt: { type: Date },
+    cancellationReason: { type: String, trim: true }
   },
   { timestamps: true }
 )
@@ -49,14 +51,32 @@ teamSchema.pre('validate', function setNormalizedName(next) {
 })
 
 teamSchema.index({ eventId: 1, trackId: 1 })
-teamSchema.index({ eventId: 1, name: 1 }, { unique: true })
+teamSchema.index(
+  { eventId: 1, name: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: { $in: ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED'] } }
+  }
+)
 teamSchema.index(
   { eventId: 1, normalizedName: 1 },
-  { unique: true, partialFilterExpression: { normalizedName: { $type: 'string' } } }
+  {
+    unique: true,
+    partialFilterExpression: {
+      normalizedName: { $type: 'string' },
+      status: { $in: ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED'] }
+    }
+  }
 )
 teamSchema.index(
   { eventId: 1, leaderId: 1 },
-  { unique: true, partialFilterExpression: { leaderId: { $exists: true } } }
+  {
+    unique: true,
+    partialFilterExpression: {
+      leaderId: { $exists: true },
+      status: { $in: ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED'] }
+    }
+  }
 )
 teamSchema.index({ eventId: 1, status: 1 })
 teamSchema.index({ eventId: 1, chapterName: 1 })

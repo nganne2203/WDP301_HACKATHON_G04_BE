@@ -14,7 +14,7 @@ router.use(authorizationMiddleware)
 
 router.get(
   '/',
-  permissionMiddleware(PERMISSIONS.SCORE_VIEW),
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
   validationHandlingMiddleware(RANKING_VALIDATION.listRankings),
   RANKING_CONTROLLER.listRankings
 )
@@ -22,7 +22,7 @@ router.get(
 router.post(
   '/generate',
   sensitiveRateLimiter,
-  permissionMiddleware(PERMISSIONS.RESULT_PUBLISH),
+  permissionMiddleware(PERMISSIONS.RANKING_GENERATE),
   validationHandlingMiddleware(RANKING_VALIDATION.generateRankings),
   RANKING_CONTROLLER.generateRankings
 )

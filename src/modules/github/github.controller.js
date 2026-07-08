@@ -16,6 +16,45 @@ const getConfig = async (req, res, next) => {
   }
 }
 
+const getUserProfile = async (req, res, next) => {
+  try {
+    const profile = await GITHUB_SERVICE.getUserProfile(req.params.username)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get GitHub user successfully',
+      data: profile
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const searchUsers = async (req, res, next) => {
+  try {
+    const users = await GITHUB_SERVICE.searchUsers(req.validated.query)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Search GitHub users successfully',
+      data: users
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const checkUsernameAvailability = async (req, res, next) => {
+  try {
+    const availability = await GITHUB_SERVICE.checkUsernameAvailability(req.validated.query, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Check GitHub username availability successfully',
+      data: availability
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const saveConfig = async (req, res, next) => {
   try {
     const config = await GITHUB_SERVICE.saveConfig(req.body, req.user)
@@ -173,6 +212,9 @@ const bulkRevokeAccess = async (req, res, next) => {
 
 export const GITHUB_CONTROLLER = {
   getConfig,
+  getUserProfile,
+  searchUsers,
+  checkUsernameAvailability,
   saveConfig,
   testConnection,
   createRepository,

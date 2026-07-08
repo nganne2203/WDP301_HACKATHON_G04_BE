@@ -3,7 +3,7 @@ export const REGISTRATION_SOURCES = {
   GOOGLE: 'GOOGLE'
 }
 
-export const ACCESSIBLE_USER_STATUSES = ['APPROVED', 'ACTIVE']
+export const ACCESSIBLE_USER_STATUSES = ['ACTIVE']
 
 export const getRegistrationSource = (user = {}) => {
   if (Object.values(REGISTRATION_SOURCES).includes(user.registrationSource)) {

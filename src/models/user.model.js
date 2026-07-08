@@ -47,7 +47,7 @@ const userSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'APPROVED', 'ACTIVE', 'REJECTED', 'SUSPENDED'],
+      enum: ['PENDING', 'ACTIVE', 'REJECTED', 'SUSPENDED'],
       default: 'PENDING'
     },
     roles: [{ type: Schema.Types.ObjectId, ref: 'Role' }],
@@ -63,6 +63,14 @@ userSchema.index({ googleId: 1 }, { unique: true, sparse: true })
 userSchema.index({ 'googleAuth.googleId': 1 }, { unique: true, sparse: true })
 userSchema.index({ 'googleCalendar.connected': 1 })
 userSchema.index({ roles: 1 })
+userSchema.index(
+  { githubUsername: 1 },
+  {
+    unique: true,
+    sparse: true,
+    collation: { locale: 'en', strength: 2 }
+  }
+)
 
 const User = mongoose.model('User', userSchema)
 

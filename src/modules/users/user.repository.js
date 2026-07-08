@@ -1,5 +1,7 @@
 import User from '#models/user.model.js'
 import Role from '#models/role.model.js'
+import Participant from '#models/participant.model.js'
+import '#models/event.model.js'
 import '#models/permission.model.js'
 
 const populateRoles = [
@@ -37,6 +39,15 @@ const findByEmail = async (email) => {
   return await User.findOne({ email }).populate(populateRoles)
 }
 
+const findByGithubUsername = async (githubUsername) => {
+  const username = String(githubUsername || '').trim()
+  if (!username) return null
+
+  return await User.findOne({
+    githubUsername: { $regex: new RegExp(`^${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+  }).populate(populateRoles)
+}
+
 const findRoleByName = async (name) => {
   return await Role.findOne({ name: String(name).toUpperCase() })
 }
@@ -57,6 +68,20 @@ const updateById = async (id, data) => {
   }).populate(populateRoles)
 }
 
+const findStartedJoinedParticipantByUserId = async (userId, now = new Date()) => {
+  const participants = await Participant.find({
+    userId,
+    status: 'JOINED'
+  })
+    .populate({
+      path: 'eventId',
+      match: { startDate: { $lte: now } },
+      select: 'title startDate status'
+    })
+
+  return participants.find((participant) => participant.eventId) || null
+}
+
 const deleteById = async (id) => {
   return await User.findByIdAndDelete(id)
 }
@@ -67,9 +92,11 @@ export const USER_REPOSITORY = {
   findAll,
   findById,
   findByEmail,
+  findByGithubUsername,
   findRoleByName,
   findRolesByNames,
   findRolesByIds,
+  findStartedJoinedParticipantByUserId,
   updateById,
   deleteById
 }
