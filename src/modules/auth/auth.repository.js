@@ -1,5 +1,6 @@
 import User from '#models/user.model.js'
 import Role from '#models/role.model.js'
+import PasswordResetToken from '#models/passwordResetToken.model.js'
 import '#models/permission.model.js'
 
 const populateRoles = [
@@ -45,11 +46,42 @@ const updateUserById = async (id, data) => {
   }).populate(populateRoles)
 }
 
+const createPasswordResetToken = async (data) => {
+  return await PasswordResetToken.create(data)
+}
+
+const findPasswordResetTokenByHash = async (tokenHash) => {
+  return await PasswordResetToken.findOne({ tokenHash })
+}
+
+const markPasswordResetTokenUsed = async (id) => {
+  return await PasswordResetToken.findByIdAndUpdate(
+    id,
+    { usedAt: new Date() },
+    { new: true, runValidators: true }
+  )
+}
+
+const revokeActivePasswordResetTokens = async (userId) => {
+  return await PasswordResetToken.updateMany(
+    {
+      userId,
+      usedAt: { $exists: false },
+      expiresAt: { $gt: new Date() }
+    },
+    { usedAt: new Date() }
+  )
+}
+
 export const AUTH_REPOSITORY = {
+  createPasswordResetToken,
   createUser,
   findUserByEmail,
   findUserById,
   findUserByGoogleId,
+  findPasswordResetTokenByHash,
   findRoleByName,
+  markPasswordResetTokenUsed,
+  revokeActivePasswordResetTokens,
   updateUserById
 }

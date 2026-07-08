@@ -62,7 +62,7 @@ const buildRepository = (overrides = {}) => {
       eventId: EVENT_ID,
       userId: USER_ID,
       teamId: TEAM_ID,
-      status: 'ACTIVE'
+      status: 'JOINED'
     }),
     findTeamById: async () => ({
       _id: TEAM_ID,

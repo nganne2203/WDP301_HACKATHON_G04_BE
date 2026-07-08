@@ -12,6 +12,8 @@ const roundSchema = new Schema(
       enum: ['PRELIMINARY', 'FINAL'],
       default: 'PRELIMINARY'
     },
+    problemStatement: { type: String },
+    examDriveUrl: { type: String, trim: true },
     assignedTeamIds: [{ type: Schema.Types.ObjectId, ref: 'Team' }],
     promotedTeamIds: [{ type: Schema.Types.ObjectId, ref: 'Team' }],
     maxPromotedTeams: { type: Number },

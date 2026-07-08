@@ -30,6 +30,14 @@ const findUserById = async (id) => {
   return await User.findById(id).select('email fullName')
 }
 
+const findUsersByIds = async (ids = []) => {
+  return await User.find({ _id: { $in: ids } }).select('email fullName')
+}
+
+const findMediaSummariesByIds = async (ids = []) => {
+  return await Media.find({ _id: { $in: ids } }).select('title originalFileName mediaType')
+}
+
 const findConfigsByKeys = async (keys = []) => {
   return await SystemConfiguration.find({ key: { $in: keys } })
 }
@@ -111,6 +119,8 @@ export const MEDIA_REPOSITORY = {
   findParticipantByEventAndUser,
   findTeamById,
   findUserById,
+  findUsersByIds,
+  findMediaSummariesByIds,
   findConfigsByKeys,
   upsertConfig,
   createMedia,

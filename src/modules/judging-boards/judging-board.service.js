@@ -201,7 +201,7 @@ const ensureBoardCapacity = ({ teamIds = [], maxTeams }) => {
   }
 }
 
-const ELIGIBLE_TEAM_STATUSES = new Set(['CONFIRMED', 'ACTIVE'])
+const ELIGIBLE_TEAM_STATUSES = new Set(['CONFIRMED'])
 
 const buildBoardLabel = (boardNumber) => {
   let value = Number(boardNumber || 0)

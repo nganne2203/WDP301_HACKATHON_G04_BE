@@ -27,7 +27,7 @@ const router = Router()
  *           example: VALIDATION_ERROR
  *         message:
  *           type: string
- *           example: Có lỗi xác thực trong yêu cầu.
+ *           example: The request contains validation errors.
  *         errors:
  *           type: array
  *           items:
@@ -54,7 +54,7 @@ const router = Router()
  *           example: 664c3f6a3a6d4a5f3f93b002
  *         name:
  *           type: string
- *           example: USER
+ *           example: PARTICIPANT
  *         description:
  *           type: string
  *           example: Basic authenticated user
@@ -85,8 +85,8 @@ const router = Router()
  *           example: Participant User
  *         status:
  *           type: string
- *           enum: [PENDING, APPROVED, ACTIVE, REJECTED, SUSPENDED]
- *           example: APPROVED
+ *           enum: [PENDING, ACTIVE, REJECTED, SUSPENDED]
+ *           example: ACTIVE
  *         roles:
  *           type: array
  *           items:
@@ -312,7 +312,7 @@ router.post(
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  *       403:
- *         description: Account is not approved
+ *         description: Account is not active
  *         content:
  *           application/json:
  *             schema:
@@ -385,6 +385,20 @@ router.post(
   authRateLimiter,
   validationHandlingMiddleware(AUTH_VALIDATION.refreshToken),
   AUTH_CONTROLLER.refreshToken
+)
+
+router.post(
+  '/forgot-password',
+  authRateLimiter,
+  validationHandlingMiddleware(AUTH_VALIDATION.requestPasswordReset),
+  AUTH_CONTROLLER.requestPasswordReset
+)
+
+router.post(
+  '/reset-password',
+  authRateLimiter,
+  validationHandlingMiddleware(AUTH_VALIDATION.resetPassword),
+  AUTH_CONTROLLER.resetPassword
 )
 
 /**

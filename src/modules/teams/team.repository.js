@@ -20,6 +20,8 @@ const populateRoles = [
   }
 ]
 
+const ACTIVE_TEAM_STATUSES = ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED']
+
 const teamPopulate = [
   { path: 'eventId', select: 'title status registrationStart registrationEnd registrationClosedAt registrationCloseReason minTeamMembers maxTeamMembers maxTeams totalFinalistSlots competitionConfig' },
   { path: 'trackId', select: 'code name type maxTeams status' },
@@ -96,6 +98,7 @@ const findTeamByEventAndName = async ({ eventId, name }, { session } = {}) => {
   return await withSession(
     Team.findOne({
       eventId,
+      status: { $in: ACTIVE_TEAM_STATUSES },
       $or: [
         { normalizedName },
         { name: new RegExp(`^${escapeRegExp(trimmedName)}$`, 'i') }
@@ -106,13 +109,17 @@ const findTeamByEventAndName = async ({ eventId, name }, { session } = {}) => {
 }
 
 const findTeamByLeaderAndEvent = async ({ eventId, leaderId }, { session } = {}) => {
-  return await withSession(Team.findOne({ eventId, leaderId }).populate(teamPopulate), session)
+  return await withSession(
+    Team.findOne({ eventId, leaderId, status: { $in: ACTIVE_TEAM_STATUSES } }).populate(teamPopulate),
+    session
+  )
 }
 
 const findTeamForUserInEvent = async ({ eventId, userId }, { session } = {}) => {
   const team = await withSession(
     Team.findOne({
       eventId,
+      status: { $in: ACTIVE_TEAM_STATUSES },
       $or: [
         { leaderId: userId },
         { memberIds: userId }
@@ -127,7 +134,7 @@ const findTeamForUserInEvent = async ({ eventId, userId }, { session } = {}) => 
     Participant.findOne({
       eventId,
       userId,
-      status: { $in: ['INVITED', 'ACTIVE'] }
+      status: { $in: ['INVITED', 'JOINED'] }
     }),
     session
   )
@@ -157,7 +164,7 @@ const updateTeamById = async (id, data, { session } = {}) => {
 
 const findParticipantsByTeam = async (teamId, { session } = {}) => {
   return await withSession(
-    Participant.find({ teamId, status: { $in: ['INVITED', 'ACTIVE'] } })
+    Participant.find({ teamId, status: { $in: ['INVITED', 'JOINED'] } })
       .populate({ path: 'userId', select: 'email fullName status roles', populate: populateRoles[0] })
       .sort({ teamRole: -1, createdAt: 1 }),
     session
@@ -183,8 +190,47 @@ const findUserById = async (id, { session } = {}) => {
   return await withSession(User.findById(id).populate(populateRoles), session)
 }
 
+const findUsersByIds = async (ids = [], { session } = {}) => {
+  if (!Array.isArray(ids) || ids.length === 0) return []
+
+  return await withSession(
+    User.find({ _id: { $in: ids } })
+      .populate(populateRoles),
+    session
+  )
+}
+
+const updateParticipantByEventAndUser = async ({ eventId, userId, data }, { session } = {}) => {
+  return await withSession(
+    Participant.findOneAndUpdate(
+      { eventId, userId },
+      { $set: data },
+      { new: true, runValidators: true }
+    ),
+    session
+  )
+}
+
+const updateParticipants = async (filter, data, { session } = {}) => {
+  return await withSession(Participant.updateMany(filter, data), session)
+}
+
 const findUserByEmail = async (email, { session } = {}) => {
   return await withSession(User.findOne({ email: String(email).trim().toLowerCase() }).populate(populateRoles), session)
+}
+
+const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const findUserByGithubUsername = async (githubUsername, { session } = {}) => {
+  const username = String(githubUsername || '').trim()
+  if (!username) return null
+
+  return await withSession(
+    User.findOne({
+      githubUsername: { $regex: new RegExp(`^${escapeRegex(username)}$`, 'i') }
+    }).populate(populateRoles),
+    session
+  )
 }
 
 const createUser = async (data, { session } = {}) => {
@@ -237,12 +283,23 @@ const findInvitationsByTeam = async (teamId, { session } = {}) => {
   )
 }
 
+const findActiveTeamIds = async ({ eventId } = {}, { session } = {}) => {
+  const filter = { status: { $in: ACTIVE_TEAM_STATUSES } }
+  if (eventId) filter.eventId = eventId
+
+  return await withSession(Team.find(filter).distinct('_id'), session)
+}
+
 const findBlockingInvitation = async ({ eventId, email, userId, excludeInvitationId }, { session } = {}) => {
   const or = [{ invitedEmail: String(email).trim().toLowerCase() }]
   if (userId) or.push({ invitedUserId: userId })
 
+  const activeTeamIds = await findActiveTeamIds({ eventId }, { session })
+  if (activeTeamIds.length === 0) return null
+
   const filter = {
     eventId,
+    teamId: { $in: activeTeamIds },
     status: { $in: ['PENDING', 'ACCEPTED'] },
     $or: or
   }
@@ -252,6 +309,41 @@ const findBlockingInvitation = async ({ eventId, email, userId, excludeInvitatio
   }
 
   return await withSession(TeamInvitation.findOne(filter), session)
+}
+
+const findActiveInvitationByGithubUsername = async ({ githubUsername, email, userId, excludeInvitationId }, { session } = {}) => {
+  const username = String(githubUsername || '').trim()
+  if (!username) return null
+
+  const activeTeamIds = await findActiveTeamIds({}, { session })
+  if (activeTeamIds.length === 0) return null
+
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  const filter = {
+    teamId: { $in: activeTeamIds },
+    status: { $in: ['PENDING', 'ACCEPTED'] },
+    'metadata.invitedGithubUsername': { $regex: new RegExp(`^${escapeRegex(username)}$`, 'i') }
+  }
+
+  const sameInviteConditions = []
+  if (normalizedEmail) {
+    sameInviteConditions.push({ invitedEmail: normalizedEmail })
+  }
+  if (userId) {
+    sameInviteConditions.push({ invitedUserId: userId })
+  }
+  if (sameInviteConditions.length > 0) {
+    filter.$nor = sameInviteConditions
+  }
+
+  if (excludeInvitationId) {
+    filter._id = { $ne: excludeInvitationId }
+  }
+
+  return await withSession(
+    TeamInvitation.findOne(filter).populate({ path: 'invitedUserId', select: 'email fullName status' }),
+    session
+  )
 }
 
 const updateInvitationById = async (id, data, { session } = {}) => {
@@ -285,8 +377,12 @@ export const TEAM_REPOSITORY = {
   findParticipantsByTeam,
   findParticipantByEventAndUser,
   upsertParticipant,
+  updateParticipantByEventAndUser,
+  updateParticipants,
   findUserById,
+  findUsersByIds,
   findUserByEmail,
+  findUserByGithubUsername,
   createUser,
   updateUserById,
   findRoleByName,
@@ -295,6 +391,7 @@ export const TEAM_REPOSITORY = {
   findInvitationById,
   findInvitationsByTeam,
   findBlockingInvitation,
+  findActiveInvitationByGithubUsername,
   updateInvitationById,
   updateInvitations
 }

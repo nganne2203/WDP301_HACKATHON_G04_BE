@@ -7,7 +7,7 @@ const escapeHtml = (value = '') => {
     .replace(/'/g, '&#39;')
 }
 
-const buildText = ({ greeting, heading, message, actionLabel, actionUrl }) => {
+const buildText = ({ greeting, heading, message, actionLabel, actionUrl, bodyLines = [], footerNote }) => {
   const lines = [
     greeting,
     '',
@@ -15,33 +15,97 @@ const buildText = ({ greeting, heading, message, actionLabel, actionUrl }) => {
     message
   ]
 
+  if (bodyLines.length > 0) {
+    lines.push('', ...bodyLines)
+  }
+
   if (actionUrl) {
     lines.push('', `${actionLabel}: ${actionUrl}`)
   }
 
-  lines.push('', 'SEAL Hackathon Platform')
+  lines.push('', footerNote || 'SEAL Hackathon Platform')
   return lines.join('\n')
 }
 
-const buildHtml = ({ greeting, heading, message, actionLabel, actionUrl }) => {
-  const action = actionUrl
-    ? `
-      <p style="margin:24px 0 0;">
-        <a href="${escapeHtml(actionUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:6px;font-weight:600;">
-          ${escapeHtml(actionLabel)}
-        </a>
-      </p>`
-    : ''
+const brandShell = ({
+  eyebrow = 'SEAL Hackathon Platform',
+  greeting,
+  heading,
+  message,
+  body = '',
+  action = '',
+  footerNote = 'SEAL Hackathon Platform'
+}) => `
+  <div style="margin:0;padding:32px 16px;background:#f4f7fb;">
+    <div style="max-width:640px;margin:0 auto;font-family:Arial,sans-serif;color:#111827;">
+      <div style="background:linear-gradient(135deg,#0f172a 0%,#1d4ed8 100%);border-radius:20px 20px 0 0;padding:24px 28px;color:#ffffff;">
+        <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;font-weight:700;">${escapeHtml(eyebrow)}</div>
+        <div style="margin-top:14px;font-size:14px;opacity:0.9;">${escapeHtml(greeting)}</div>
+        <h1 style="margin:12px 0 0;font-size:28px;line-height:1.2;font-weight:700;color:#ffffff;">${escapeHtml(heading)}</h1>
+      </div>
+      <div style="background:#ffffff;border:1px solid #dbe4f0;border-top:none;border-radius:0 0 20px 20px;padding:28px;box-shadow:0 20px 45px rgba(15,23,42,0.08);">
+        <p style="margin:0;font-size:15px;line-height:1.75;color:#334155;">${escapeHtml(message)}</p>
+        ${body}
+        ${action}
+        <div style="margin-top:28px;padding-top:18px;border-top:1px solid #e5e7eb;font-size:12px;line-height:1.6;color:#64748b;">
+          ${escapeHtml(footerNote)}
+        </div>
+      </div>
+    </div>
+  </div>
+`
+
+const buildInfoRows = (rows = []) => {
+  if (!rows.length) return ''
+
+  const items = rows.map(({ label, value, emphasize = false }) => `
+    <tr>
+      <td style="padding:12px 0;color:#64748b;font-size:13px;vertical-align:top;width:140px;">${escapeHtml(label)}</td>
+      <td style="padding:12px 0;color:#0f172a;font-size:14px;font-weight:${emphasize ? '700' : '600'};word-break:break-word;">${escapeHtml(value)}</td>
+    </tr>
+  `).join('')
 
   return `
-    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827;max-width:560px;margin:0 auto;padding:24px;">
-      <p>${escapeHtml(greeting)}</p>
-      <h2 style="font-size:20px;margin:16px 0 8px;">${escapeHtml(heading)}</h2>
-      <p>${escapeHtml(message)}</p>
-      ${action}
-      <p style="margin-top:28px;color:#6b7280;font-size:13px;">SEAL Hackathon Platform</p>
+    <div style="margin-top:22px;padding:18px 20px;border:1px solid #dbe4f0;border-radius:16px;background:#f8fbff;">
+      <table role="presentation" style="width:100%;border-collapse:collapse;">
+        ${items}
+      </table>
     </div>
   `
+}
+
+const buildActionButton = ({ label, url, tone = 'primary' }) => {
+  if (!url) return ''
+
+  const palette = tone === 'secondary'
+    ? {
+      background: '#e2e8f0',
+      color: '#0f172a'
+    }
+    : {
+      background: '#2563eb',
+      color: '#ffffff'
+    }
+
+  return `<a href="${escapeHtml(url)}" style="display:inline-block;background:${palette.background};color:${palette.color};text-decoration:none;padding:13px 22px;border-radius:12px;font-weight:700;font-size:14px;">${escapeHtml(label)}</a>`
+}
+
+const buildHtml = ({ greeting, heading, message, actionLabel, actionUrl, body, footerNote }) => {
+  const action = actionUrl
+    ? `
+      <div style="margin-top:24px;">
+        ${buildActionButton({ label: actionLabel, url: actionUrl })}
+      </div>`
+    : ''
+
+  return brandShell({
+    greeting,
+    heading,
+    message,
+    body,
+    action,
+    footerNote
+  })
 }
 
 const buildTwoActionHtml = ({
@@ -54,28 +118,21 @@ const buildTwoActionHtml = ({
   secondaryUrl
 }) => {
   const primaryAction = primaryUrl
-    ? `<a href="${escapeHtml(primaryUrl)}" style="display:inline-block;background:#16a34a;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:6px;font-weight:600;margin-right:8px;">
-          ${escapeHtml(primaryLabel)}
-        </a>`
+    ? buildActionButton({ label: primaryLabel, url: primaryUrl })
     : ''
   const secondaryAction = secondaryUrl
-    ? `<a href="${escapeHtml(secondaryUrl)}" style="display:inline-block;background:#f3f4f6;color:#111827;text-decoration:none;padding:12px 18px;border-radius:6px;font-weight:600;">
-          ${escapeHtml(secondaryLabel)}
-        </a>`
+    ? buildActionButton({ label: secondaryLabel, url: secondaryUrl, tone: 'secondary' })
     : ''
   const actions = primaryAction || secondaryAction
-    ? `<p style="margin:24px 0 0;">${primaryAction}${secondaryAction}</p>`
+    ? `<div style="margin-top:24px;">${primaryAction}${secondaryAction ? ` <span style="display:inline-block;width:8px;"></span>${secondaryAction}` : ''}</div>`
     : ''
 
-  return `
-    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827;max-width:560px;margin:0 auto;padding:24px;">
-      <p>${escapeHtml(greeting)}</p>
-      <h2 style="font-size:20px;margin:16px 0 8px;">${escapeHtml(heading)}</h2>
-      <p>${escapeHtml(message)}</p>
-      ${actions}
-      <p style="margin-top:28px;color:#6b7280;font-size:13px;">SEAL Hackathon Platform</p>
-    </div>
-  `
+  return brandShell({
+    greeting,
+    heading,
+    message,
+    action: actions
+  })
 }
 
 const buildTemplate = ({
@@ -84,15 +141,18 @@ const buildTemplate = ({
   heading,
   message,
   actionLabel,
-  actionUrl
+  actionUrl,
+  body,
+  footerNote,
+  bodyLines
 }) => {
   const safeFullName = fullName || 'there'
   const greeting = `Hi ${safeFullName},`
 
   return {
     subject,
-    text: buildText({ greeting, heading, message, actionLabel, actionUrl }),
-    html: buildHtml({ greeting, heading, message, actionLabel, actionUrl })
+    text: buildText({ greeting, heading, message, actionLabel, actionUrl, bodyLines, footerNote }),
+    html: buildHtml({ greeting, heading, message, actionLabel, actionUrl, body, footerNote })
   }
 }
 
@@ -171,10 +231,34 @@ const teamInvitation = ({
 const temporaryAccount = ({ fullName, email, temporaryPassword, loginUrl }) => buildTemplate({
   subject: 'Your SEAL Hackathon temporary account',
   fullName,
-  heading: 'Temporary account created',
-  message: `An approved account was created for ${email}. Sign in with the temporary password "${temporaryPassword}" and change your password immediately after login.`,
-  actionLabel: 'Sign in',
-  actionUrl: loginUrl
+  heading: 'Your account is ready',
+  message: 'An approved account has been prepared for you. Use the credentials below to sign in, then change your password right away on the first login.',
+  actionLabel: 'Open sign in',
+  actionUrl: loginUrl,
+  bodyLines: [
+    `Email: ${email}`,
+    `Temporary password: ${temporaryPassword}`,
+    'For security, this password is temporary. Please change it immediately after you enter the platform.'
+  ],
+  body: `
+    ${buildInfoRows([
+      { label: 'Email', value: email },
+      { label: 'Temporary password', value: temporaryPassword, emphasize: true }
+    ])}
+    <div style="margin-top:18px;padding:16px 18px;border-radius:14px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:13px;line-height:1.7;">
+      For security, this password is temporary. Please change it immediately after you enter the platform.
+    </div>
+  `,
+  footerNote: 'If you did not expect this account, please contact the organizing team.'
+})
+
+const passwordReset = ({ fullName, resetUrl, expiresMinutes }) => buildTemplate({
+  subject: 'Reset your SEAL Hackathon password',
+  fullName,
+  heading: 'Reset your password',
+  message: `We received a request to reset your password. This link expires in ${expiresMinutes || 30} minutes. If you did not request this, you can ignore this email.`,
+  actionLabel: 'Reset password',
+  actionUrl: resetUrl
 })
 
 const teamConfirmationSuccess = ({ fullName, eventTitle, teamName }) => buildTemplate({
@@ -207,6 +291,7 @@ export const EMAIL_TEMPLATE_KEYS = {
   TEAM_CONFIRMATION_SUCCESS: 'TEAM_CONFIRMATION_SUCCESS',
   TEAM_REJECTED: 'TEAM_REJECTED',
   TEAM_MEMBER_DECLINED: 'TEAM_MEMBER_DECLINED',
+  PASSWORD_RESET: 'PASSWORD_RESET',
   NOTIFICATION: 'NOTIFICATION'
 }
 
@@ -219,6 +304,7 @@ const TEMPLATES = {
   [EMAIL_TEMPLATE_KEYS.TEAM_CONFIRMATION_SUCCESS]: teamConfirmationSuccess,
   [EMAIL_TEMPLATE_KEYS.TEAM_REJECTED]: teamRejected,
   [EMAIL_TEMPLATE_KEYS.TEAM_MEMBER_DECLINED]: teamMemberDeclined,
+  [EMAIL_TEMPLATE_KEYS.PASSWORD_RESET]: passwordReset,
   [EMAIL_TEMPLATE_KEYS.NOTIFICATION]: notification
 }
 
