@@ -206,7 +206,7 @@ test('createTeam sends only invitation email for unknown invitees', async () => 
     _id: 'event-1',
     title: 'SEAL Hackathon',
     status: 'OPEN_REGISTRATION',
-    minTeamMembers: 3,
+    minTeamMembers: 2,
     maxTeamMembers: 5,
     maxTeams: 30
   }
@@ -297,7 +297,7 @@ test('acceptInvitation creates account and sends temporary account email for unk
     _id: 'event-1',
     title: 'SEAL Hackathon',
     status: 'OPEN_REGISTRATION',
-    minTeamMembers: 3,
+    minTeamMembers: 2,
     maxTeamMembers: 5,
     maxTeams: 30
   }
@@ -346,6 +346,7 @@ test('acceptInvitation creates account and sends temporary account email for unk
     },
     findParticipantByEventAndUser: async () => null,
     findBlockingInvitation: async () => null,
+    findTracksByEvent: async () => [],
     upsertParticipant: async () => ({}),
     updateTeamById: async (id, data) => {
       if (data.$addToSet?.memberIds) {
@@ -407,6 +408,10 @@ test('acceptInvitation creates account and sends temporary account email for unk
   assert.equal(createdUsers[0].status, 'ACTIVE')
   assert.equal(createdUsers[0].mustChangePassword, true)
   assert.equal(invitation.invitedUserId, 'member-1')
+  assert.equal(team.status, 'CONFIRMED')
+  assert.equal(team.trackId, null)
+  assert.equal(team.boardNumber, null)
+  assert.equal(team.placementSlot, null)
   assert.equal(sentEmails.length, 1)
   assert.equal(sentEmails[0].template, EMAIL_TEMPLATE_KEYS.TEMPORARY_ACCOUNT)
   assert.equal(sentEmails[0].to, 'member@example.com')

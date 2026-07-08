@@ -791,7 +791,15 @@ const assignTeamPlacement = async ({
   const eventId = getId(event)
   const tracks = await repository.findTracksByEvent(eventId, { session })
   if (tracks.length === 0) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['No tracks are configured for this event'])
+    return await repository.updateTeamById(getId(team), {
+      trackId: null,
+      boardNumber: null,
+      placementSlot: null,
+      waitlistPosition: null,
+      trackAssignmentMethod: null,
+      trackAssignedAt: null,
+      status: team.status === TEAM_STATUSES.WAITLISTED ? TEAM_STATUSES.CONFIRMED : team.status
+    }, { session })
   }
 
   const boardNumberByTrackId = buildBoardInfoByTrack(tracks)
