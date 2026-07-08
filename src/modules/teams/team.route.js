@@ -109,6 +109,13 @@ router.post(
   TEAM_CONTROLLER.inviteMembers
 )
 
+router.post(
+  '/:id/leave',
+  permissionMiddleware(PERMISSIONS.TEAM_VIEW),
+  validationHandlingMiddleware(TEAM_VALIDATION.leaveTeam),
+  TEAM_CONTROLLER.leaveTeam
+)
+
 router.patch(
   '/:teamId/invitations/:invitationId/replace',
   permissionMiddleware(PERMISSIONS.TEAM_VIEW),

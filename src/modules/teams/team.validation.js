@@ -3,7 +3,7 @@ import Joi from 'joi'
 const objectId = Joi.string().hex().length(24)
 const email = Joi.string().email().trim().lowercase()
 const token = Joi.string().trim().min(32).max(256)
-const teamStatus = Joi.string().trim().uppercase().valid('WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED', 'REJECTED')
+const teamStatus = Joi.string().trim().uppercase().valid('WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED', 'REJECTED', 'CANCELLED')
 const teamAdminStatus = Joi.string().trim().uppercase().valid('CONFIRMED', 'REJECTED')
 const trackAssignmentMethod = Joi.string().trim().uppercase().valid('DRAW', 'MANUAL', 'SYSTEM')
 const githubUsername = Joi.string().trim().min(1).max(39).pattern(/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/)
@@ -99,6 +99,10 @@ const getTeamById = {
   params: idParam
 }
 
+const leaveTeam = {
+  params: idParam
+}
+
 const updateTeamStatus = {
   params: idParam,
   body: Joi.object({
@@ -155,6 +159,7 @@ export const TEAM_VALIDATION = {
   replaceInvitation,
   cancelInvitation,
   getTeamById,
+  leaveTeam,
   updateTeamStatus,
   updateTeamPlacement,
   updateTeamMentors,

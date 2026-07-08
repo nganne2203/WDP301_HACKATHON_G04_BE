@@ -5,7 +5,7 @@ import { USER_SERVICE } from '../src/modules/users/user.service.js'
 import { USER_REPOSITORY } from '../src/modules/users/user.repository.js'
 import { EMAIL_SERVICE } from '../src/modules/notifications/email.service.js'
 
-test('admin-created approved accounts require a password change and trigger a temporary account email', async (context) => {
+test('admin-created active accounts require a password change and trigger a temporary account email', async (context) => {
   const actor = {
     id: 'admin-1',
     permissions: ['USER_ROLE_ASSIGN', 'USER_CREATE', 'USER_ASSIGN_ROLE']
@@ -15,7 +15,7 @@ test('admin-created approved accounts require a password change and trigger a te
     password: 'Password123!',
     fullName: 'Mentor User',
     roles: ['MENTOR'],
-    status: 'APPROVED'
+    status: 'ACTIVE'
   }
 
   let createdPayload = null
@@ -36,7 +36,7 @@ test('admin-created approved accounts require a password change and trigger a te
     authProvider: 'LOCAL',
     registrationSource: 'FORM',
     fullName: payload.fullName,
-    status: 'APPROVED',
+    status: 'ACTIVE',
     mustChangePassword: true,
     roles: [{
       _id: 'role-1',
@@ -54,7 +54,7 @@ test('admin-created approved accounts require a password change and trigger a te
 
   const result = await USER_SERVICE.createUser(payload, actor)
 
-  assert.equal(createdPayload.status, 'APPROVED')
+  assert.equal(createdPayload.status, 'ACTIVE')
   assert.equal(createdPayload.mustChangePassword, true)
   assert.equal(emailPayload?.to, payload.email)
   assert.equal(emailPayload?.template, 'TEMPORARY_ACCOUNT')

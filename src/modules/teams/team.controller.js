@@ -154,6 +154,19 @@ const cancelInvitation = async (req, res, next) => {
   }
 }
 
+const leaveTeam = async (req, res, next) => {
+  try {
+    const team = await TEAM_SERVICE.leaveTeam(req.params.id, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Leave team successfully',
+      data: team
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const updateTeamStatus = async (req, res, next) => {
   try {
     const team = await TEAM_SERVICE.updateTeamStatus(req.params.id, req.body, req.user)
@@ -274,6 +287,7 @@ export const TEAM_CONTROLLER = {
   declineInvitation,
   replaceInvitation,
   cancelInvitation,
+  leaveTeam,
   updateTeamStatus,
   updateTeamPlacement,
   updateTeamMentors,

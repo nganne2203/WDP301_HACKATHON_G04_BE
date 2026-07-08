@@ -7,6 +7,7 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { ENCRYPTION_UTILS } from '#utils/encryption.util.js'
 import { LOGGER } from '#utils/logger.js'
 import User from '#models/user.model.js'
+import Team from '#models/team.model.js'
 import TeamInvitation from '#models/teamInvitation.model.js'
 
 const buildEventConfigKey = (eventId) => `github.event.${eventId}.organization`
@@ -19,6 +20,14 @@ const normalizeString = (value) => {
 }
 
 const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const ACTIVE_TEAM_STATUSES = ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED']
+
+const getInvitationEmail = (invitation = {}) => {
+  const plainInvitation = typeof invitation.toObject === 'function'
+    ? invitation.toObject({ getters: true, virtuals: false })
+    : invitation
+  return String(plainInvitation?.invitedEmail || plainInvitation?.invitedUserId?.email || '').trim().toLowerCase()
+}
 
 const normalizeConfig = (record, eventId) => {
   const value = record?.value || {}
@@ -319,10 +328,15 @@ export const createGithubService = ({
 
     const actorId = actor.id || actor._id?.toString?.()
     if (user && (!excludeSelf || user._id.toString() !== actorId)) {
-      errors.push('GitHub username is already used by another account')
+      errors.push(`GitHub username is already used by ${String(user.email || '').trim().toLowerCase() || 'another account'}`)
     }
 
+    const activeTeamIds = await Team.find({
+      status: { $in: ACTIVE_TEAM_STATUSES }
+    }).distinct('_id')
+
     const invitationFilter = {
+      teamId: { $in: activeTeamIds },
       status: { $in: ['PENDING', 'ACCEPTED'] },
       'metadata.invitedGithubUsername': { $regex: new RegExp(`^${escapeRegex(normalizedUsername)}$`, 'i') }
     }
@@ -334,10 +348,12 @@ export const createGithubService = ({
       if (selfConditions.length > 0) invitationFilter.$and = selfConditions
     }
 
-    const invitation = await TeamInvitation.findOne(invitationFilter)
+    const invitation = activeTeamIds.length > 0
+      ? await TeamInvitation.findOne(invitationFilter).populate({ path: 'invitedUserId', select: 'email fullName status' })
+      : null
 
     if (invitation) {
-      errors.push('GitHub username is already used by another active invitation')
+      errors.push(`GitHub username is already used by another active invitation for ${getInvitationEmail(invitation) || 'another email'}`)
     }
 
     return {

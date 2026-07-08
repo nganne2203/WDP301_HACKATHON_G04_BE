@@ -52,8 +52,8 @@ test('legacy account source is inferred from authProvider', () => {
   assert.equal(isGoogleAccount({ registrationSource: 'GOOGLE', authProvider: 'LOCAL' }), true)
 })
 
-test('only approved form or active Google account statuses can access authenticated routes', () => {
-  assert.equal(canAccessAuthenticatedRoutes({ status: 'APPROVED' }), true)
+test('only active account status can access authenticated routes', () => {
+  assert.equal(canAccessAuthenticatedRoutes({ status: 'APPROVED' }), false)
   assert.equal(canAccessAuthenticatedRoutes({ status: 'ACTIVE' }), true)
   assert.equal(canAccessAuthenticatedRoutes({ status: 'PENDING' }), false)
   assert.equal(canAccessAuthenticatedRoutes({ status: 'REJECTED' }), false)
