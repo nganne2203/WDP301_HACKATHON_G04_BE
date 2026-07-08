@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import mongoose from 'mongoose'
 
 import { TEAM_REPOSITORY } from './team.repository.js'
+import { CHAT_REPOSITORY } from '#modules/chat/chat.repository.js'
 import { EMAIL_SERVICE } from '#modules/notifications/email.service.js'
 import { EMAIL_TEMPLATE_KEYS } from '#modules/notifications/email-templates.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
@@ -1058,6 +1059,30 @@ const createInvitationForEmail = async ({
     })
   })
 
+  if (invitedUser) {
+    jobs.push({
+      kind: 'notification',
+      payload: {
+        user: invitedUser,
+        type: 'SYSTEM',
+        title: 'Team invitation',
+        message: `${leader.fullName || leader.email} invited you to join ${team.name} for ${event.title}.`,
+        metadata: {
+          action: 'TEAM_INVITATION_CONFIRM',
+          eventId: getId(event),
+          teamId: getId(team),
+          invitationId: getId(invitation),
+          invitationToken: token,
+          teamName: team.name,
+          eventTitle: event.title,
+          leaderName: leader.fullName,
+          leaderEmail: leader.email
+        },
+        channels: ['IN_APP']
+      }
+    })
+  }
+
   return invitation
 }
 
@@ -1246,6 +1271,7 @@ const releaseTeamPlacement = async ({ repository, team, status, cancellationReas
 
 export const createTeamService = ({
   repository = TEAM_REPOSITORY,
+  chatRepository = CHAT_REPOSITORY,
   emailService = EMAIL_SERVICE,
   notificationService = NOTIFICATION_SERVICE,
   logger = LOGGER
@@ -2122,6 +2148,8 @@ export const createTeamService = ({
             status: INVITATION_STATUSES.CANCELLED,
             cancelledAt: new Date()
           }, { session })
+
+          await chatRepository.deleteRoomByTeamId(getId(team), { session })
 
           updatedTeam = await repository.findTeamById(getId(updatedTeam), { session })
           return await loadTeamDetail({ repository, team: updatedTeam, session })

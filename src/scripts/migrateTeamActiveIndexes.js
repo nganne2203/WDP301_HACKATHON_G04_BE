@@ -1,7 +1,10 @@
 import mongoose from 'mongoose'
+import dns from 'node:dns'
 
 import { env } from '#configs/environment.js'
 import Team from '#models/team.model.js'
+
+dns.setServers(['8.8.8.8', '1.1.1.1'])
 
 const INDEXES_TO_DROP = [
   'eventId_1_name_1',

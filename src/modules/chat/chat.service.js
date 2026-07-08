@@ -5,6 +5,7 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 
 const MESSAGE_TYPES = ['text', 'image', 'file']
+const ACTIVE_CHAT_TEAM_STATUSES = ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED']
 
 const getId = (value) => {
   return value?._id?.toString?.() || value?.id || value?.toString?.()
@@ -46,7 +47,14 @@ const getParticipantRole = (team, actor) => {
   return null
 }
 
+const ensureTeamChatActive = (team) => {
+  if (!ACTIVE_CHAT_TEAM_STATUSES.includes(team?.status)) {
+    throw new ApiError(ERROR_CODES.NOT_FOUND, ['Chat room not found'])
+  }
+}
+
 const ensureTeamChatAccess = (team, actor) => {
+  ensureTeamChatActive(team)
   const role = getParticipantRole(team, actor)
   if (!role) {
     throw new ApiError(ERROR_CODES.FORBIDDEN, ['You are not a participant in this team chat'])
