@@ -38,6 +38,22 @@ const canViewDraftEvents = (actor = {}) => {
   return roles.some(role => DRAFT_VIEWER_ROLES.has(typeof role === 'string' ? role : role?.code))
 }
 
+const isParticipantOnly = (actor = {}) => {
+  const roles = (Array.isArray(actor.roles) ? actor.roles : [actor.role])
+    .map(role => (typeof role === 'string' ? role : role?.code || role?.name))
+    .filter(Boolean)
+    .map(role => String(role).toUpperCase())
+
+  return roles.length > 0 && roles.every(role => role === 'PARTICIPANT' || role === 'USER')
+}
+
+const isRegistrationOpen = (event, now = new Date()) => {
+  if (event?.status !== 'OPEN_REGISTRATION') return false
+  if (event.registrationStart && now < new Date(event.registrationStart)) return false
+  if (event.registrationEnd && now > new Date(event.registrationEnd)) return false
+  return true
+}
+
 const ensureObjectId = (id, fieldName = 'event id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Invalid ${fieldName}`])
@@ -271,6 +287,13 @@ const createEventService = ({
     if (!canViewDraftEvents(actor)) {
       filter.status = query.status === 'DRAFT' ? { $in: [] } : { $ne: 'DRAFT' }
     }
+    if (isParticipantOnly(actor)) {
+      const [participantEventIds, openRegistrationEventIds] = await Promise.all([
+        repository.findEventIdsForParticipant(actor.id),
+        repository.findOpenRegistrationEventIds()
+      ])
+      filter._id = { $in: [...new Set([...participantEventIds, ...openRegistrationEventIds].map(id => id.toString()))] }
+    }
     const skip = (page - 1) * limit
 
     const [events, totalItems] = await Promise.all([
@@ -293,6 +316,11 @@ const createEventService = ({
     const event = await ensureEventExists(id)
     if (event.status === 'DRAFT' && !canViewDraftEvents(actor)) {
       throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+    }
+    if (isParticipantOnly(actor)) {
+      const participantEventIds = await repository.findEventIdsForParticipant(actor.id)
+      const isParticipant = participantEventIds.some(eventId => eventId.toString() === event._id.toString())
+      if (!isParticipant && !isRegistrationOpen(event)) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
     }
     return normalizeEvent(event)
   }

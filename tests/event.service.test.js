@@ -12,6 +12,8 @@ const createRepository = () => {
     count: async () => records.size,
     findAll: async () => [...records.values()],
     findById: async (id) => records.get(id) || null,
+    findEventIdsForParticipant: async () => [],
+    findOpenRegistrationEventIds: async () => [],
     create: async (data) => {
       const id = String(sequence).padStart(24, '0')
       const record = { ...data, _id: id }
@@ -100,6 +102,40 @@ test('only admin and coordinators can list or retrieve draft events', async () =
 
   const coordinatorDraft = await service.getEventById(draft.id, { roles: ['COORDINATOR'] })
   assert.equal(coordinatorDraft.id, draft.id)
+})
+
+test('participant can only list and retrieve events they joined or can register for', async () => {
+  const repository = createRepository()
+  const service = createEventService({ repository, notificationService: { sendEventInvitations: async () => ({}) } })
+  const event = await service.createEvent({ title: 'Joined event', status: 'COMPLETED' }, { id: '000000000000000000000099' })
+  let receivedFilter = null
+  repository.findAll = async ({ filter }) => {
+    receivedFilter = filter
+    return []
+  }
+  repository.count = async () => 0
+
+  await service.listEvents({}, { id: '000000000000000000000301', roles: ['PARTICIPANT'] })
+  assert.deepEqual(receivedFilter._id, { $in: [] })
+  await assert.rejects(
+    service.getEventById(event.id, { id: '000000000000000000000301', roles: ['PARTICIPANT'] }),
+    error => error instanceof ApiError && error.code === 'NOT_FOUND'
+  )
+
+  repository.findEventIdsForParticipant = async () => [event.id]
+  const joinedEvent = await service.getEventById(event.id, { id: '000000000000000000000301', roles: ['PARTICIPANT'] })
+  assert.equal(joinedEvent.id, event.id)
+
+  const openEvent = await service.createEvent({ title: 'Open event', status: 'OPEN_REGISTRATION' }, { id: '000000000000000000000099' })
+  repository.findOpenRegistrationEventIds = async () => [openEvent.id]
+  const visibleOpenEvent = await service.getEventById(openEvent.id, { id: '000000000000000000000301', roles: ['PARTICIPANT'] })
+  assert.equal(visibleOpenEvent.id, openEvent.id)
+
+  repository.findEventIdsForParticipant = async () => []
+  await assert.rejects(
+    service.getEventById(event.id, { id: '000000000000000000000301', roles: ['USER'] }),
+    error => error instanceof ApiError && error.code === 'NOT_FOUND'
+  )
 })
 
 test('updateEvent rejects invalid fixed-per-board finalist math', async () => {
