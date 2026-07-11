@@ -76,6 +76,32 @@ test('createEvent derives competition config from legacy finalist fields for bac
   assert.deepEqual(event.competitionConfig.rankingScopes, ['TEAM'])
 })
 
+test('only admin and coordinators can list or retrieve draft events', async () => {
+  const repository = createRepository()
+  const service = createEventService({ repository, notificationService: { sendEventInvitations: async () => ({}) } })
+  const draft = await service.createEvent({ title: 'Hidden draft', status: 'DRAFT' }, { id: '000000000000000000000099' })
+  let receivedFilter = null
+  const originalFindAll = repository.findAll
+  repository.findAll = async ({ filter }) => {
+    receivedFilter = filter
+    return await originalFindAll({ filter })
+  }
+
+  await service.listEvents({}, { roles: ['PARTICIPANT'] })
+  assert.deepEqual(receivedFilter.status, { $ne: 'DRAFT' })
+
+  await service.listEvents({ status: 'DRAFT' }, { roles: ['MENTOR'] })
+  assert.deepEqual(receivedFilter.status, { $in: [] })
+
+  await assert.rejects(
+    service.getEventById(draft.id, { roles: ['PARTICIPANT'] }),
+    error => error instanceof ApiError && error.code === 'NOT_FOUND'
+  )
+
+  const coordinatorDraft = await service.getEventById(draft.id, { roles: ['COORDINATOR'] })
+  assert.equal(coordinatorDraft.id, draft.id)
+})
+
 test('updateEvent rejects invalid fixed-per-board finalist math', async () => {
   const repository = createRepository()
   const service = createEventService({ repository, notificationService: { sendEventInvitations: async () => ({}) } })

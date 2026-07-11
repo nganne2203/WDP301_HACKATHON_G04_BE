@@ -5,7 +5,7 @@ import { responseSuccess } from '#utils/responseUtil.js'
 
 const listEvents = async (req, res, next) => {
   try {
-    const { events, pagination } = await EVENT_SERVICE.listEvents(req.validated?.query || req.query)
+    const { events, pagination } = await EVENT_SERVICE.listEvents(req.validated?.query || req.query, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get events successfully',
@@ -19,7 +19,7 @@ const listEvents = async (req, res, next) => {
 
 const getEventById = async (req, res, next) => {
   try {
-    const event = await EVENT_SERVICE.getEventById(req.params.id)
+    const event = await EVENT_SERVICE.getEventById(req.params.id, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get event successfully',

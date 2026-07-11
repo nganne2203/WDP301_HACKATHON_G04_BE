@@ -78,9 +78,28 @@ const createRepository = () => {
       if (id === userB._id) return userB
       return null
     },
-    findTeamById: async (id) => id === team._id ? team : null
+    findTeamById: async (id) => id === team._id ? team : null,
+    findConfirmedTeamIds: async ({ eventId } = {}) => eventId === event._id ? [team._id] : []
   }
 }
+
+test('listParticipants can limit check-in data to confirmed teams', async () => {
+  const repository = createRepository()
+  let receivedFilter = null
+  repository.findAll = async ({ filter }) => {
+    receivedFilter = filter
+    return []
+  }
+  repository.count = async () => 0
+  const service = createParticipantService({ repository })
+
+  await service.listParticipants({
+    eventId: '000000000000000000000201',
+    confirmedTeamsOnly: true
+  })
+
+  assert.deepEqual(receivedFilter.teamId, { $in: ['000000000000000000000401'] })
+})
 
 test('createParticipant lets a user register themselves for an event', async () => {
   const service = createParticipantService({ repository: createRepository() })

@@ -233,6 +233,10 @@ export const createParticipantService = ({
   const listParticipants = async (query = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
     const filter = buildParticipantFilter(query)
+    if (query.confirmedTeamsOnly) {
+      const confirmedTeamIds = await repository.findConfirmedTeamIds({ eventId: query.eventId })
+      filter.teamId = { $in: confirmedTeamIds }
+    }
     const skip = (page - 1) * limit
 
     const [participants, totalItems] = await Promise.all([

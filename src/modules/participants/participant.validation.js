@@ -19,6 +19,7 @@ const listParticipants = {
     eventId: objectId,
     userId: objectId,
     teamId: objectId,
+    confirmedTeamsOnly: Joi.boolean(),
     status: participantStatus,
     checkInStatus,
     githubAccessStatus,

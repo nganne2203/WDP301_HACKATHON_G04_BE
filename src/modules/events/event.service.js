@@ -31,6 +31,12 @@ const EVENT_FIELDS = [
   'totalFinalistSlots',
   'status'
 ]
+const DRAFT_VIEWER_ROLES = new Set(['ADMIN', 'EVENT_COORDINATOR', 'COORDINATOR'])
+
+const canViewDraftEvents = (actor = {}) => {
+  const roles = Array.isArray(actor.roles) ? actor.roles : [actor.role]
+  return roles.some(role => DRAFT_VIEWER_ROLES.has(typeof role === 'string' ? role : role?.code))
+}
 
 const ensureObjectId = (id, fieldName = 'event id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -259,9 +265,12 @@ const createEventService = ({
     return event
   }
 
-  const listEvents = async (query = {}) => {
+  const listEvents = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
     const filter = buildEventFilter(query)
+    if (!canViewDraftEvents(actor)) {
+      filter.status = query.status === 'DRAFT' ? { $in: [] } : { $ne: 'DRAFT' }
+    }
     const skip = (page - 1) * limit
 
     const [events, totalItems] = await Promise.all([
@@ -280,8 +289,11 @@ const createEventService = ({
     }
   }
 
-  const getEventById = async (id) => {
+  const getEventById = async (id, actor = {}) => {
     const event = await ensureEventExists(id)
+    if (event.status === 'DRAFT' && !canViewDraftEvents(actor)) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+    }
     return normalizeEvent(event)
   }
 
