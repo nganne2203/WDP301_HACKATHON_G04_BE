@@ -100,7 +100,7 @@ const findRepositoriesByEvent = async (eventId) => {
 const findTeamMembersGithubUsernames = async (teamId) => {
   const participants = await Participant.find({
     teamId,
-    status: { $in: ['ACTIVE'] }
+    status: { $in: ['JOINED'] }
   }).populate('userId')
 
   return participants
