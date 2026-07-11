@@ -13,7 +13,7 @@ const createRepository = () => {
   const event = { _id: '000000000000000000000201', title: 'SEAL Event', status: 'OPEN_REGISTRATION' }
   const userA = { _id: '000000000000000000000301', email: 'a@example.com', fullName: 'User A', status: 'APPROVED' }
   const userB = { _id: '000000000000000000000302', email: 'b@example.com', fullName: 'User B', status: 'APPROVED' }
-  const team = { _id: '000000000000000000000401', eventId: event._id, name: 'Code Wizards' }
+  const team = { _id: '000000000000000000000401', eventId: event._id, name: 'Code Wizards', status: 'CONFIRMED' }
 
   return {
     count: async () => records.size,
@@ -191,7 +191,8 @@ const createQrTestService = ({ currentTime = new Date('2026-06-22T08:00:00.000Z'
 
 const createQrParticipant = async (service) => {
   return await service.createParticipant({
-    eventId: '000000000000000000000201'
+    eventId: '000000000000000000000201',
+    teamId: '000000000000000000000401'
   }, {
     id: '000000000000000000000301',
     permissions: ['EVENT_VIEW']
@@ -244,7 +245,8 @@ test('the same event QR checks in multiple different participants', async () => 
   const { service } = createQrTestService()
   const participantA = await createQrParticipant(service)
   const participantB = await service.createParticipant({
-    eventId: participantA.eventId
+    eventId: participantA.eventId,
+    teamId: '000000000000000000000401'
   }, {
     id: '000000000000000000000302',
     permissions: ['EVENT_VIEW']
@@ -274,6 +276,29 @@ test('scanCheckInQr rejects an expired token', async () => {
   await assert.rejects(
     service.scanCheckInQr(qr.qrPayload, { id: participant.userId }),
     error => error instanceof ApiError && error.code === 'CHECK_IN_QR_EXPIRED' && error.errors.includes('Check-in QR has expired')
+  )
+})
+
+test('QR and manual check-in reject participants outside confirmed teams', async () => {
+  const { service } = createQrTestService()
+  const participant = await service.createParticipant({
+    eventId: '000000000000000000000201'
+  }, {
+    id: '000000000000000000000301',
+    permissions: ['EVENT_VIEW']
+  })
+  const qr = await service.generateCheckInQr(participant.eventId, {
+    id: '000000000000000000000999',
+    permissions: ['PARTICIPANT_APPROVE']
+  })
+
+  await assert.rejects(
+    service.scanCheckInQr(qr.qrPayload, { id: participant.userId }),
+    error => error instanceof ApiError && error.code === 'BAD_REQUEST' && error.errors.includes('Only members of confirmed teams can check in')
+  )
+  await assert.rejects(
+    service.updateCheckInStatus(participant.id, 'CHECKED_IN'),
+    error => error instanceof ApiError && error.code === 'BAD_REQUEST' && error.errors.includes('Only members of confirmed teams can check in')
   )
 })
 
