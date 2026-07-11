@@ -98,7 +98,8 @@ const createRating = {
 const listRatings = {
   params: idParam,
   query: Joi.object({
-    ...paginationQuery
+    ...paginationQuery,
+    mine: Joi.boolean().default(false)
   })
 }
 
@@ -123,7 +124,8 @@ const createGoogleMeet = {
 const listFeedback = {
   params: idParam,
   query: Joi.object({
-    ...paginationQuery
+    ...paginationQuery,
+    mine: Joi.boolean().default(false)
   })
 }
 
