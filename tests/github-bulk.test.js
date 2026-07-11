@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import Participant from '../src/models/participant.model.js'
+import { GITHUB_REPOSITORY } from '../src/modules/github/github.repository.js'
 import { createGithubService } from '../src/modules/github/github.service.js'
 
 const createRepository = () => {
@@ -65,6 +67,33 @@ const createLogger = () => ({
 
 const EVENT_ID = '664c3f6a3a6d4a5f3f93b901'
 const eventConfigKey = `github.event.${EVENT_ID}.organization`
+
+test('findTeamMembersGithubUsernames reads joined participants, not active user statuses', async () => {
+  const originalFind = Participant.find
+  let capturedFilter = null
+  try {
+    Participant.find = (filter) => {
+      capturedFilter = filter
+      return {
+        populate: async () => [
+          { userId: { githubUsername: 'user-alpha' } },
+          { userId: { githubUsername: '' } },
+          { userId: { githubUsername: 'user-beta' } }
+        ]
+      }
+    }
+
+    const usernames = await GITHUB_REPOSITORY.findTeamMembersGithubUsernames('team-123')
+
+    assert.deepEqual(capturedFilter, {
+      teamId: 'team-123',
+      status: { $in: ['JOINED'] }
+    })
+    assert.deepEqual(usernames, ['user-alpha', 'user-beta'])
+  } finally {
+    Participant.find = originalFind
+  }
+})
 
 test('bulkCreateRepositories creates repos only for confirmed teams lacking them', async () => {
   const repository = createRepository()
