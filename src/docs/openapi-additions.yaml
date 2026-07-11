@@ -380,7 +380,7 @@ components:
           enum: [NOT_GRANTED, GRANTED, REVOKED]
         status:
           type: string
-          enum: [INVITED, ACTIVE, WITHDRAWN]
+          enum: [INVITED, JOINED, WITHDRAWN]
     TeamCreateRequest:
       type: object
       description: Create a team and optionally seed invitation emails in the same request.
@@ -438,7 +438,7 @@ components:
       properties:
         status:
           type: string
-          enum: [PENDING, WAITING_FOR_MEMBERS, WAITLISTED, CONFIRMED, REJECTED, ACTIVE, INACTIVE, DISQUALIFIED]
+          enum: [CONFIRMED, REJECTED]
         trackId:
           type: string
           nullable: true

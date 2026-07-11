@@ -8,7 +8,7 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 
-const SYSTEM_ROLE_NAMES = new Set(['ADMIN', 'COORDINATOR', 'EVENT_COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'USER', 'PARTICIPANT'])
+const SYSTEM_ROLE_NAMES = new Set(['ADMIN', 'COORDINATOR', 'EVENT_COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'PARTICIPANT'])
 
 const normalizeRole = (role) => {
   if (!role) return null

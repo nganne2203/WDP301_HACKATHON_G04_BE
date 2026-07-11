@@ -14,7 +14,7 @@ const router = Router()
 const uploadRateLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 20,
-  message: 'Quá nhiều yêu cầu tải media. Vui lòng thử lại sau.',
+  message: 'Too many media upload requests. Please try again later.',
   keyGenerator: (req) => `media-upload:${req.user?.id || req.ip || 'unknown'}`
 })
 

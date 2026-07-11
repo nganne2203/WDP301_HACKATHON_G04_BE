@@ -5,7 +5,7 @@ import Team from '#models/team.model.js'
 import User from '#models/user.model.js'
 
 const participantPopulate = [
-  { path: 'eventId', select: 'title semester season year status maxTeamMembers minTeamMembers' },
+  { path: 'eventId', select: 'title semester season year status startDate endDate maxTeamMembers minTeamMembers' },
   { path: 'userId', select: 'email fullName status studentId studentType schoolName' },
   { path: 'teamId', select: 'name chapterName projectName status trackId qualificationStatus' }
 ]

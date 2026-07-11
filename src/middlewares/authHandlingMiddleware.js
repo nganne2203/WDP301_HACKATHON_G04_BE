@@ -7,7 +7,9 @@ import { canAccessAuthenticatedRoutes } from '#utils/userAccountUtil.js'
 export const authorizationMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization
-    if (!authHeader || !authHeader.startsWith('Bearer ')) throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Không tìm thấy token xác thực'])
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authentication token was not provided'])
+    }
 
     const token = authHeader.split(' ')[1]
     const decoded = JWT_UTILS.verifyAccessToken(token)

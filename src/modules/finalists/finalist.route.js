@@ -14,7 +14,7 @@ router.use(authorizationMiddleware)
 
 router.get(
   '/',
-  permissionMiddleware(PERMISSIONS.SCORE_VIEW),
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
   validationHandlingMiddleware(FINALIST_VALIDATION.listFinalists),
   FINALIST_CONTROLLER.listFinalists
 )
@@ -22,9 +22,17 @@ router.get(
 router.post(
   '/select',
   sensitiveRateLimiter,
-  permissionMiddleware(PERMISSIONS.RESULT_PUBLISH),
+  permissionMiddleware(PERMISSIONS.FINALIST_SELECT),
   validationHandlingMiddleware(FINALIST_VALIDATION.selectFinalists),
   FINALIST_CONTROLLER.selectFinalists
+)
+
+router.post(
+  '/manual',
+  sensitiveRateLimiter,
+  permissionMiddleware(PERMISSIONS.FINALIST_SELECT),
+  validationHandlingMiddleware(FINALIST_VALIDATION.selectManualFinalists),
+  FINALIST_CONTROLLER.selectManualFinalists
 )
 
 export default router

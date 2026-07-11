@@ -4,13 +4,19 @@ import ChatRoom from '#models/chatRoom.model.js'
 import Team from '#models/team.model.js'
 
 const teamSelect = 'name eventId leaderId memberIds mentorIds projectName status'
+const ACTIVE_CHAT_TEAM_STATUSES = ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED']
 const messagePopulate = {
   path: 'senderId',
   select: 'email fullName avatarUrl'
 }
 
+const withSession = (query, session) => {
+  return session ? query.session(session) : query
+}
+
 const findTeamsForUser = async (userId) => {
   return await Team.find({
+    status: { $in: ACTIVE_CHAT_TEAM_STATUSES },
     $or: [
       { leaderId: userId },
       { memberIds: userId },
@@ -22,7 +28,7 @@ const findTeamsForUser = async (userId) => {
 }
 
 const findTeamById = async (teamId) => {
-  return await Team.findById(teamId).select(teamSelect)
+  return await Team.findOne({ _id: teamId, status: { $in: ACTIVE_CHAT_TEAM_STATUSES } }).select(teamSelect)
 }
 
 const findRoomById = async (id) => {
@@ -126,9 +132,31 @@ const markRoomSeen = async ({ chatRoomId, userId, readAt = new Date() }) => {
   return participant
 }
 
+const deleteRoomByTeamId = async (teamId, { session } = {}) => {
+  const room = await withSession(ChatRoom.findOne({ teamId }), session)
+  if (!room) {
+    return {
+      roomDeleted: 0,
+      messagesDeleted: 0,
+      participantsDeleted: 0
+    }
+  }
+
+  const messages = await withSession(ChatMessage.deleteMany({ chatRoomId: room._id }), session)
+  const participants = await withSession(ChatParticipant.deleteMany({ chatRoomId: room._id }), session)
+  const rooms = await withSession(ChatRoom.deleteOne({ _id: room._id }), session)
+
+  return {
+    roomDeleted: rooms.deletedCount || 0,
+    messagesDeleted: messages.deletedCount || 0,
+    participantsDeleted: participants.deletedCount || 0
+  }
+}
+
 export const CHAT_REPOSITORY = {
   countUnreadMessages,
   createMessage,
+  deleteRoomByTeamId,
   ensureRoomForTeam,
   findLastMessage,
   findMessageByClientId,

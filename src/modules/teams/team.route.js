@@ -54,6 +54,13 @@ router.get(
 )
 
 router.get(
+  '/invite-eligibility',
+  permissionMiddleware(PERMISSIONS.TEAM_VIEW),
+  validationHandlingMiddleware(TEAM_VALIDATION.checkInviteEligibility),
+  TEAM_CONTROLLER.checkInviteEligibility
+)
+
+router.get(
   '/:id',
   permissionMiddleware(PERMISSIONS.TEAM_VIEW),
   validationHandlingMiddleware(TEAM_VALIDATION.getTeamById),
@@ -81,11 +88,32 @@ router.patch(
   TEAM_CONTROLLER.updateTeamPlacement
 )
 
+router.patch(
+  '/mentor-assignments/by-board',
+  permissionMiddleware(PERMISSIONS.TEAM_UPDATE),
+  validationHandlingMiddleware(TEAM_VALIDATION.assignMentorsByBoard),
+  TEAM_CONTROLLER.assignMentorsByBoard
+)
+
+router.patch(
+  '/:id/mentors',
+  permissionMiddleware(PERMISSIONS.TEAM_UPDATE),
+  validationHandlingMiddleware(TEAM_VALIDATION.updateTeamMentors),
+  TEAM_CONTROLLER.updateTeamMentors
+)
+
 router.post(
   '/:id/invitations',
   permissionMiddleware(PERMISSIONS.TEAM_VIEW),
   validationHandlingMiddleware(TEAM_VALIDATION.inviteMembers),
   TEAM_CONTROLLER.inviteMembers
+)
+
+router.post(
+  '/:id/leave',
+  permissionMiddleware(PERMISSIONS.TEAM_VIEW),
+  validationHandlingMiddleware(TEAM_VALIDATION.leaveTeam),
+  TEAM_CONTROLLER.leaveTeam
 )
 
 router.patch(

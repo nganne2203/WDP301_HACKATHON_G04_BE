@@ -24,6 +24,17 @@ const serializeGmailError = (error = {}) => ({
   stack: error.stack
 })
 
+const sanitizeHeaderValue = (value = '') => String(value)
+  .replace(/[\r\n]+/g, ' ')
+  .trim()
+
+const encodeMimeHeaderValue = (value = '') => {
+  const sanitized = sanitizeHeaderValue(value)
+  if (!/[^\x20-\x7E]/.test(sanitized)) return sanitized
+
+  return `=?UTF-8?B?${Buffer.from(sanitized, 'utf8').toString('base64')}?=`
+}
+
 export const getGmailApiConfigurationIssues = ({
   gmailUser = env.email.gmailUser,
   clientId = env.email.gmailClientId,
@@ -71,9 +82,9 @@ export const createGmailApiTransporter = ({
       const boundary = 'foo_bar_baz'
       const emailLines = []
 
-      emailLines.push(`From: ${from}`)
-      emailLines.push(`To: ${recipients.join(', ')}`)
-      emailLines.push(`Subject: ${subject}`)
+      emailLines.push(`From: ${sanitizeHeaderValue(from)}`)
+      emailLines.push(`To: ${recipients.map(sanitizeHeaderValue).join(', ')}`)
+      emailLines.push(`Subject: ${encodeMimeHeaderValue(subject)}`)
       emailLines.push('MIME-Version: 1.0')
       emailLines.push(`Content-Type: multipart/alternative; boundary="${boundary}"`)
       emailLines.push('')
