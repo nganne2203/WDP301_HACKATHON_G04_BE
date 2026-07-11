@@ -16,6 +16,8 @@ const ensureObjectId = (id, fieldName = 'repository id') => {
   }
 }
 
+const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 const normalizeEvent = (event) => {
   if (!event) return null
   if (typeof event === 'string' || event instanceof mongoose.Types.ObjectId) return { id: event.toString() }
@@ -131,7 +133,7 @@ const buildFilter = (query = {}) => {
   if (query.status) filter.status = query.status
   if (query.accessState) filter.accessState = query.accessState
   if (query.search) {
-    const pattern = new RegExp(query.search, 'i')
+    const pattern = new RegExp(escapeRegExp(query.search), 'i')
     filter.$or = [
       { repositoryFullName: pattern },
       { githubOwner: pattern },

@@ -8,6 +8,7 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { LOGGER } from '#utils/logger.js'
+import { emitUserSocketEvent, SOCKET_NOTIFICATION_EVENTS } from '#services/socket/socket-emitter.js'
 
 const NOTIFICATION_TYPES = ['DEADLINE', 'WORKSHOP', 'RESULT', 'FEEDBACK', 'SYSTEM']
 const CHANNELS = {
@@ -33,6 +34,7 @@ const normalizeNotification = (notification) => {
     message: plainNotification.message,
     type: plainNotification.type,
     status: plainNotification.status,
+    dedupeKey: plainNotification.dedupeKey,
     metadata: plainNotification.metadata,
     createdAt: plainNotification.createdAt,
     updatedAt: plainNotification.updatedAt
@@ -89,18 +91,50 @@ const buildRegistrationUrl = (eventId, logger = LOGGER) => {
 export const createNotificationService = ({
   repository = NOTIFICATION_REPOSITORY,
   emailService = EMAIL_SERVICE,
+  socketEmitter = {
+    emitToUser: emitUserSocketEvent
+  },
   logger = LOGGER
 } = {}) => {
-  const createInAppNotification = async ({ userId, title, message, type, metadata }) => {
-    const notification = await repository.create({
-      userId,
-      title,
-      message,
-      type,
-      metadata
-    })
+  const createInAppNotification = async ({ userId, title, message, type, metadata, dedupeKey }) => {
+    if (dedupeKey && repository.findByDedupeKey) {
+      const existingNotification = await repository.findByDedupeKey(dedupeKey)
+      if (existingNotification) {
+        return {
+          notification: normalizeNotification(existingNotification),
+          created: false
+        }
+      }
+    }
 
-    return normalizeNotification(notification)
+    let notification
+    try {
+      notification = await repository.create({
+        userId,
+        title,
+        message,
+        type,
+        dedupeKey,
+        metadata
+      })
+    } catch (error) {
+      if (dedupeKey && error?.code === 11000 && repository.findByDedupeKey) {
+        const existingNotification = await repository.findByDedupeKey(dedupeKey)
+        if (existingNotification) {
+          return {
+            notification: normalizeNotification(existingNotification),
+            created: false
+          }
+        }
+      }
+
+      throw error
+    }
+
+    return {
+      notification: normalizeNotification(notification),
+      created: true
+    }
   }
 
   const notifyUser = async ({
@@ -108,6 +142,7 @@ export const createNotificationService = ({
     title,
     message,
     type = 'SYSTEM',
+    dedupeKey,
     metadata = {},
     channels = [CHANNELS.IN_APP, CHANNELS.EMAIL],
     emailTemplate = EMAIL_TEMPLATE_KEYS.NOTIFICATION,
@@ -127,13 +162,23 @@ export const createNotificationService = ({
 
     if (channels.includes(CHANNELS.IN_APP) && userId) {
       try {
-        result.notification = await createInAppNotification({
+        const inAppResult = await createInAppNotification({
           userId,
           title,
           message,
           type,
+          dedupeKey,
           metadata
         })
+        result.notification = inAppResult.notification
+
+        if (inAppResult.created) {
+          socketEmitter.emitToUser?.(
+            userId,
+            SOCKET_NOTIFICATION_EVENTS.NOTIFICATION_CREATED,
+            result.notification
+          )
+        }
       } catch (error) {
         logger.error('In-app notification creation failed', {
           userId,
@@ -241,17 +286,32 @@ export const createNotificationService = ({
       throw new ApiError(ERROR_CODES.NOT_FOUND, ['Notification not found'])
     }
 
-    return normalizeNotification(notification)
+    const normalizedNotification = normalizeNotification(notification)
+    socketEmitter.emitToUser?.(
+      userId,
+      SOCKET_NOTIFICATION_EVENTS.NOTIFICATION_READ,
+      normalizedNotification
+    )
+
+    return normalizedNotification
   }
 
   const markAllAsRead = async (userId) => {
     ensureObjectId(userId, 'user id')
     const result = await repository.markAllAsRead(userId)
 
-    return {
+    const normalizedResult = {
       matchedCount: result.matchedCount || 0,
       modifiedCount: result.modifiedCount || 0
     }
+
+    socketEmitter.emitToUser?.(
+      userId,
+      SOCKET_NOTIFICATION_EVENTS.NOTIFICATIONS_READ_ALL,
+      normalizedResult
+    )
+
+    return normalizedResult
   }
 
   return {
