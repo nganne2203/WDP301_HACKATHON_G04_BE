@@ -34,6 +34,8 @@ const ROUND_FIELDS = [
   'status'
 ]
 
+const ROUND_ASSIGNABLE_TEAM_STATUSES = ['CONFIRMED']
+
 const ensureObjectId = (id, fieldName = 'round id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Invalid ${fieldName}`])
@@ -234,6 +236,9 @@ const ensureTeamsBelongToRoundContext = async ({ eventId, trackId, teamIds = [] 
     }
     if (trackId && team.trackId?.toString() !== trackId.toString()) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned teams must belong to the selected track'])
+    }
+    if (!ROUND_ASSIGNABLE_TEAM_STATUSES.includes(team.status)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only confirmed teams can be assigned to rounds'])
     }
   }
 }
