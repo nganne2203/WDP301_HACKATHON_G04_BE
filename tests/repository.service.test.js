@@ -76,6 +76,23 @@ test('createRepository stores a linked repository and listRepositories filters b
   }
 })
 
+test('listRepositories treats search text as plain text', async () => {
+  let receivedFilter = null
+  const repository = {
+    findAll: async ({ filter }) => {
+      receivedFilter = filter
+      return []
+    },
+    count: async () => 0
+  }
+  const service = createRepositoryService({ repository })
+
+  await service.listRepositories({ search: '[team]+repo' })
+
+  assert.equal(receivedFilter.$or.length, 4)
+  assert.equal(receivedFilter.$or[0].repositoryFullName.source, '\\[team\\]\\+repo')
+})
+
 test('createRepository rejects linking the same team twice', async () => {
   const eventModule = await import('../src/models/event.model.js')
   const teamModule = await import('../src/models/team.model.js')

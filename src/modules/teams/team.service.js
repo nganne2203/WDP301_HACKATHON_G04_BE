@@ -44,6 +44,12 @@ const EVENT_STATUSES = {
   OPEN_REGISTRATION: 'OPEN_REGISTRATION',
   REGISTRATION_CLOSED: 'REGISTRATION_CLOSED'
 }
+
+const ensureConfirmedTeamForMentorAssignment = (team) => {
+  if (team?.status !== TEAM_STATUSES.CONFIRMED) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Mentors can only be assigned to confirmed teams'])
+  }
+}
 const REGISTRATION_CLOSE_REASONS = {
   CAPACITY_REACHED: 'CAPACITY_REACHED',
   REGISTRATION_ENDED: 'REGISTRATION_ENDED'
@@ -2411,6 +2417,7 @@ export const createTeamService = ({
       work: async (session) => {
         const team = await repository.findTeamById(teamId, { session })
         if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
+        ensureConfirmedTeamForMentorAssignment(team)
 
         const previousMentorIds = uniqueIds(team.mentorIds || [])
         const { mentorIds } = await validateMentorAssignments({
@@ -2456,7 +2463,8 @@ export const createTeamService = ({
         const teams = await repository.findTeams({
           filter: {
             eventId: payload.eventId,
-            boardNumber: Number(payload.boardNumber)
+            boardNumber: Number(payload.boardNumber),
+            status: TEAM_STATUSES.CONFIRMED
           },
           limit: 1000,
           sort: { boardNumber: 1, placementSlot: 1, createdAt: 1 },

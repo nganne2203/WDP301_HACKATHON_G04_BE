@@ -921,6 +921,21 @@ test('assignMentorsByBoard updates every team in the selected board', async () =
       status: 'CONFIRMED',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
+    },
+    {
+      _id: '000000000000000000000113',
+      eventId: { _id: eventId, title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' },
+      trackId: null,
+      leaderId: { _id: 'leader-3', email: 'leader3@example.com', fullName: 'Leader Three', status: 'ACTIVE' },
+      memberIds: [],
+      mentorIds: [],
+      name: 'Cancelled Board Team',
+      boardNumber,
+      participants: [],
+      invitations: [],
+      status: 'CANCELLED',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     }
   ]
 
@@ -933,7 +948,8 @@ test('assignMentorsByBoard updates every team in the selected board', async () =
     findTeams: async ({ filter }) => {
       assert.equal(filter.eventId, eventId)
       assert.equal(filter.boardNumber, boardNumber)
-      return teams
+      assert.equal(filter.status, 'CONFIRMED')
+      return teams.filter((team) => team.status === filter.status)
     },
     updateTeamById: async (id, data) => {
       const source = teams.find((team) => team._id === id)
@@ -981,6 +997,25 @@ test('assignMentorsByBoard updates every team in the selected board', async () =
   assert.equal(notifications.filter(notification => notification.metadata.action === 'MENTOR_BOARD_ASSIGNED').length, 2)
   assert.equal(notifications.filter(notification => notification.metadata.action === 'TEAM_MENTORS_ASSIGNED').length, 3)
   assert.equal(new Set(notifications.map(notification => notification.dedupeKey)).size, notifications.length)
+})
+
+test('updateTeamMentors rejects teams that are not confirmed', async () => {
+  const teamId = '000000000000000000000113'
+  const repository = {
+    createSession,
+    findTeamById: async () => ({ _id: teamId, status: 'CANCELLED', mentorIds: [] })
+  }
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.updateTeamMentors(teamId, { mentorIds: [] }, {
+      id: 'coord-1',
+      permissions: ['TEAM_UPDATE']
+    }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Mentors can only be assigned to confirmed teams')
+  )
 })
 
 test('assignMentorsByBoard accepts active mentor accounts and rejects inaccessible statuses', async () => {
