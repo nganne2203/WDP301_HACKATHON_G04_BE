@@ -441,23 +441,34 @@ const createRating = async (workshopId, payload = {}, actor = {}) => {
 
 const listRatings = async (workshopId, query = {}, actor = {}) => {
   const workshop = await ensureWorkshopExists(workshopId)
-  ensureCanViewInsights(workshop, actor, PERMISSIONS.WORKSHOP_RATING_VIEW)
+  const viewingOwnRating = Boolean(query.mine)
+  if (!viewingOwnRating) {
+    ensureCanViewInsights(workshop, actor, PERMISSIONS.WORKSHOP_RATING_VIEW)
+  } else if (!actor.id) {
+    throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authentication is required'])
+  }
 
   const { page, limit } = normalizePaginationQuery(query)
-  const filter = { workshopId }
+  const filter = {
+    workshopId,
+    ...(viewingOwnRating ? { authorId: actor.id } : {})
+  }
   const skip = (page - 1) * limit
 
   const [ratings, totalItems, stats] = await Promise.all([
     WORKSHOP_REPOSITORY.findRatings({ filter, skip, limit }),
     WORKSHOP_REPOSITORY.countRatings(filter),
-    WORKSHOP_REPOSITORY.getRatingStats(new mongoose.Types.ObjectId(workshopId))
+    viewingOwnRating
+      ? Promise.resolve(null)
+      : WORKSHOP_REPOSITORY.getRatingStats(new mongoose.Types.ObjectId(workshopId))
   ])
+  const ownAverageRating = ratings.length > 0 ? ratings.reduce((sum, item) => sum + item.rating, 0) / ratings.length : 0
 
   return {
     ratings: ratings.map(normalizeRating),
     stats: {
-      averageRating: Number(stats.averageRating.toFixed(2)),
-      totalRatings: stats.totalRatings
+      averageRating: viewingOwnRating ? Number(ownAverageRating.toFixed(2)) : Number(stats.averageRating.toFixed(2)),
+      totalRatings: viewingOwnRating ? totalItems : stats.totalRatings
     },
     pagination: {
       currentPage: page,
@@ -491,10 +502,18 @@ const createFeedback = async (workshopId, payload = {}, actor = {}) => {
 
 const listFeedback = async (workshopId, query = {}, actor = {}) => {
   const workshop = await ensureWorkshopExists(workshopId)
-  ensureCanViewInsights(workshop, actor, PERMISSIONS.WORKSHOP_FEEDBACK_VIEW)
+  const viewingOwnFeedback = Boolean(query.mine)
+  if (!viewingOwnFeedback) {
+    ensureCanViewInsights(workshop, actor, PERMISSIONS.WORKSHOP_FEEDBACK_VIEW)
+  } else if (!actor.id) {
+    throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authentication is required'])
+  }
 
   const { page, limit } = normalizePaginationQuery(query)
-  const filter = { workshopId }
+  const filter = {
+    workshopId,
+    ...(viewingOwnFeedback ? { authorId: actor.id } : {})
+  }
   const skip = (page - 1) * limit
 
   const [feedback, totalItems] = await Promise.all([
