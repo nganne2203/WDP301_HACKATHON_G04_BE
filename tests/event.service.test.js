@@ -104,3 +104,59 @@ test('updateEvent rejects invalid fixed-per-board finalist math', async () => {
       error.errors.includes('competitionConfig.finalistCount must equal boardCount * finalistsPerBoard for FIXED_PER_BOARD mode')
   )
 })
+
+test('updateEventStatus rejects unconfirmed teams when registration closes', async () => {
+  const repository = createRepository()
+  const rejectedEvents = []
+  const service = createEventService({
+    repository,
+    notificationService: { sendEventInvitations: async () => ({}) },
+    teamService: {
+      rejectUnconfirmedTeamsForRegistrationClosure: async (payload) => {
+        rejectedEvents.push(payload)
+        return { rejectedCount: 2 }
+      }
+    }
+  })
+
+  const created = await service.createEvent({
+    title: 'SEAL Hackathon Registration',
+    status: 'OPEN_REGISTRATION'
+  }, { id: '000000000000000000000099' })
+
+  const event = await service.updateEventStatus(created.id, 'REGISTRATION_CLOSED')
+
+  assert.equal(event.status, 'REGISTRATION_CLOSED')
+  assert.equal(event.registrationCloseReason, 'MANUALLY_CLOSED')
+  assert.equal(rejectedEvents.length, 1)
+  assert.equal(rejectedEvents[0].event._id, created.id)
+  assert.equal(rejectedEvents[0].reason, 'Registration has closed before this team was fully confirmed.')
+})
+
+test('updateEvent rejects unconfirmed teams when status is changed to registration closed', async () => {
+  const repository = createRepository()
+  const rejectedEvents = []
+  const service = createEventService({
+    repository,
+    notificationService: { sendEventInvitations: async () => ({}) },
+    teamService: {
+      rejectUnconfirmedTeamsForRegistrationClosure: async (payload) => {
+        rejectedEvents.push(payload)
+        return { rejectedCount: 1 }
+      }
+    }
+  })
+
+  const created = await service.createEvent({
+    title: 'SEAL Hackathon Update Close',
+    status: 'OPEN_REGISTRATION'
+  }, { id: '000000000000000000000099' })
+
+  await service.updateEvent(created.id, {
+    status: 'REGISTRATION_CLOSED'
+  })
+
+  assert.equal(rejectedEvents.length, 1)
+  assert.equal(rejectedEvents[0].event._id, created.id)
+  assert.equal(rejectedEvents[0].reason, 'Registration has closed before this team was fully confirmed.')
+})

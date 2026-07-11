@@ -56,6 +56,32 @@ const getMyTeam = async (req, res, next) => {
   }
 }
 
+const checkTeamAvailability = async (req, res, next) => {
+  try {
+    const availability = await TEAM_SERVICE.checkTeamAvailability(req.validated.query, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Check team availability successfully',
+      data: availability
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const checkInviteEligibility = async (req, res, next) => {
+  try {
+    const eligibility = await TEAM_SERVICE.checkInviteEligibility(req.validated.query, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Check invitation eligibility successfully',
+      data: eligibility
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const inviteMembers = async (req, res, next) => {
   try {
     const result = await TEAM_SERVICE.inviteMembers(req.params.id, req.body, req.user)
@@ -128,6 +154,19 @@ const cancelInvitation = async (req, res, next) => {
   }
 }
 
+const leaveTeam = async (req, res, next) => {
+  try {
+    const team = await TEAM_SERVICE.leaveTeam(req.params.id, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Leave team successfully',
+      data: team
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const updateTeamStatus = async (req, res, next) => {
   try {
     const team = await TEAM_SERVICE.updateTeamStatus(req.params.id, req.body, req.user)
@@ -154,6 +193,75 @@ const updateTeamPlacement = async (req, res, next) => {
   }
 }
 
+const updateTeamMentors = async (req, res, next) => {
+  try {
+    const result = await TEAM_SERVICE.updateTeamMentors(req.params.id, req.body, req.user)
+
+    req.audit = {
+      ...(req.audit || {}),
+      entityType: 'Team',
+      entityId: result.team?.id,
+      oldValue: { mentorIds: result.audit.previousMentorIds },
+      newValue: {
+        mentorIds: result.audit.nextMentorIds,
+        addedMentorIds: result.audit.addedMentorIds,
+        removedMentorIds: result.audit.removedMentorIds
+      },
+      metadata: {
+        previousMentorIds: result.audit.previousMentorIds,
+        nextMentorIds: result.audit.nextMentorIds,
+        addedMentorIds: result.audit.addedMentorIds,
+        removedMentorIds: result.audit.removedMentorIds
+      },
+      description: `Updated mentor assignments for team ${result.team?.name || req.params.id}`,
+      sourceModule: 'teams'
+    }
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Update team mentors successfully',
+      data: result.team
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const assignMentorsByBoard = async (req, res, next) => {
+  try {
+    const result = await TEAM_SERVICE.assignMentorsByBoard(req.body, req.user)
+
+    req.audit = {
+      ...(req.audit || {}),
+      entityType: 'Team',
+      oldValue: null,
+      newValue: {
+        eventId: result.eventId,
+        boardNumber: result.boardNumber,
+        mentorIds: result.mentorIds,
+        updatedCount: result.updatedCount,
+        teamIds: result.teamIds
+      },
+      metadata: {
+        eventId: result.eventId,
+        boardNumber: result.boardNumber,
+        mentorIds: result.mentorIds,
+        updatedCount: result.updatedCount,
+        teamIds: result.teamIds,
+        teamDiffs: result.audit.teamDiffs
+      },
+      description: `Assigned mentors to all teams in board ${result.boardNumber}`,
+      sourceModule: 'teams'
+    }
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Assign mentors by board successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const getEventTeamCapacity = async (req, res, next) => {
   try {
     const capacity = await TEAM_SERVICE.getEventTeamCapacity(req.params.eventId, req.user)
@@ -172,12 +280,17 @@ export const TEAM_CONTROLLER = {
   createTeam,
   getTeamById,
   getMyTeam,
+  checkTeamAvailability,
+  checkInviteEligibility,
   inviteMembers,
   acceptInvitation,
   declineInvitation,
   replaceInvitation,
   cancelInvitation,
+  leaveTeam,
   updateTeamStatus,
   updateTeamPlacement,
+  updateTeamMentors,
+  assignMentorsByBoard,
   getEventTeamCapacity
 }

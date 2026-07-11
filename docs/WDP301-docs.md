@@ -108,7 +108,7 @@ RBAC roles group permissions for easier administration. They are assigned by adm
 - **EVENT_COORDINATOR / COORDINATOR**: event lifecycle management, timelines, workshops, tracks and rounds, assignments, results publishing.
 - **JUDGE**: access assigned submissions, scoring, and review summaries.
 - **MENTOR**: access assigned teams and mentoring functions.
-- **USER / PARTICIPANT**: baseline authenticated participant access.
+- **PARTICIPANT**: baseline authenticated participant access.
 
 Seeded role-permission mapping:
 
@@ -116,7 +116,7 @@ Seeded role-permission mapping:
 - **EVENT_COORDINATOR / COORDINATOR**: `EVENT_CREATE`, `EVENT_VIEW`, `EVENT_UPDATE`, `TRACK_CREATE`, `TRACK_VIEW`, `TRACK_UPDATE`, `TRACK_DELETE`, workshop management permissions, workshop insight view permissions, `TEAM_VIEW`, `PARTICIPANT_VIEW`, `PARTICIPANT_APPROVE`, `USER_CREATE`, `USER_VIEW`, `USER_UPDATE`, `JUDGING_ASSIGN`, GitHub permissions, AI review permissions, `RESULT_PUBLISH`, and `AUDIT_LOG_VIEW`.
 - **JUDGE**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop insight view permissions, `TEAM_VIEW`, `SCORE_CREATE`, `SCORE_VIEW`, and `AI_REVIEW_VIEW`.
 - **MENTOR**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop insight view permissions, `TEAM_VIEW`, and `AI_REVIEW_VIEW`.
-- **USER / PARTICIPANT**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop question create/view/vote permissions, `WORKSHOP_RATING_CREATE`, `WORKSHOP_FEEDBACK_CREATE`, `TEAM_CREATE`, and `TEAM_VIEW`.
+- **PARTICIPANT**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop question create/view/vote permissions, `WORKSHOP_RATING_CREATE`, `WORKSHOP_FEEDBACK_CREATE`, `TEAM_CREATE`, and `TEAM_VIEW`.
 
 ## 3.3 User Roles
 
@@ -1170,7 +1170,7 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 - Google Calendar tokens are stored encrypted and are never returned to the frontend.
 
 **Role**
-- Stores RBAC role names such as `ADMIN`, `EVENT_COORDINATOR`, `COORDINATOR`, `JUDGE`, `MENTOR`, `USER`, and `PARTICIPANT`.
+- Stores RBAC role names such as `ADMIN`, `EVENT_COORDINATOR`, `COORDINATOR`, `JUDGE`, `MENTOR`, and `PARTICIPANT`.
 - Key fields: `name`, `description`, `permissions`.
 - Relationships: roles reference `Permission` records through `permissions`.
 - Purpose: roles are permission groups only; routes do not authorize by role name.

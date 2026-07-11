@@ -10,6 +10,26 @@ const eventQuery = {
   })
 }
 
+const userProfile = {
+  params: Joi.object({
+    username: githubUsername.required()
+  })
+}
+
+const searchUsers = {
+  query: Joi.object({
+    query: Joi.string().trim().min(1).max(100).required(),
+    limit: Joi.number().integer().min(1).max(10).default(8)
+  })
+}
+
+const usernameAvailability = {
+  query: Joi.object({
+    username: githubUsername.required(),
+    excludeSelf: Joi.boolean().default(false)
+  })
+}
+
 const saveConfig = {
   body: Joi.object({
     eventId: objectId.required(),
@@ -98,6 +118,9 @@ const bulkCollaboratorAction = {
 
 export const GITHUB_VALIDATION = {
   eventQuery,
+  userProfile,
+  searchUsers,
+  usernameAvailability,
   saveConfig,
   testConnection,
   createRepository,

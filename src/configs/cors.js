@@ -7,6 +7,7 @@ export const corsOptions = {
       !origin ||
       origin === 'null' ||
       allowedOrigins.includes(origin) ||
+      origin === env.server.publicUrl ||
       origin.startsWith('http://localhost') ||
       origin.startsWith('http://10.') ||
       origin.startsWith('http://192.168.')
@@ -19,5 +20,6 @@ export const corsOptions = {
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range']
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 86400 // Cache preflight requests for 24 hours (in seconds)
 }

@@ -1,45 +1,91 @@
 # Email Configuration
 
-SEAL sends email through the notification/email service. If SMTP is not configured, development mode logs the attempted email and returns a skipped delivery result so the main business flow is not broken.
+SEAL sends email through `src/modules/notifications/email.service.js`, backed by a centralized Gmail SMTP transporter in `src/configs/mail.js`.
 
-## Local SMTP
+## Gmail SMTP Setup
+
+Required environment variables:
 
 ```env
-EMAIL_FROM="SEAL Hackathon <noreply@example.com>"
-EMAIL_DEV_MODE=console
-SMTP_HOST=smtp.example.com
+GMAIL_USER=your.gmail.account@gmail.com
+GMAIL_APP_PASSWORD=abcd efgh ijkl mnop
+MAIL_FROM="SEAL Hackathon <your.gmail.account@gmail.com>"
+SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_SECURE=false
-SMTP_USER=your_smtp_username
-SMTP_PASSWORD=your_smtp_password
+EMAIL_DEV_MODE=silent
 ```
 
-For Gmail app passwords, either use SMTP settings:
+- `GMAIL_USER`: Gmail account used for SMTP authentication.
+- `GMAIL_APP_PASSWORD`: Gmail app password for the account. Use the app password value, not the normal account password.
+- `MAIL_FROM`: Sender shown to recipients. For Gmail SMTP, keep the email address aligned with `GMAIL_USER` unless the Gmail account is configured to send as another address.
+- `SMTP_HOST`: Optional. Defaults to `smtp.gmail.com`.
+- `SMTP_PORT`: Optional. Defaults to `587`, Gmail's STARTTLS submission port.
+- `SMTP_SECURE`: Optional. Defaults to `false` for port `587`. Use `true` only for implicit TLS on port `465`.
+- `EMAIL_DEV_MODE`: Optional. In local development/test, `console` logs skipped emails when SMTP is not configured. In production, use `silent`.
+
+## Startup Verification
+
+On API startup, the backend calls:
+
+```js
+await transporter.verify()
+```
+
+Successful verification logs:
+
+```text
+[2026-06-25T00:00:00.000Z] INFO SMTP Ready {"provider":"gmail-smtp","host":"smtp.gmail.com","port":587,"secure":false,"family":4,"user":"yo***l@gmail.com","from":"SEAL Hackathon <your.gmail.account@gmail.com>"}
+```
+
+If verification fails, startup logs structured diagnostics and keeps the API process available:
+
+```text
+[2026-06-25T00:00:00.000Z] ERROR SMTP verification failed {"provider":"gmail-smtp","error":{"name":"Error","message":"Invalid login","code":"EAUTH","responseCode":535,"response":"535-5.7.8 Username and Password not accepted"},"probableCauses":["Invalid Gmail App Password","Gmail account is not configured to allow app passwords"]}
+```
+
+Probable causes include:
+
+- Invalid Gmail App Password.
+- Missing `GMAIL_USER`, `GMAIL_APP_PASSWORD`, or `MAIL_FROM`.
+- Gmail account not configured for app passwords.
+- SMTP connectivity issue between Railway and `smtp.gmail.com:587`.
+- Railway container IPv6 routing failure, shown as `ENETUNREACH ... :465`. The backend forces Gmail SMTP sockets over IPv4 to avoid this.
+- Railway timeout on `smtp.gmail.com:465`. The backend defaults to port `587` with STARTTLS because it is usually the safer SMTP submission path in hosted containers.
+
+## Railway Setup
+
+1. Open the Railway project and select the backend service.
+2. Open `Variables`.
+3. Add:
 
 ```env
-EMAIL_FROM="SEAL Hackathon <your_gmail_address@gmail.com>"
+GMAIL_USER=your.gmail.account@gmail.com
+GMAIL_APP_PASSWORD=abcd efgh ijkl mnop
+MAIL_FROM="SEAL Hackathon <your.gmail.account@gmail.com>"
 SMTP_HOST=smtp.gmail.com
-SMTP_PORT=465
-SMTP_SECURE=true
-SMTP_USER=your_gmail_address@gmail.com
-SMTP_PASSWORD=your_gmail_app_password
+SMTP_PORT=587
+SMTP_SECURE=false
+EMAIL_DEV_MODE=silent
 ```
 
-or the legacy aliases already supported by the project:
+4. Remove any old legacy email-provider API key variables.
+5. Redeploy the backend service.
+6. Check Railway logs for `SMTP Ready`.
+7. Send a test email with `POST /api/test-email`.
 
-```env
-EMAIL_USER=your_gmail_address@gmail.com
-EMAIL_PASSWORD=your_gmail_app_password
+## Test Endpoint
+
+```http
+POST /api/test-email
+Content-Type: application/json
+
+{
+  "to": "participant@example.com"
+}
 ```
 
-The project also accepts the existing two-field local setup:
-
-```env
-EMAIL_HOST=your_gmail_address@gmail.com
-EMAIL_PASSWORD=your_gmail_app_password
-```
-
-When `EMAIL_HOST` contains an email address, the backend treats it as the sender/login email. If `EMAIL_HOST` contains an SMTP server such as `smtp.gmail.com`, you must also provide `SMTP_USER` or `EMAIL_USER` because a password alone is not enough to authenticate.
+The endpoint sends a fixed test email through the same `EMAIL_SERVICE` used by production flows.
 
 ## Current Email Triggers
 
@@ -61,3 +107,22 @@ TEAM_INVITATION_TEMP_PASSWORD=test
 ```
 
 Other documented notification categories, such as scheduled timeline reminders, workshop reminders, feedback reminders, judging assignment messages, and result publication emails, are prepared at the notification-service level but should be connected when their owning backend modules exist.
+
+## Testing Checklist
+
+- `npm test`
+- Start the API and confirm logs include `SMTP Ready`.
+- `POST /api/test-email` to a non-owner recipient.
+- Approve a pending participant and confirm account-approved email.
+- Reject a pending participant and confirm account-rejected email.
+- Send event invitations from coordinator event management.
+- Create a team with a new invited member and confirm temporary-account plus team-invitation emails.
+- Accept a team invitation and confirm membership email.
+- Decline a team invitation and confirm leader notification email.
+
+## References
+
+- Railway variables: https://docs.railway.com/variables
+- Railway logs: https://docs.railway.com/observability/logs
+- Gmail app passwords: https://support.google.com/accounts/answer/185833
+- Nodemailer SMTP transport: https://nodemailer.com/smtp

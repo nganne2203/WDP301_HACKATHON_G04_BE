@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import crypto from 'node:crypto'
 import test from 'node:test'
 
 import ApiError from '../src/utils/ApiError.js'
@@ -6,6 +7,7 @@ import { createParticipantService } from '../src/modules/participants/participan
 
 const createRepository = () => {
   const records = new Map()
+  let checkInQrSession = null
   let sequence = 1
 
   const event = { _id: '000000000000000000000201', title: 'SEAL Event', status: 'OPEN_REGISTRATION' }
@@ -31,7 +33,7 @@ const createRepository = () => {
         attendedActivities: [],
         checkInStatus: 'NOT_CHECKED_IN',
         githubAccessStatus: 'NOT_GRANTED',
-        status: 'REGISTERED',
+        status: 'INVITED',
         ...data,
         _id: id
       }
@@ -46,6 +48,29 @@ const createRepository = () => {
       records.set(id, updated)
       return updated
     },
+    upsertCheckInQrSession: async (data) => {
+      checkInQrSession = { ...data }
+      return checkInQrSession
+    },
+    findCheckInQrSessionByTokenHash: async (tokenHash) => {
+      return checkInQrSession?.tokenHash === tokenHash ? checkInQrSession : null
+    },
+    checkInParticipantByEventAndUser: async ({ eventId, userId, now }) => {
+      const record = [...records.values()].find(item => item.eventId === eventId && item.userId === userId)
+      if (!record || record.checkInStatus !== 'NOT_CHECKED_IN') {
+        return null
+      }
+
+      const updated = {
+        ...record,
+        checkInStatus: 'CHECKED_IN',
+        checkedInAt: now,
+        checkedInBy: userId
+      }
+      records.set(record._id, updated)
+      return updated
+    },
+    getCheckInQrSession: () => checkInQrSession,
     deleteById: async (id) => records.delete(id),
     findEventById: async (id) => id === event._id ? event : null,
     findUserById: async (id) => {
@@ -71,7 +96,7 @@ test('createParticipant lets a user register themselves for an event', async () 
   assert.equal(participant.userId, '000000000000000000000301')
   assert.equal(participant.eventId, '000000000000000000000201')
   assert.equal(participant.consentMediaUse, true)
-  assert.equal(participant.status, 'REGISTERED')
+  assert.equal(participant.status, 'INVITED')
 })
 
 test('createParticipant rejects registering another user without approver permission', async () => {
@@ -91,6 +116,22 @@ test('createParticipant rejects registering another user without approver permis
   )
 })
 
+test('getMyParticipant returns only the authenticated user registration for an event', async () => {
+  const service = createParticipantService({ repository: createRepository() })
+  await service.createParticipant({
+    eventId: '000000000000000000000201'
+  }, {
+    id: '000000000000000000000301',
+    permissions: ['EVENT_VIEW']
+  })
+
+  const participant = await service.getMyParticipant('000000000000000000000201', {
+    id: '000000000000000000000301'
+  })
+
+  assert.equal(participant.userId, '000000000000000000000301')
+})
+
 test('updateAttendance and updateGithubAccessStatus persist participant lifecycle updates', async () => {
   const repository = createRepository()
   const service = createParticipantService({ repository })
@@ -108,4 +149,123 @@ test('updateAttendance and updateGithubAccessStatus persist participant lifecycl
 
   assert.deepEqual(attendanceUpdated.attendedActivities, ['WORKSHOP', 'CODING'])
   assert.equal(githubUpdated.githubAccessStatus, 'GRANTED')
+})
+
+const createQrTestService = ({ currentTime = new Date('2026-06-22T08:00:00.000Z') } = {}) => {
+  const repository = createRepository()
+  let nowValue = currentTime
+  const service = createParticipantService({
+    repository,
+    qrEncoder: { toDataURL: async payload => `data:image/png;base64,${payload}` },
+    randomToken: () => 'fixed-check-in-token-with-enough-entropy-123456789',
+    now: () => nowValue,
+    qrExpiresMinutes: 5,
+    checkInUrlBase: 'https://app.example.test'
+  })
+
+  return {
+    repository,
+    service,
+    setNow: value => { nowValue = value }
+  }
+}
+
+const createQrParticipant = async (service) => {
+  return await service.createParticipant({
+    eventId: '000000000000000000000201'
+  }, {
+    id: '000000000000000000000301',
+    permissions: ['EVENT_VIEW']
+  })
+}
+
+test('generateCheckInQr lets a coordinator generate an expiring event QR without storing the raw token', async () => {
+  const { repository, service } = createQrTestService()
+
+  const qr = await service.generateCheckInQr('000000000000000000000201', {
+    id: '000000000000000000000999',
+    permissions: ['PARTICIPANT_APPROVE']
+  })
+  const stored = repository.getCheckInQrSession()
+  const qrUrl = new URL(qr.qrPayload)
+
+  assert.equal(qr.eventId, '000000000000000000000201')
+  assert.equal(qrUrl.origin, 'https://app.example.test')
+  assert.equal(qrUrl.pathname, '/participant')
+  assert.equal(qrUrl.searchParams.get('checkInToken'), 'wdp301-checkin:fixed-check-in-token-with-enough-entropy-123456789')
+  assert.match(qr.qrCodeDataUrl, /^data:image\/png;base64,/)
+  assert.equal(qr.expiresAt.toISOString(), '2026-06-22T08:05:00.000Z')
+  assert.equal(stored.tokenHash, crypto.createHash('sha256').update('fixed-check-in-token-with-enough-entropy-123456789').digest('hex'))
+  assert.equal(stored.tokenHash.includes('fixed-check-in-token'), false)
+})
+
+test('participant scans the event QR to check in themselves and cannot check in twice', async () => {
+  const { service } = createQrTestService()
+  const participant = await createQrParticipant(service)
+  const qr = await service.generateCheckInQr(participant.eventId, {
+    id: '000000000000000000000999',
+    permissions: ['PARTICIPANT_APPROVE']
+  })
+
+  const checkedIn = await service.scanCheckInQr(qr.qrPayload, {
+    id: participant.userId,
+    permissions: []
+  })
+
+  assert.equal(checkedIn.checkInStatus, 'CHECKED_IN')
+  assert.equal(checkedIn.checkedInBy, participant.userId)
+
+  await assert.rejects(
+    service.scanCheckInQr(qr.qrPayload, { id: participant.userId }),
+    error => error instanceof ApiError && error.code === 'PARTICIPANT_ALREADY_CHECKED_IN'
+  )
+})
+
+test('the same event QR checks in multiple different participants', async () => {
+  const { service } = createQrTestService()
+  const participantA = await createQrParticipant(service)
+  const participantB = await service.createParticipant({
+    eventId: participantA.eventId
+  }, {
+    id: '000000000000000000000302',
+    permissions: ['EVENT_VIEW']
+  })
+  const qr = await service.generateCheckInQr(participantA.eventId, {
+    id: '000000000000000000000999',
+    permissions: ['PARTICIPANT_APPROVE']
+  })
+
+  const checkedInA = await service.scanCheckInQr(qr.qrPayload, { id: participantA.userId })
+  const checkedInB = await service.scanCheckInQr(qr.qrPayload, { id: participantB.userId })
+
+  assert.equal(checkedInA.checkInStatus, 'CHECKED_IN')
+  assert.equal(checkedInB.checkInStatus, 'CHECKED_IN')
+})
+
+test('scanCheckInQr rejects an expired token', async () => {
+  const { service, setNow } = createQrTestService()
+  const participant = await createQrParticipant(service)
+  const qr = await service.generateCheckInQr(participant.eventId, {
+    id: '000000000000000000000999',
+    permissions: ['PARTICIPANT_APPROVE']
+  })
+
+  setNow(new Date('2026-06-22T08:05:01.000Z'))
+
+  await assert.rejects(
+    service.scanCheckInQr(qr.qrPayload, { id: participant.userId }),
+    error => error instanceof ApiError && error.code === 'CHECK_IN_QR_EXPIRED' && error.errors.includes('Check-in QR has expired')
+  )
+})
+
+test('generateCheckInQr rejects users without coordinator approval permission', async () => {
+  const { service } = createQrTestService()
+
+  await assert.rejects(
+    service.generateCheckInQr('000000000000000000000201', {
+      id: '000000000000000000000302',
+      permissions: []
+    }),
+    error => error instanceof ApiError && error.code === 'FORBIDDEN'
+  )
 })

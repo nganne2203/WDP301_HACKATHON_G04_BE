@@ -95,8 +95,7 @@ const deriveAuthAction = ({ req, result }) => {
   if (tail === 'refresh-token') return success ? AUDIT_ACTIONS.AUTH_TOKEN_REFRESHED : AUDIT_ACTIONS.AUTH_TOKEN_REFRESH_FAILED
   if (tail === 'change-password') return success ? AUDIT_ACTIONS.AUTH_PASSWORD_CHANGED : AUDIT_ACTIONS.AUTH_PASSWORD_CHANGE_FAILED
   if (tail === 'logout') return AUDIT_ACTIONS.AUTH_LOGOUT
-  if (tail === 'google') return AUDIT_ACTIONS.AUTH_GOOGLE_LOGIN_STARTED
-  if (tail === 'callback') return success ? AUDIT_ACTIONS.AUTH_GOOGLE_LOGIN_SUCCESS : AUDIT_ACTIONS.AUTH_GOOGLE_LOGIN_FAILED
+  if (tail === 'google') return success ? AUDIT_ACTIONS.AUTH_GOOGLE_LOGIN_SUCCESS : AUDIT_ACTIONS.AUTH_GOOGLE_LOGIN_FAILED
 
   return success ? AUDIT_ACTIONS.API_MUTATION_COMPLETED : AUDIT_ACTIONS.API_MUTATION_FAILED
 }
@@ -197,6 +196,7 @@ const auditLogMiddleware = (req, res, next) => {
       errorMessage: result === AUDIT_RESULTS.FAILURE ? responseBody?.message || responseBody?.errors?.[0] || null : null,
       sourceModule: req.audit.sourceModule || getPathParts(req)[0] || 'system',
       metadata: {
+        ...(req.audit.metadata || {}),
         method: req.method,
         path: req.originalUrl,
         params: sanitize(req.params),

@@ -44,10 +44,39 @@ router.get(
 )
 
 router.get(
+  '/:id/static-analysis',
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  validationHandlingMiddleware(REPOSITORY_VALIDATION.listRepositoryCommits),
+  REPOSITORY_CONTROLLER.listStaticAnalysis
+)
+
+router.get(
   '/:id/ai-reviews',
   permissionMiddleware(PERMISSIONS.AI_REVIEW_VIEW),
   validationHandlingMiddleware(AI_REVIEW_VALIDATION.repositoryAiReviews),
   AI_REVIEW_CONTROLLER.listRepositoryAiReviews
+)
+
+router.get(
+  '/:id/commit-diffs',
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  validationHandlingMiddleware(REPOSITORY_VALIDATION.listRepositoryCommits),
+  REPOSITORY_CONTROLLER.listCommitDiffs
+)
+
+router.get(
+  '/:id/impact-decisions',
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  validationHandlingMiddleware(REPOSITORY_VALIDATION.listRepositoryCommits),
+  REPOSITORY_CONTROLLER.listImpactDecisions
+)
+
+router.post(
+  '/:id/sync-commits',
+  sensitiveRateLimiter,
+  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  validationHandlingMiddleware(REPOSITORY_VALIDATION.syncRepositoryCommits),
+  REPOSITORY_CONTROLLER.syncRepositoryCommits
 )
 
 router.patch(

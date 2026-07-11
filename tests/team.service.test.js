@@ -88,6 +88,9 @@ test('team invitation templates include required accept, decline, and temporary 
   assert.match(temporaryAccount.text, /member@example.com/)
   assert.match(temporaryAccount.text, /test/)
   assert.match(temporaryAccount.text, /change your password/i)
+  assert.match(temporaryAccount.html, /Temporary password/i)
+  assert.match(temporaryAccount.html, /Open sign in/i)
+  assert.match(temporaryAccount.html, /contact the organizing team/i)
 })
 
 test('createTeam rejects duplicate team creation for the same event leader', async () => {
@@ -102,7 +105,7 @@ test('createTeam rejects duplicate team creation for the same event leader', asy
       maxTeams: 30
     }),
     countTeams: async () => 0,
-    findUserById: async () => ({ _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'APPROVED' }),
+    findUserById: async () => ({ _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'ACTIVE' }),
     findTeamByLeaderAndEvent: async () => ({ _id: 'team-1', name: 'Existing Team' })
   }
   const service = createTeamService({ repository, logger: createLogger() })
@@ -113,8 +116,57 @@ test('createTeam rejects duplicate team creation for the same event leader', asy
   )
 })
 
+test('createTeam rejects duplicate team name in the same event', async () => {
+  const repository = {
+    createSession,
+    findEventById: async () => ({
+      _id: 'event-1',
+      title: 'SEAL Hackathon',
+      status: 'OPEN_REGISTRATION',
+      minTeamMembers: 3,
+      maxTeamMembers: 5,
+      maxTeams: 30
+    }),
+    countTeams: async () => 0,
+    findUserById: async () => ({ _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'ACTIVE' }),
+    findTeamByLeaderAndEvent: async () => null,
+    findTeamByEventAndName: async ({ name }) => ({ _id: 'team-1', name })
+  }
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.createTeam({ eventId: 'event-1', name: 'Code Wizards' }, { id: 'leader-1' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'CONFLICT' &&
+      error.errors.includes('Team name already exists in this event')
+  )
+})
+
+test('checkTeamAvailability reports duplicate team name and leader for an event', async () => {
+  const eventId = '000000000000000000000001'
+  const repository = {
+    findEventById: async () => ({ _id: eventId, title: 'SEAL Hackathon' }),
+    findTeamByEventAndName: async () => ({ _id: 'team-1', name: 'Code Wizards' }),
+    findTeamByLeaderAndEvent: async () => ({ _id: 'team-2', name: 'Leader Team' })
+  }
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  const result = await service.checkTeamAvailability({
+    eventId,
+    name: ' Code Wizards '
+  }, { id: 'leader-1' })
+
+  assert.equal(result.available, false)
+  assert.equal(result.nameAvailable, false)
+  assert.equal(result.leaderAvailable, false)
+  assert.deepEqual(result.errors, [
+    'Team name already exists in this event',
+    'You already created a team for this event'
+  ])
+})
+
 test('createTeam rejects inviting the leader email as a team member', async () => {
-  const leader = { _id: 'leader-1', email: 'Leader@Example.com', fullName: 'Leader', status: 'APPROVED' }
+  const leader = { _id: 'leader-1', email: 'Leader@Example.com', fullName: 'Leader', status: 'ACTIVE' }
   const repository = {
     createSession,
     findEventById: async () => ({
@@ -128,6 +180,7 @@ test('createTeam rejects inviting the leader email as a team member', async () =
     countTeams: async () => 0,
     findUserById: async () => leader,
     findTeamByLeaderAndEvent: async () => null,
+    findTeamByEventAndName: async () => null,
     findParticipantByEventAndUser: async () => null,
     findBlockingInvitation: async () => null
   }
@@ -145,9 +198,10 @@ test('createTeam rejects inviting the leader email as a team member', async () =
   )
 })
 
-test('createTeam sends temporary account and invitation emails for unknown invitees', async () => {
+test('createTeam sends only invitation email for unknown invitees', async () => {
   const sentEmails = []
-  const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'APPROVED' }
+  const createdUsers = []
+  const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'ACTIVE' }
   const event = {
     _id: 'event-1',
     title: 'SEAL Hackathon',
@@ -170,8 +224,11 @@ test('createTeam sends temporary account and invitation emails for unknown invit
     teamId: 'team-1',
     leaderId: 'leader-1',
     invitedEmail: 'member@example.com',
-    invitedUserId: 'member-1',
     status: 'PENDING',
+    metadata: {
+      invitedFullName: undefined,
+      invitedGithubUsername: undefined
+    },
     expiresAt: new Date('2026-06-02T00:00:00.000Z')
   }
 
@@ -179,15 +236,18 @@ test('createTeam sends temporary account and invitation emails for unknown invit
     createSession,
     findEventById: async () => event,
     countTeams: async () => 0,
-    findUserById: async (id) => id === 'leader-1' ? leader : { _id: id, email: 'member@example.com', fullName: 'Member', status: 'APPROVED' },
+    findUserById: async (id) => id === 'leader-1' ? leader : { _id: id, email: 'member@example.com', fullName: 'Member', status: 'ACTIVE' },
     findTeamByLeaderAndEvent: async () => null,
+    findTeamByEventAndName: async () => null,
     findParticipantByEventAndUser: async () => null,
     findBlockingInvitation: async () => null,
     createTeam: async () => team,
     upsertParticipant: async () => ({}),
     findUserByEmail: async () => null,
-    findRoleByName: async () => ({ _id: 'role-user' }),
-    createUser: async () => ({ _id: 'member-1', email: 'member@example.com', fullName: 'Member', status: 'APPROVED' }),
+    createUser: async (data) => {
+      createdUsers.push(data)
+      return { _id: 'member-1', email: data.email, fullName: data.fullName, status: 'ACTIVE' }
+    },
     createInvitation: async () => invitation,
     findTeamById: async () => team,
     findParticipantsByTeam: async () => [{
@@ -196,7 +256,7 @@ test('createTeam sends temporary account and invitation emails for unknown invit
       teamId: 'team-1',
       userId: leader,
       teamRole: 'LEADER',
-      status: 'ACTIVE'
+      status: 'JOINED'
     }],
     findInvitationsByTeam: async () => [invitation]
   }
@@ -222,13 +282,241 @@ test('createTeam sends temporary account and invitation emails for unknown invit
   }, { id: 'leader-1' })
 
   assert.equal(result.name, 'Code Wizards')
-  assert.equal(sentEmails.length, 2)
+  assert.equal(createdUsers.length, 0)
+  assert.equal(sentEmails.length, 1)
+  assert.equal(sentEmails[0].template, EMAIL_TEMPLATE_KEYS.TEAM_INVITATION)
+})
+
+test('acceptInvitation creates account and sends temporary account email for unknown invitee', async () => {
+  const sentEmails = []
+  const notifications = []
+  const createdUsers = []
+  const token = createInvitationToken()
+  const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'ACTIVE' }
+  const event = {
+    _id: 'event-1',
+    title: 'SEAL Hackathon',
+    status: 'OPEN_REGISTRATION',
+    minTeamMembers: 3,
+    maxTeamMembers: 5,
+    maxTeams: 30
+  }
+  let createdUser = null
+  let team = {
+    _id: 'team-1',
+    eventId: event,
+    leaderId: leader,
+    memberIds: [leader],
+    name: 'Code Wizards',
+    status: 'WAITING_FOR_MEMBERS'
+  }
+  let invitation = {
+    _id: 'invitation-1',
+    eventId: 'event-1',
+    teamId: 'team-1',
+    leaderId: 'leader-1',
+    invitedEmail: 'member@example.com',
+    tokenHash: hashInvitationToken(token),
+    status: 'PENDING',
+    metadata: {
+      invitedFullName: 'Member User'
+    },
+    expiresAt: new Date('2099-06-02T00:00:00.000Z')
+  }
+
+  const repository = {
+    createSession,
+    findInvitationByTokenHash: async (tokenHash) => tokenHash === invitation.tokenHash ? invitation : null,
+    findTeamById: async () => team,
+    findEventById: async () => event,
+    countTeams: async () => 0,
+    findUserByEmail: async () => null,
+    findRoleByName: async () => ({ _id: 'role-user' }),
+    createUser: async (data) => {
+      createdUsers.push(data)
+      createdUser = {
+        _id: 'member-1',
+        email: data.email,
+        fullName: data.fullName,
+        githubUsername: data.githubUsername,
+        status: data.status,
+        mustChangePassword: data.mustChangePassword
+      }
+      return createdUser
+    },
+    findParticipantByEventAndUser: async () => null,
+    findBlockingInvitation: async () => null,
+    upsertParticipant: async () => ({}),
+    updateTeamById: async (id, data) => {
+      if (data.$addToSet?.memberIds) {
+        team = {
+          ...team,
+          memberIds: [leader, createdUser]
+        }
+        return team
+      }
+
+      team = { ...team, ...data, _id: id }
+      return team
+    },
+    updateInvitationById: async (id, data) => {
+      invitation = { ...invitation, ...data, _id: id }
+      return invitation
+    },
+    findParticipantsByTeam: async () => [{
+      _id: 'participant-1',
+      eventId: 'event-1',
+      teamId: 'team-1',
+      userId: leader,
+      teamRole: 'LEADER',
+      status: 'JOINED'
+    }, {
+      _id: 'participant-2',
+      eventId: 'event-1',
+      teamId: 'team-1',
+      userId: createdUser,
+      teamRole: 'MEMBER',
+      status: 'JOINED'
+    }],
+    findInvitationsByTeam: async () => [invitation]
+  }
+
+  const service = createTeamService({
+    repository,
+    emailService: {
+      sendTemplateEmail: async (payload) => {
+        sentEmails.push(payload)
+        return { sent: true, status: 'SENT', accepted: [payload.to] }
+      }
+    },
+    notificationService: {
+      notifyUser: async (payload) => {
+        notifications.push(payload)
+        return { notification: null, email: null, errors: [] }
+      }
+    },
+    logger: createLogger()
+  })
+
+  const result = await service.acceptInvitation(token)
+
+  assert.equal(result.status, 'ACCEPTED')
+  assert.equal(createdUsers.length, 1)
+  assert.equal(createdUsers[0].email, 'member@example.com')
+  assert.equal(createdUsers[0].fullName, 'Member User')
+  assert.equal(createdUsers[0].status, 'ACTIVE')
+  assert.equal(createdUsers[0].mustChangePassword, true)
+  assert.equal(invitation.invitedUserId, 'member-1')
+  assert.equal(sentEmails.length, 1)
   assert.equal(sentEmails[0].template, EMAIL_TEMPLATE_KEYS.TEMPORARY_ACCOUNT)
-  assert.equal(sentEmails[1].template, EMAIL_TEMPLATE_KEYS.TEAM_INVITATION)
+  assert.equal(sentEmails[0].to, 'member@example.com')
+  assert.equal(sentEmails[0].context.temporaryPassword, process.env.TEAM_INVITATION_TEMP_PASSWORD || 'test')
+  assert.equal(notifications.length, 1)
+  assert.deepEqual(notifications[0].channels, ['IN_APP'])
+})
+
+test('acceptInvitation confirms team without placement when event has no tracks configured', async () => {
+  const token = createInvitationToken()
+  const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'ACTIVE' }
+  const member = {
+    _id: 'member-1',
+    email: 'member@example.com',
+    fullName: 'Member User',
+    status: 'ACTIVE',
+    roles: [{ name: 'PARTICIPANT' }]
+  }
+  const event = {
+    _id: 'event-1',
+    title: 'SEAL Hackathon',
+    status: 'OPEN_REGISTRATION',
+    minTeamMembers: 2,
+    maxTeamMembers: 5,
+    maxTeams: 30
+  }
+  let team = {
+    _id: 'team-1',
+    eventId: event,
+    leaderId: leader,
+    memberIds: [leader],
+    name: 'Code Wizards',
+    status: 'WAITING_FOR_MEMBERS'
+  }
+  let invitation = {
+    _id: 'invitation-1',
+    eventId: 'event-1',
+    teamId: 'team-1',
+    leaderId: 'leader-1',
+    invitedEmail: 'member@example.com',
+    invitedUserId: 'member-1',
+    tokenHash: hashInvitationToken(token),
+    status: 'PENDING',
+    expiresAt: new Date('2099-06-02T00:00:00.000Z')
+  }
+
+  const repository = {
+    createSession,
+    findInvitationByTokenHash: async (tokenHash) => tokenHash === invitation.tokenHash ? invitation : null,
+    findTeamById: async () => team,
+    findEventById: async () => event,
+    countTeams: async () => 0,
+    findUserById: async (id) => id === member._id ? member : leader,
+    findParticipantByEventAndUser: async () => null,
+    findBlockingInvitation: async () => null,
+    upsertParticipant: async () => ({}),
+    updateTeamById: async (id, data) => {
+      if (data.$addToSet?.memberIds) {
+        team = {
+          ...team,
+          memberIds: [leader, member]
+        }
+        return team
+      }
+
+      team = { ...team, ...data, _id: id }
+      return team
+    },
+    updateInvitationById: async (id, data) => {
+      invitation = { ...invitation, ...data, _id: id }
+      return invitation
+    },
+    findTracksByEvent: async () => [],
+    findParticipantsByTeam: async () => [{
+      _id: 'participant-1',
+      eventId: 'event-1',
+      teamId: 'team-1',
+      userId: leader,
+      teamRole: 'LEADER',
+      status: 'JOINED'
+    }, {
+      _id: 'participant-2',
+      eventId: 'event-1',
+      teamId: 'team-1',
+      userId: member,
+      teamRole: 'MEMBER',
+      status: 'JOINED'
+    }],
+    findInvitationsByTeam: async () => [invitation]
+  }
+
+  const service = createTeamService({
+    repository,
+    notificationService: {
+      notifyUser: async () => ({ notification: null, email: null, errors: [] })
+    },
+    logger: createLogger()
+  })
+
+  const result = await service.acceptInvitation(token)
+
+  assert.equal(result.status, 'ACCEPTED')
+  assert.equal(result.team.status, 'CONFIRMED')
+  assert.equal(result.team.trackId, undefined)
+  assert.equal(result.team.placementSlot, null)
+  assert.equal(invitation.invitedUserId, 'member-1')
 })
 
 test('createTeam rejects duplicate active participant membership in the same event', async () => {
-  const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'APPROVED' }
+  const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'ACTIVE' }
   const repository = {
     createSession,
     findEventById: async () => ({
@@ -242,10 +530,11 @@ test('createTeam rejects duplicate active participant membership in the same eve
     countTeams: async () => 0,
     findUserById: async () => leader,
     findTeamByLeaderAndEvent: async () => null,
+    findTeamByEventAndName: async () => null,
     findParticipantByEventAndUser: async () => ({
       _id: 'participant-1',
       teamId: 'other-team',
-      status: 'ACTIVE'
+      status: 'JOINED'
     }),
     findBlockingInvitation: async () => null
   }
@@ -261,7 +550,7 @@ test('createTeam rejects duplicate active participant membership in the same eve
 })
 
 test('createTeam enforces event max team size from invited members', async () => {
-  const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'APPROVED' }
+  const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'ACTIVE' }
   const repository = {
     createSession,
     findEventById: async () => ({
@@ -275,6 +564,7 @@ test('createTeam enforces event max team size from invited members', async () =>
     countTeams: async () => 0,
     findUserById: async () => leader,
     findTeamByLeaderAndEvent: async () => null,
+    findTeamByEventAndName: async () => null,
     findParticipantByEventAndUser: async () => null,
     findBlockingInvitation: async () => null
   }
@@ -291,6 +581,109 @@ test('createTeam enforces event max team size from invited members', async () =>
       error.code === 'BAD_REQUEST' &&
       error.errors.includes('Too many invited members for this event')
   )
+})
+
+test('createTeam auto-closes registration when confirmed team capacity is already reached', async () => {
+  const event = {
+    _id: 'event-1',
+    title: 'SEAL Hackathon',
+    status: 'OPEN_REGISTRATION',
+    minTeamMembers: 3,
+    maxTeamMembers: 5,
+    maxTeams: 2
+  }
+  const updates = []
+  const repository = {
+    createSession,
+    findEventById: async () => event,
+    countTeams: async () => 2,
+    updateEventById: async (id, data) => {
+      updates.push({ id, data })
+      return { ...event, ...data, _id: id }
+    }
+  }
+
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.createTeam({ eventId: 'event-1', name: 'Late Team' }, { id: 'leader-1' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Event registration is not open')
+  )
+
+  assert.equal(updates.length, 1)
+  assert.equal(updates[0].data.status, 'REGISTRATION_CLOSED')
+  assert.equal(updates[0].data.registrationCloseReason, 'CAPACITY_REACHED')
+})
+
+test('rejectUnconfirmedTeamsForRegistrationClosure rejects open teams and cancels pending invites', async () => {
+  const notifications = []
+  const event = {
+    _id: '000000000000000000000301',
+    title: 'SEAL Hackathon',
+    status: 'REGISTRATION_CLOSED'
+  }
+  const leader = { _id: '000000000000000000000401', email: 'leader@example.com', fullName: 'Leader' }
+  const member = { _id: '000000000000000000000402', email: 'member@example.com', fullName: 'Member' }
+  const team = {
+    _id: '000000000000000000000501',
+    eventId: event,
+    leaderId: leader,
+    memberIds: [leader],
+    name: 'Pending Team',
+    status: 'WAITING_FOR_MEMBERS'
+  }
+  const updatedTeams = []
+  const invitationUpdates = []
+  const repository = {
+    createSession,
+    findTeams: async ({ filter }) => {
+      assert.equal(filter.eventId, event._id)
+      assert.deepEqual(filter.status.$in, ['WAITING_FOR_MEMBERS', 'WAITLISTED'])
+      return [team]
+    },
+    updateTeamById: async (id, data) => {
+      updatedTeams.push({ id, data })
+      return { ...team, ...data, _id: id }
+    },
+    updateInvitations: async (filter, data) => {
+      invitationUpdates.push({ filter, data })
+      return { modifiedCount: 1 }
+    },
+    findParticipantsByTeam: async () => [{
+      _id: 'participant-1',
+      userId: member,
+      teamRole: 'MEMBER',
+      status: 'INVITED'
+    }]
+  }
+  const service = createTeamService({
+    repository,
+    notificationService: {
+      notifyUser: async (payload) => {
+        notifications.push(payload)
+        return { notification: null, email: null, errors: [] }
+      }
+    },
+    logger: createLogger()
+  })
+
+  const result = await service.rejectUnconfirmedTeamsForRegistrationClosure({
+    event,
+    reason: 'Registration has closed before this team was fully confirmed.'
+  })
+
+  assert.equal(result.rejectedCount, 1)
+  assert.equal(updatedTeams.length, 1)
+  assert.equal(updatedTeams[0].data.status, 'REJECTED')
+  assert.equal(updatedTeams[0].data.rejectionReason, 'Registration has closed before this team was fully confirmed.')
+  assert.equal(invitationUpdates.length, 1)
+  assert.equal(invitationUpdates[0].filter.teamId, team._id)
+  assert.equal(invitationUpdates[0].filter.status, 'PENDING')
+  assert.equal(invitationUpdates[0].data.status, 'CANCELLED')
+  assert.equal(notifications.length, 2)
+  assert.equal(notifications[0].emailContext.rejectionReason, 'Registration has closed before this team was fully confirmed.')
 })
 
 test('updateTeamStatus confirms a team and auto-assigns the next available placement slot', async () => {
@@ -421,9 +814,9 @@ test('mentor can list only teams assigned to them', async () => {
     _id: '000000000000000000000111',
     eventId: { _id: '000000000000000000000211', title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' },
     trackId: { _id: '000000000000000000000311', code: 'WEB', name: 'Web Experience', type: 'PRELIMINARY_GROUP', status: 'OPEN' },
-    leaderId: { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader One', status: 'APPROVED' },
-    memberIds: [{ _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader One', status: 'APPROVED' }],
-    mentorIds: [{ _id: 'mentor-1', email: 'mentor@example.com', fullName: 'Mentor One', status: 'APPROVED' }],
+    leaderId: { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader One', status: 'ACTIVE' },
+    memberIds: [{ _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader One', status: 'ACTIVE' }],
+    mentorIds: [{ _id: 'mentor-1', email: 'mentor@example.com', fullName: 'Mentor One', status: 'ACTIVE' }],
     name: 'Assigned Team',
     chapterName: 'SE',
     projectName: 'Mentored Project',
@@ -456,6 +849,137 @@ test('mentor can list only teams assigned to them', async () => {
   assert.equal(result.teams.length, 1)
   assert.equal(result.teams[0].name, 'Assigned Team')
   assert.deepEqual(result.teams[0].mentorIds, ['mentor-1'])
+})
+
+test('assignMentorsByBoard updates every team in the selected board', async () => {
+  const eventId = '000000000000000000000211'
+  const boardNumber = 2
+  const mentorA = { _id: '000000000000000000000901', email: 'mentor.a@example.com', fullName: 'Mentor A', status: 'ACTIVE', roles: [{ name: 'MENTOR' }] }
+  const mentorB = { _id: '000000000000000000000902', email: 'mentor.b@example.com', fullName: 'Mentor B', status: 'ACTIVE', roles: [{ name: 'MENTOR' }] }
+  const teams = [
+    {
+      _id: '000000000000000000000111',
+      eventId: { _id: eventId, title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' },
+      trackId: null,
+      leaderId: { _id: 'leader-1', email: 'leader1@example.com', fullName: 'Leader One', status: 'ACTIVE' },
+      memberIds: [],
+      mentorIds: [{ _id: '000000000000000000000903', email: 'legacy@example.com', fullName: 'Legacy Mentor', status: 'ACTIVE', roles: [{ name: 'MENTOR' }] }],
+      name: 'Board Two Alpha',
+      boardNumber,
+      participants: [],
+      invitations: [],
+      status: 'CONFIRMED',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      _id: '000000000000000000000112',
+      eventId: { _id: eventId, title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' },
+      trackId: null,
+      leaderId: { _id: 'leader-2', email: 'leader2@example.com', fullName: 'Leader Two', status: 'ACTIVE' },
+      memberIds: [],
+      mentorIds: [],
+      name: 'Board Two Beta',
+      boardNumber,
+      participants: [],
+      invitations: [],
+      status: 'CONFIRMED',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+  ]
+
+  const updatedTeamsById = new Map()
+  const repository = {
+    createSession,
+    findEventById: async (id) => id === eventId ? { _id: eventId, title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' } : null,
+    findUsersByIds: async (ids) => ids.map((id) => (id === mentorA._id ? mentorA : mentorB)),
+    findTeams: async ({ filter }) => {
+      assert.equal(filter.eventId, eventId)
+      assert.equal(filter.boardNumber, boardNumber)
+      return teams
+    },
+    updateTeamById: async (id, data) => {
+      const source = teams.find((team) => team._id === id)
+      const nextMentors = data.mentorIds.map((mentorId) => (mentorId === mentorA._id ? mentorA : mentorB))
+      const updated = {
+        ...source,
+        mentorIds: nextMentors
+      }
+      updatedTeamsById.set(id, updated)
+      return updated
+    },
+    findParticipantsByTeam: async () => [],
+    findInvitationsByTeam: async () => []
+  }
+
+  const service = createTeamService({ repository, logger: createLogger() })
+  const result = await service.assignMentorsByBoard({
+    eventId,
+    boardNumber,
+    mentorIds: [mentorA._id, mentorB._id]
+  }, {
+    id: 'coord-1',
+    permissions: ['TEAM_UPDATE']
+  })
+
+  assert.equal(result.updatedCount, 2)
+  assert.deepEqual(result.mentorIds, [mentorA._id, mentorB._id])
+  assert.deepEqual(result.teamIds, ['000000000000000000000111', '000000000000000000000112'])
+  assert.equal(result.audit.teamDiffs.length, 2)
+  assert.deepEqual(result.teams[0].mentorIds, [mentorA._id, mentorB._id])
+  assert.deepEqual(result.teams[1].mentorIds, [mentorA._id, mentorB._id])
+  assert.deepEqual(updatedTeamsById.get('000000000000000000000111').mentorIds.map((mentor) => mentor._id), [mentorA._id, mentorB._id])
+})
+
+test('assignMentorsByBoard accepts active mentor accounts and rejects inaccessible statuses', async () => {
+  const eventId = '000000000000000000000211'
+  const repository = {
+    createSession,
+    findEventById: async () => ({ _id: eventId, title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' }),
+    findUsersByIds: async () => [{ _id: '000000000000000000000901', email: 'mentor@example.com', fullName: 'Mentor', status: 'SUSPENDED', roles: [{ name: 'MENTOR' }] }]
+  }
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.assignMentorsByBoard({
+      eventId,
+      boardNumber: 1,
+      mentorIds: ['000000000000000000000901']
+    }, {
+      id: 'coord-1',
+      permissions: ['TEAM_UPDATE']
+    }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Mentor Mentor must be ACTIVE')
+  )
+})
+
+test('assignMentorsByBoard rejects empty boards', async () => {
+  const eventId = '000000000000000000000211'
+  const mentor = { _id: '000000000000000000000901', email: 'mentor@example.com', fullName: 'Mentor', status: 'ACTIVE', roles: [{ name: 'MENTOR' }] }
+  const repository = {
+    createSession,
+    findEventById: async () => ({ _id: eventId, title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' }),
+    findUsersByIds: async () => [mentor],
+    findTeams: async () => []
+  }
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.assignMentorsByBoard({
+      eventId,
+      boardNumber: 9,
+      mentorIds: [mentor._id]
+    }, {
+      id: 'coord-1',
+      permissions: ['TEAM_UPDATE']
+    }),
+    (error) => error instanceof ApiError &&
+      error.code === 'NOT_FOUND' &&
+      error.errors.includes('No teams found for board 9')
+  )
 })
 
 test('updateTeamStatus rejects actors without team management permission', async () => {

@@ -1,10 +1,13 @@
+import crypto from 'node:crypto'
 import mongoose from 'mongoose'
+import QRCode from 'qrcode'
 
 import { PARTICIPANT_REPOSITORY } from './participant.repository.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
+import { env } from '#configs/environment.js'
 
 const PARTICIPANT_FIELDS = [
   'eventId',
@@ -23,6 +26,37 @@ const PARTICIPANT_FIELDS = [
 ]
 
 const APPROVER_PERMISSIONS = new Set(['PARTICIPANT_APPROVE'])
+const CHECK_IN_QR_PREFIX = 'wdp301-checkin:'
+
+const hashCheckInToken = (token) => crypto.createHash('sha256').update(token).digest('hex')
+
+const normalizeCheckInToken = (value = '') => {
+  const token = String(value).trim()
+  if (!token) return ''
+
+  try {
+    const url = new URL(token)
+    const urlToken = url.searchParams.get('checkInToken') || url.searchParams.get('token')
+    if (urlToken) return normalizeCheckInToken(urlToken)
+  } catch {
+    // The QR may still be the legacy raw token payload.
+  }
+
+  const prefixIndex = token.indexOf(CHECK_IN_QR_PREFIX)
+  return prefixIndex >= 0 ? token.slice(prefixIndex + CHECK_IN_QR_PREFIX.length) : token
+}
+
+const buildCheckInQrPayload = ({ tokenPayload, checkInUrlBase }) => {
+  if (!checkInUrlBase) return tokenPayload
+
+  try {
+    const url = new URL('/participant', checkInUrlBase)
+    url.searchParams.set('checkInToken', tokenPayload)
+    return url.toString()
+  } catch {
+    return tokenPayload
+  }
+}
 
 const ensureObjectId = (id, fieldName = 'participant id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -73,7 +107,9 @@ const normalizeEvent = (event) => {
     semester: event.semester,
     season: event.season,
     year: event.year,
-    status: event.status
+    status: event.status,
+    startDate: event.startDate,
+    endDate: event.endDate
   }
 }
 
@@ -85,6 +121,7 @@ const normalizeUser = (user) => {
     id: user._id?.toString() || user.id,
     fullName: user.fullName,
     email: user.email,
+    githubUsername: user.githubUsername,
     status: user.status,
     studentId: user.studentId,
     studentType: user.studentType,
@@ -129,6 +166,8 @@ const normalizeParticipant = (participant) => {
     eligibilityStatus: plainParticipant.eligibilityStatus,
     attendedActivities: plainParticipant.attendedActivities || [],
     checkInStatus: plainParticipant.checkInStatus,
+    checkedInAt: plainParticipant.checkedInAt || null,
+    checkedInBy: plainParticipant.checkedInBy?.toString?.() || plainParticipant.checkedInBy || null,
     githubAccessStatus: plainParticipant.githubAccessStatus,
     status: plainParticipant.status,
     joinedAt: plainParticipant.joinedAt,
@@ -142,7 +181,12 @@ const hasApproverPermission = (actor = {}) => {
 }
 
 export const createParticipantService = ({
-  repository = PARTICIPANT_REPOSITORY
+  repository = PARTICIPANT_REPOSITORY,
+  qrEncoder = QRCode,
+  randomToken = () => crypto.randomBytes(32).toString('base64url'),
+  now = () => new Date(),
+  qrExpiresMinutes = env.checkInQr.expiresMinutes,
+  checkInUrlBase = env.client.frontendUrl
 } = {}) => {
   const ensureParticipantExists = async (id) => {
     ensureObjectId(id)
@@ -212,6 +256,15 @@ export const createParticipantService = ({
     return normalizeParticipant(participant)
   }
 
+  const getMyParticipant = async (eventId, actor = {}) => {
+    await ensureEventExists(eventId)
+    if (!actor.id) throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authentication is required'])
+
+    const participant = await repository.findByEventAndUser({ eventId, userId: actor.id })
+    if (!participant) return null
+    return normalizeParticipant(participant)
+  }
+
   const createParticipant = async (payload = {}, actor = {}) => {
     await ensureEventExists(payload.eventId)
 
@@ -275,6 +328,76 @@ export const createParticipantService = ({
     return normalizeParticipant(participant)
   }
 
+  const generateCheckInQr = async (eventId, actor = {}) => {
+    if (!hasApproverPermission(actor)) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only coordinators can generate an event check-in QR'])
+    }
+    await ensureEventExists(eventId)
+
+    const token = randomToken()
+    const tokenPayload = `${CHECK_IN_QR_PREFIX}${token}`
+    const qrPayload = buildCheckInQrPayload({ tokenPayload, checkInUrlBase })
+    const issuedAt = now()
+    const ttlMinutes = Number.isFinite(Number(qrExpiresMinutes)) && Number(qrExpiresMinutes) > 0
+      ? Number(qrExpiresMinutes)
+      : 5
+    const expiresAt = new Date(issuedAt.getTime() + ttlMinutes * 60 * 1000)
+
+    const qrCodeDataUrl = await qrEncoder.toDataURL(qrPayload, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 320
+    })
+
+    await repository.upsertCheckInQrSession({
+      eventId,
+      tokenHash: hashCheckInToken(token),
+      expiresAt,
+      createdBy: actor.id
+    })
+
+    return {
+      eventId,
+      qrCodeDataUrl,
+      qrPayload,
+      expiresAt
+    }
+  }
+
+  const scanCheckInQr = async (value, actor = {}) => {
+    const token = normalizeCheckInToken(value)
+    if (!token) throw new ApiError(ERROR_CODES.INVALID_CHECK_IN_QR, ['Check-in QR token is required'])
+
+    if (!actor.id) throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authentication is required'])
+
+    const tokenHash = hashCheckInToken(token)
+    const scannedAt = now()
+    const session = await repository.findCheckInQrSessionByTokenHash(tokenHash)
+    if (!session) throw new ApiError(ERROR_CODES.INVALID_CHECK_IN_QR, ['Invalid check-in QR token'])
+    if (!session.expiresAt || session.expiresAt <= scannedAt) {
+      throw new ApiError(ERROR_CODES.CHECK_IN_QR_EXPIRED, ['Check-in QR has expired'])
+    }
+
+    const eventId = session.eventId?._id?.toString?.() || session.eventId?.toString?.() || session.eventId
+    const participant = await repository.checkInParticipantByEventAndUser({
+      eventId,
+      userId: actor.id,
+      now: scannedAt
+    })
+
+    if (participant) return normalizeParticipant(participant)
+
+    const existingParticipant = await repository.findByEventAndUser({ eventId, userId: actor.id })
+    if (!existingParticipant) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['You are not registered as a participant for this event'])
+    }
+    if (existingParticipant.checkInStatus === 'CHECKED_IN') {
+      throw new ApiError(ERROR_CODES.PARTICIPANT_ALREADY_CHECKED_IN, ['You have already checked in for this event'])
+    }
+
+    throw new ApiError(ERROR_CODES.CONFLICT, ['Participant could not be checked in'])
+  }
+
   const updateAttendance = async (id, attendedActivities = []) => {
     await ensureParticipantExists(id)
     const participant = await repository.updateById(id, {
@@ -294,9 +417,12 @@ export const createParticipantService = ({
   return {
     listParticipants,
     getParticipantById,
+    getMyParticipant,
     createParticipant,
     updateParticipant,
     updateCheckInStatus,
+    generateCheckInQr,
+    scanCheckInQr,
     updateAttendance,
     updateGithubAccessStatus
   }

@@ -6,6 +6,7 @@ import { PERMISSIONS } from '#constants/permissions.js'
 import { authorizationMiddleware } from '#middlewares/authHandlingMiddleware.js'
 import { validationHandlingMiddleware } from '#middlewares/validationHandlingMiddleware.js'
 import { permissionMiddleware } from '#middlewares/permission.middleware.js'
+import { MEDIA_MULTIPART } from '#modules/media/media.multipart.js'
 
 const router = Router()
 
@@ -68,6 +69,13 @@ const router = Router()
  *           nullable: true
  *           maxLength: 500
  *           example: I build hackathon projects.
+ *         githubUsername:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 39
+ *           pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$'
+ *           example: octocat
  *     CreateUserRequest:
  *       type: object
  *       required: [email, password, fullName, roles]
@@ -92,20 +100,27 @@ const router = Router()
  *           uniqueItems: true
  *           items:
  *             type: string
- *             enum: [ADMIN, EVENT_COORDINATOR, COORDINATOR, JUDGE, MENTOR, USER, PARTICIPANT]
+ *             enum: [ADMIN, EVENT_COORDINATOR, COORDINATOR, JUDGE, MENTOR, SPEAKER, PARTICIPANT]
  *           example: [JUDGE]
  *         status:
  *           type: string
- *           enum: [PENDING, APPROVED, REJECTED, SUSPENDED]
- *           default: PENDING
+ *           enum: [PENDING, ACTIVE, REJECTED, SUSPENDED]
+ *           default: ACTIVE
+ *         githubUsername:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 39
+ *           pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$'
+ *           example: octocat
  *         studentType:
  *           type: string
  *           enum: [FPT, EXTERNAL]
- *           description: Required when roles includes USER
+ *           description: Required when roles includes PARTICIPANT
  *           example: FPT
  *         studentId:
  *           type: string
- *           description: Required when roles includes USER
+ *           description: Required when roles includes PARTICIPANT
  *           example: SE123456
  *         schoolName:
  *           type: string
@@ -117,8 +132,8 @@ const router = Router()
  *       properties:
  *         status:
  *           type: string
- *           enum: [PENDING, APPROVED, REJECTED, SUSPENDED]
- *           example: APPROVED
+ *           enum: [PENDING, ACTIVE, REJECTED, SUSPENDED]
+ *           example: ACTIVE
  *     AssignRolesRequest:
  *       type: object
  *       required: [roles]
@@ -129,8 +144,8 @@ const router = Router()
  *           uniqueItems: true
  *           items:
  *             type: string
- *             enum: [ADMIN, EVENT_COORDINATOR, COORDINATOR, JUDGE, MENTOR, USER, PARTICIPANT]
- *           example: [USER, JUDGE]
+ *             enum: [ADMIN, EVENT_COORDINATOR, COORDINATOR, JUDGE, MENTOR, SPEAKER, PARTICIPANT]
+ *           example: [PARTICIPANT, JUDGE]
  */
 
 router.use(authorizationMiddleware)
@@ -161,7 +176,7 @@ router.use(authorizationMiddleware)
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, APPROVED, REJECTED, SUSPENDED]
+ *           enum: [PENDING, ACTIVE, REJECTED, SUSPENDED]
  *       - in: query
  *         name: search
  *         schema:
@@ -282,6 +297,13 @@ router.patch(
   USER_CONTROLLER.updateMe
 )
 
+router.post(
+  '/me/avatar',
+  MEDIA_MULTIPART.multipartBodyParser,
+  MEDIA_MULTIPART.mediaMultipartMiddleware,
+  USER_CONTROLLER.updateMyAvatar
+)
+
 /**
  * @swagger
  * /api/users/{id}:
@@ -329,6 +351,13 @@ router.get(
   permissionMiddleware(PERMISSIONS.USER_VIEW),
   validationHandlingMiddleware(USER_VALIDATION.getUserById),
   USER_CONTROLLER.getUserById
+)
+
+router.patch(
+  '/:id',
+  permissionMiddleware(PERMISSIONS.USER_UPDATE),
+  validationHandlingMiddleware(USER_VALIDATION.updateUser),
+  USER_CONTROLLER.updateUser
 )
 
 /**
@@ -383,7 +412,7 @@ router.patch(
  * @swagger
  * /api/users/{id}/approve:
  *   patch:
- *     summary: Approve a user
+ *     summary: Activate a user
  *     tags: [Users]
  *     security:
  *       - BearerAuth: []
@@ -396,7 +425,7 @@ router.patch(
  *           pattern: '^[a-fA-F0-9]{24}$'
  *     responses:
  *       200:
- *         description: User approved successfully
+ *         description: User activated successfully
  *         content:
  *           application/json:
  *             schema:

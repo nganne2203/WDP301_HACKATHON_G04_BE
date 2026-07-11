@@ -1,0 +1,782 @@
+{
+  "name": "WDP301 Backend Compatible AI Audit - Gemini API Key",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "per-push-audit",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "02814c76-49e4-4cf9-b910-84c67e98fd28",
+      "name": "WebhookPerPush",
+      "webhookId": "27c9fc56-b815-4b84-9f4f-d1a020fb85e1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e01a2d2f-c5c6-4a8e-97ca-281fcac25f91",
+              "name": "aiReviewId",
+              "value": "={{ $json.body.aiReviewId }}",
+              "type": "string"
+            },
+            {
+              "id": "f9f5c7eb-e78a-45fb-9630-04df7b7bbfea",
+              "name": "callbackUrl",
+              "value": "={{ $json.body.callbackUrl }}",
+              "type": "string"
+            },
+            {
+              "id": "7d82611a-0f71-4428-807a-2427dcc01797",
+              "name": "reviewKind",
+              "value": "={{ $json.body.reviewKind }}",
+              "type": "string"
+            },
+            {
+              "id": "2c4b155d-8388-4a7b-b173-1b1520ef12e5",
+              "name": "repositoryFullName",
+              "value": "={{ $json.body.context.repositoryContext.repositoryFullName }}",
+              "type": "string"
+            },
+            {
+              "id": "c4d29f8b-c3e6-4d81-a071-0d2bfddb4fea",
+              "name": "githubOwner",
+              "value": "={{ $json.body.context.repositoryContext.githubOwner }}",
+              "type": "string"
+            },
+            {
+              "id": "de4844b4-33e8-4b5f-a999-f3df4d6a5ce0",
+              "name": "githubRepo",
+              "value": "={{ $json.body.context.repositoryContext.githubRepo }}",
+              "type": "string"
+            },
+            {
+              "id": "161429bc-37e9-43b4-ac75-f43d52a4bc12",
+              "name": "defaultBranch",
+              "value": "={{ $json.body.context.repositoryContext.defaultBranch || 'main' }}",
+              "type": "string"
+            },
+            {
+              "id": "360fd5ba-9f0b-48b2-a857-e7de5ff91cc1",
+              "name": "beforeCommitSha",
+              "value": "={{ $json.body.context.triggerContext.beforeCommitSha || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "8506fb6e-6a91-4f8d-b744-4f0a9efd4305",
+              "name": "afterCommitSha",
+              "value": "={{ $json.body.context.triggerContext.afterCommitSha || $json.body.context.triggerContext.commitSha }}",
+              "type": "string"
+            },
+            {
+              "id": "310e4e65-daf8-4588-a085-19870749afc9",
+              "name": "commitSha",
+              "value": "={{ $json.body.context.triggerContext.commitSha || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "b3e7ad1f-8e95-4993-a5d6-3c2e85ad6e48",
+              "name": "branch",
+              "value": "={{ $json.body.context.triggerContext.branch || $json.body.context.repositoryContext.defaultBranch || 'main' }}",
+              "type": "string"
+            },
+            {
+              "id": "1a7c5da4-8804-445c-87fb-7771466d93bd",
+              "name": "encryptedGithubToken",
+              "value": "={{ $json.body.encryptedGithubToken }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        0
+      ],
+      "id": "20f83b7e-03da-4a93-a511-aa070b684792",
+      "name": "Normalize Per Push"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.repositoryFullName}}/compare/{{$json.beforeCommitSha}}...{{$json.afterCommitSha}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.githubToken}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        672,
+        0
+      ],
+      "id": "c451b140-ab05-4de0-93ed-8fbe3d39fef6",
+      "name": "GitHub Compare API",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const compare = $input.first().json;\nconst ctx = $('Normalize Per Push').item.json;\nconst files = Array.isArray(compare.files) ? compare.files : [];\nconst commitCount = Array.isArray(compare.commits) ? compare.commits.length : 0;\nconst patches = files.slice(0, 40).map((file) => {\n  const patch = file.patch || '[No textual patch available]';\n  return `FILE: ${file.filename}\\nSTATUS: ${file.status || 'modified'}\\nADDITIONS: ${file.additions || 0}\\nDELETIONS: ${file.deletions || 0}\\nPATCH:\\n${patch}`;\n}).join('\\n\\n');\n\nconst prompt = `You are a precise technical audit assistant for a hackathon system. Analyze the changes of this code push and return EXACTLY a valid JSON response. Do not wrap the JSON in markdown code blocks, and do not provide any explanation outside of the JSON.\\n\\nYou must return the following JSON keys:\\n- reviewKind: \\\"PER_PUSH_TECHNICAL_AUDIT\\\"\\n- status: \\\"DONE\\\"\\n- isScoreBased: false\\n- isFinalDecision: false\\n- overallPicture: { pushSummary, significantChange: boolean, changeImpactLevel, mainAffectedAreas }\\n- techStackDetected: { frontend: array string, backend: array string, database: array string, ai: array string, retrieval: array string, testing: array string }\\n- technicalFindings: array of objects { type, severity, title, evidence: array string, comment, recommendedAction }\\n- rubricAwareComments: array\\n- suggestedTestCases: array { title, purpose, expectedObservation }\\n- suggestedJudgeQuestions: array string\\n- costControlNotes: { llmCallReason, skippedFiles: array string, tokenSavingStrategy: array string }\\n- historicalSynthesis: null\\n- currentTechnicalSnapshot: null\\n- riskSummary: array of objects { severity, title, summary }\\n- judgeDashboardSummary: { headline, needsHumanReview, primaryConcerns: array string, recommendedJudgeFocus: array string }\\n- needsHumanReview: boolean\\n\\nImportant Constraints:\\n- significantChange MUST be a boolean (true or false).\\n- Valid values for changeImpactLevel: \\\"LOW\\\", \\\"MEDIUM\\\", \\\"HIGH\\\", \\\"CRITICAL\\\", \\\"UNKNOWN\\\"\\n- Valid values for severity: \\\"LOW\\\", \\\"MEDIUM\\\", \\\"HIGH\\\", \\\"CRITICAL\\\"\\n- Valid values for technicalFindings.type: \\\"ARCHITECTURE\\\", \\\"SECURITY\\\", \\\"RELIABILITY\\\", \\\"PERFORMANCE\\\", \\\"TESTING\\\", \\\"AI_USAGE\\\", \\\"RAG\\\", \\\"AGENT\\\", \\\"DEPENDENCY\\\", \\\"MAINTAINABILITY\\\"\\n\\nContext Information:\\n- Repository: ${ctx.repositoryFullName}\\n- Branch: ${ctx.branch}\\n- Before SHA: ${ctx.beforeCommitSha}\\n- After SHA: ${ctx.afterCommitSha}\\n- Number of commits in compare: ${commitCount}\\n- Number of changed files: ${files.length}\\n\\nDiff Patch Content:\\n${patches || '[No patch text available to analyze]'}\\n\\nIf there is insufficient evidence, you must still return a valid JSON structure with empty lists or default values from the allowed sets. Do not give any scores or make final decisions.\\n\\nNote: All descriptive text outputs (such as pushSummary, comment, recommendedAction, title, summary, headline, primaryConcerns, and recommendedJudgeFocus) must be written in Vietnamese for the end-users.`;\n\nreturn [{\n  prompt,\n  aiReviewId: ctx.aiReviewId,\n  callbackUrl: ctx.callbackUrl,\n  reviewKind: ctx.reviewKind\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        0
+      ],
+      "id": "9e5ddbc6-389f-43bb-aa0c-e41397ea8d07",
+      "name": "Build Per Push Prompt",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{$env.GEMINI_MODEL || 'gemini-2.5-flash'}}:generateContent?key={{$env.GOOGLE_GEMINI_API_KEY}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"systemInstruction\": {\n    \"parts\": [\n      {\n        \"text\": \"You are a precise technical audit assistant. Return valid JSON only, with no markdown.\"\n      }\n    ]\n  },\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        {\n          \"text\": $json.prompt\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.2,\n    \"responseMimeType\": \"application/json\"\n  }\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1184,
+        0
+      ],
+      "id": "930685d8-b42d-4d8c-b2d1-c0dddd168ce1",
+      "name": "Gemini Per Push",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const content = $json.candidates?.[0]?.content?.parts\n  ?.map((part) => part.text || '')\n  .join('')\n  .trim();\n\nif (!content) {\n  throw new Error('Gemini response did not contain candidates[0].content.parts[].text');\n}\n\nlet normalizedContent = content;\n\n// Defensive cleanup in case the model still wraps JSON in markdown fences.\nif (normalizedContent.startsWith('```')) {\n  normalizedContent = normalizedContent\n    .replace(/^```(?:json)?\\s*/i, '')\n    .replace(/\\s*```$/i, '')\n    .trim();\n}\n\n// Validate that Backend receives a JSON string, not a loose object or markdown.\ntry {\n  JSON.parse(normalizedContent);\n} catch (error) {\n  throw new Error(`Gemini returned malformed JSON: ${error.message}`);\n}\n\nconst ctx = $('Build Per Push Prompt').item.json;\nconst usage = $json.usageMetadata || {};\n\nreturn [{\n  aiReviewId: ctx.aiReviewId,\n  callbackUrl: ctx.callbackUrl,\n  status: 'success',\n  rawResponse: normalizedContent,\n  modelName: $env.GEMINI_MODEL || 'gemini-2.5-flash',\n  provider: 'google-gemini',\n  tokenUsage: {\n    inputTokens: usage.promptTokenCount || null,\n    outputTokens: usage.candidatesTokenCount || null,\n    totalTokens: usage.totalTokenCount || null\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        0
+      ],
+      "id": "1fa58bd3-f00f-424d-be73-fcc509beb8fb",
+      "name": "Format Per Push Success",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.N8N_CALLBACK_SECRET}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"status\": $json.status,\n  \"rawResponse\": $json.rawResponse,\n  \"modelName\": $json.modelName,\n  \"provider\": $json.provider,\n  \"tokenUsage\": $json.tokenUsage\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1696,
+        0
+      ],
+      "id": "ac7a7f56-7954-4a45-9626-d8576254b349",
+      "name": "Callback Per Push Success"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Normalize Per Push').item.json;\nconst message = $json.error?.message || $json.message || $json.body?.message || 'Unknown workflow error';\nreturn [{\n  callbackUrl: ctx.callbackUrl,\n  status: 'error',\n  errorMessage: message\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        192
+      ],
+      "id": "95863f42-c815-463f-97d9-4bcf1cfb9046",
+      "name": "Format Per Push Error"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.N8N_CALLBACK_SECRET}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"status\": $json.status,\n  \"errorMessage\": $json.errorMessage\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1696,
+        192
+      ],
+      "id": "62323bd8-0236-4fa3-8769-f9fa4be5bb37",
+      "name": "Callback Per Push Error"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "team-aggregate-audit",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        464
+      ],
+      "id": "bb43ad2d-4443-4805-8336-28599fb9eee2",
+      "name": "WebhookAggregate",
+      "webhookId": "027c19bb-ab03-4e87-be50-d1ee793fd45a"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ca010d3d-cb65-467e-b8cc-c7654e3139b4",
+              "name": "aiReviewId",
+              "value": "={{ $json.body.aiReviewId }}",
+              "type": "string"
+            },
+            {
+              "id": "5985f0e2-4fbe-4838-80db-2ef169f7551c",
+              "name": "callbackUrl",
+              "value": "={{ $json.body.callbackUrl }}",
+              "type": "string"
+            },
+            {
+              "id": "ef886dbc-b5c4-4528-80d8-d1de428e8219",
+              "name": "reviewKind",
+              "value": "={{ $json.body.reviewKind }}",
+              "type": "string"
+            },
+            {
+              "id": "ced6e403-c473-43c6-bdbb-273eeb709105",
+              "name": "repositoryFullName",
+              "value": "={{ $json.body.context.repositoryContext.repositoryFullName }}",
+              "type": "string"
+            },
+            {
+              "id": "b95b9177-167d-4ceb-9771-c50087ee7a46",
+              "name": "defaultBranch",
+              "value": "={{ $json.body.context.repositoryContext.defaultBranch || 'main' }}",
+              "type": "string"
+            },
+            {
+              "id": "ea36588c-d84b-4a71-aa14-78c9dd6bc178",
+              "name": "batchId",
+              "value": "={{ $json.body.context.aggregateContext.batchId || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "0fdf6837-ceba-4eb7-a39f-c6eea16aaa2a",
+              "name": "encryptedGithubToken",
+              "value": "={{ $json.body.encryptedGithubToken }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        464
+      ],
+      "id": "d9ca9b10-6dc2-4cf0-8b0c-9929cc43fa3f",
+      "name": "Normalize Aggregate"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.repositoryFullName}}/commits?sha={{$json.defaultBranch}}&per_page=20",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.githubToken}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        560,
+        464
+      ],
+      "id": "34d98206-15f3-4488-9715-eb9be8e7bf57",
+      "name": "GitHub Recent Commits",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = Array.isArray($input.first().json) ? $input.first().json : [];\nconst ctx = $('Normalize Aggregate').item.json;\nconst compactCommits = commits.slice(0, 20).map((commit, index) => {\n  const sha = commit.sha || '';\n  const message = commit.commit?.message || '';\n  const author = commit.commit?.author?.name || 'unknown';\n  const date = commit.commit?.author?.date || '';\n  return `${index + 1}. SHA: ${sha}\\nAUTHOR: ${author}\\nDATE: ${date}\\nMESSAGE: ${message}`;\n}).join('\\n\\n');\n\nconst prompt = `You are a precise technical audit assistant for a hackathon system. Synthesize the overall technical state of the repository based on the recent commit history and return EXACTLY a valid JSON response. Do not wrap the JSON in markdown code blocks, and do not provide any explanation outside of the JSON.\\n\\nYou must return the following JSON keys:\\n- reviewKind: \\\"TEAM_AGGREGATE_TECHNICAL_AUDIT\\\"\\n- status: \\\"DONE\\\"\\n- isScoreBased: false\\n- isFinalDecision: false\\n- overallPicture: { pushSummary, significantChange: boolean, changeImpactLevel, mainAffectedAreas }\\n- techStackDetected: { frontend: array string, backend: array string, database: array string, ai: array string, retrieval: array string, testing: array string }\\n- technicalFindings: array of objects { type, severity, title, evidence: array string, comment, recommendedAction }\\n- rubricAwareComments: array\\n- suggestedTestCases: array { title, purpose, expectedObservation }\\n- suggestedJudgeQuestions: array string\\n- costControlNotes: { llmCallReason, skippedFiles: array string, tokenSavingStrategy: array string }\\n- historicalSynthesis: string\\n- currentTechnicalSnapshot: string\\n- riskSummary: array of objects { severity, title, summary }\\n- judgeDashboardSummary: { headline, needsHumanReview, primaryConcerns: array string, recommendedJudgeFocus: array string }\\n- needsHumanReview: boolean\\n\\nImportant Constraints:\\n- significantChange MUST be a boolean (true or false).\\n- Valid values for changeImpactLevel: \\\"LOW\\\", \\\"MEDIUM\\\", \\\"HIGH\\\", \\\"CRITICAL\\\", \\\"UNKNOWN\\\"\\n- Valid values for severity: \\\"LOW\\\", \\\"MEDIUM\\\", \\\"HIGH\\\", \\\"CRITICAL\\\"\\n- Valid values for technicalFindings.type: \\\"ARCHITECTURE\\\", \\\"SECURITY\\\", \\\"RELIABILITY\\\", \\\"PERFORMANCE\\\", \\\"TESTING\\\", \\\"AI_USAGE\\\", \\\"RAG\\\", \\\"AGENT\\\", \\\"DEPENDENCY\\\", \\\"MAINTAINABILITY\\\"\\n\\nContext Information:\\n- Repository: ${ctx.repositoryFullName}\\n- Default branch: ${ctx.defaultBranch}\\n- Batch ID: ${ctx.batchId || 'N/A'}\\n- Sample size (commits): ${commits.length}\\n\\nRecent Commit History:\\n${compactCommits || '[No recent commits available]'}\\n\\nIf there is insufficient evidence, you must still return a valid JSON structure with empty lists or default values from the allowed sets. Do not give any scores or make final decisions.\\n\\nNote: All descriptive text outputs (such as pushSummary, comment, recommendedAction, title, summary, headline, primaryConcerns, and recommendedJudgeFocus) must be written in Vietnamese for the end-users.`;\n\nreturn [{\n  prompt,\n  aiReviewId: ctx.aiReviewId,\n  callbackUrl: ctx.callbackUrl,\n  reviewKind: ctx.reviewKind\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        464
+      ],
+      "id": "6a726a56-14d9-4214-bc0b-a37ac011b750",
+      "name": "Build Aggregate Prompt",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{$env.GEMINI_MODEL || 'gemini-2.5-flash'}}:generateContent?key={{$env.GOOGLE_GEMINI_API_KEY}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"systemInstruction\": {\n    \"parts\": [\n      {\n        \"text\": \"You are a precise technical audit assistant. Return valid JSON only, with no markdown.\"\n      }\n    ]\n  },\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        {\n          \"text\": $json.prompt\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.2,\n    \"responseMimeType\": \"application/json\"\n  }\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        976,
+        464
+      ],
+      "id": "a973964e-2c89-4da1-96d5-0c5550876d61",
+      "name": "Gemini Aggregate",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const content = $json.candidates?.[0]?.content?.parts\n  ?.map((part) => part.text || '')\n  .join('')\n  .trim();\n\nif (!content) {\n  throw new Error('Gemini response did not contain candidates[0].content.parts[].text');\n}\n\nlet normalizedContent = content;\n\n// Defensive cleanup in case the model still wraps JSON in markdown fences.\nif (normalizedContent.startsWith('```')) {\n  normalizedContent = normalizedContent\n    .replace(/^```(?:json)?\\s*/i, '')\n    .replace(/\\s*```$/i, '')\n    .trim();\n}\n\n// Validate that Backend receives a JSON string, not a loose object or markdown.\ntry {\n  JSON.parse(normalizedContent);\n} catch (error) {\n  throw new Error(`Gemini returned malformed JSON: ${error.message}`);\n}\n\nconst ctx = $('Build Aggregate Prompt').item.json;\nconst usage = $json.usageMetadata || {};\n\nreturn [{\n  aiReviewId: ctx.aiReviewId,\n  callbackUrl: ctx.callbackUrl,\n  status: 'success',\n  rawResponse: normalizedContent,\n  modelName: $env.GEMINI_MODEL || 'gemini-2.5-flash',\n  provider: 'google-gemini',\n  tokenUsage: {\n    inputTokens: usage.promptTokenCount || null,\n    outputTokens: usage.candidatesTokenCount || null,\n    totalTokens: usage.totalTokenCount || null\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        464
+      ],
+      "id": "a33ad1e9-7794-42c7-87df-b9caf8cbf071",
+      "name": "Format Aggregate Success",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.N8N_CALLBACK_SECRET}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"status\": $json.status,\n  \"rawResponse\": $json.rawResponse,\n  \"modelName\": $json.modelName,\n  \"provider\": $json.provider,\n  \"tokenUsage\": $json.tokenUsage\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1488,
+        464
+      ],
+      "id": "7b5a4d64-87a7-47bb-abde-6c8cb4570a49",
+      "name": "Callback Aggregate Success"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Normalize Aggregate').item.json;\nconst message = $json.error?.message || $json.message || $json.body?.message || 'Unknown workflow error';\nreturn [{\n  callbackUrl: ctx.callbackUrl,\n  status: 'error',\n  errorMessage: message\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        656
+      ],
+      "id": "501cba0f-cbc0-4423-a5d0-a0c963f4bab5",
+      "name": "Format Aggregate Error"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.N8N_CALLBACK_SECRET}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"status\": $json.status,\n  \"errorMessage\": $json.errorMessage\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1488,
+        656
+      ],
+      "id": "4d7c9373-834b-4936-ab6d-5c0cf4cab428",
+      "name": "Callback Aggregate Error"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n\nconst input = $input.first().json;\n\nconst encrypted =\n  input.encryptedGithubToken ||\n  input.githubTokenEncrypted;\n\nif (!encrypted) {\n  throw new Error('Missing encryptedGithubToken');\n}\n\n// Expected format: iv.tag.ciphertext\nconst parts = encrypted.split('.');\n\nif (parts.length !== 3) {\n  throw new Error('Invalid encryptedGithubToken format. Expected: iv.tag.ciphertext');\n}\n\nconst [ivB64, tagB64, cipherB64] = parts;\n\nconst keyB64 = $env.GITHUB_TOKEN_DECRYPTION_KEY;\n\nif (!keyB64) {\n  throw new Error('Missing env GITHUB_TOKEN_DECRYPTION_KEY');\n}\n\nconst key = Buffer.from(keyB64, 'base64');\nconst iv = Buffer.from(ivB64, 'base64');\nconst tag = Buffer.from(tagB64, 'base64');\nconst ciphertext = Buffer.from(cipherB64, 'base64');\n\nif (key.length !== 32) {\n  throw new Error('Invalid AES key length. AES-256-GCM requires 32 bytes key.');\n}\n\nif (iv.length !== 12) {\n  throw new Error('Invalid IV length. AES-GCM should use 12 bytes IV.');\n}\n\nconst decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);\ndecipher.setAuthTag(tag);\n\nlet githubToken = Buffer.concat([\n  decipher.update(ciphertext),\n  decipher.final()\n]).toString('utf8');\n\ngithubToken = githubToken.trim();\n\nif (\n  !githubToken.startsWith('ghp_') &&\n  !githubToken.startsWith('github_pat_') &&\n  !githubToken.startsWith('ghs_')\n) {\n  throw new Error('Decoded GitHub token format is invalid');\n}\n\nreturn [\n  {\n    json: {\n      ...input,\n      githubToken\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        0
+      ],
+      "id": "37a54b53-a963-4393-b72c-9020439eb2dc",
+      "name": "Decrypt GitHub Token"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n\nconst input = $input.first().json;\n\nconst encrypted =\n  input.encryptedGithubToken ||\n  input.githubTokenEncrypted;\n\nif (!encrypted) {\n  throw new Error('Missing encryptedGithubToken');\n}\n\n// Expected format: iv.tag.ciphertext\nconst parts = encrypted.split('.');\n\nif (parts.length !== 3) {\n  throw new Error('Invalid encryptedGithubToken format. Expected: iv.tag.ciphertext');\n}\n\nconst [ivB64, tagB64, cipherB64] = parts;\n\nconst keyB64 = $env.GITHUB_TOKEN_DECRYPTION_KEY;\n\nif (!keyB64) {\n  throw new Error('Missing env GITHUB_TOKEN_DECRYPTION_KEY');\n}\n\nconst key = Buffer.from(keyB64, 'base64');\nconst iv = Buffer.from(ivB64, 'base64');\nconst tag = Buffer.from(tagB64, 'base64');\nconst ciphertext = Buffer.from(cipherB64, 'base64');\n\nif (key.length !== 32) {\n  throw new Error('Invalid AES key length. AES-256-GCM requires 32 bytes key.');\n}\n\nif (iv.length !== 12) {\n  throw new Error('Invalid IV length. AES-GCM should use 12 bytes IV.');\n}\n\nconst decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);\ndecipher.setAuthTag(tag);\n\nlet githubToken = Buffer.concat([\n  decipher.update(ciphertext),\n  decipher.final()\n]).toString('utf8');\n\ngithubToken = githubToken.trim();\n\nif (\n  !githubToken.startsWith('ghp_') &&\n  !githubToken.startsWith('github_pat_') &&\n  !githubToken.startsWith('ghs_')\n) {\n  throw new Error('Decoded GitHub token format is invalid');\n}\n\nreturn [\n  {\n    json: {\n      ...input,\n      githubToken\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        464
+      ],
+      "id": "0fe64b2c-6ee2-4a2e-940d-3c5c9cec0c35",
+      "name": "Decrypt GitHub Token1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "WebhookPerPush": {
+      "main": [
+        [
+          {
+            "node": "Normalize Per Push",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Per Push": {
+      "main": [
+        [
+          {
+            "node": "Decrypt GitHub Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Compare API": {
+      "main": [
+        [
+          {
+            "node": "Build Per Push Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Per Push Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Per Push Prompt": {
+      "main": [
+        [
+          {
+            "node": "Gemini Per Push",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Per Push Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Per Push Success": {
+      "main": [
+        [
+          {
+            "node": "Callback Per Push Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Per Push Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Per Push Error": {
+      "main": [
+        [
+          {
+            "node": "Callback Per Push Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WebhookAggregate": {
+      "main": [
+        [
+          {
+            "node": "Normalize Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Decrypt GitHub Token1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Recent Commits": {
+      "main": [
+        [
+          {
+            "node": "Build Aggregate Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Aggregate Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Aggregate Prompt": {
+      "main": [
+        [
+          {
+            "node": "Gemini Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Aggregate Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Aggregate Success": {
+      "main": [
+        [
+          {
+            "node": "Callback Aggregate Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Aggregate Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Aggregate Error": {
+      "main": [
+        [
+          {
+            "node": "Callback Aggregate Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Per Push": {
+      "main": [
+        [
+          {
+            "node": "Format Per Push Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Per Push Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Format Aggregate Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Aggregate Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decrypt GitHub Token": {
+      "main": [
+        [
+          {
+            "node": "GitHub Compare API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decrypt GitHub Token1": {
+      "main": [
+        [
+          {
+            "node": "GitHub Recent Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "cf333233-238b-49be-a635-0cfe84c996e1",
+  "meta": {
+    "instanceId": "947370b9f63847f1f45fdbcd19726897f272f4d458bba28e6ff32d8b27b59973"
+  },
+  "nodeGroups": [],
+  "id": "VzqgFPEr0A8pz3g0",
+  "tags": []
+}

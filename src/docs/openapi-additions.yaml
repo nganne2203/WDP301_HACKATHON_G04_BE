@@ -380,7 +380,7 @@ components:
           enum: [NOT_GRANTED, GRANTED, REVOKED]
         status:
           type: string
-          enum: [INVITED, REGISTERED, ACTIVE, WITHDRAWN]
+          enum: [INVITED, JOINED, WITHDRAWN]
     TeamCreateRequest:
       type: object
       description: Create a team and optionally seed invitation emails in the same request.
@@ -438,7 +438,7 @@ components:
       properties:
         status:
           type: string
-          enum: [PENDING, WAITING_FOR_MEMBERS, WAITLISTED, CONFIRMED, REJECTED, ACTIVE, INACTIVE, DISQUALIFIED]
+          enum: [CONFIRMED, REJECTED]
         trackId:
           type: string
           nullable: true
@@ -985,6 +985,28 @@ paths:
       responses:
         '200':
           description: API status returned
+  /api/test-email:
+    post:
+      summary: Send a Gmail SMTP test email
+      tags: [Runtime]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to:
+                  type: string
+                  format: email
+            example:
+              to: participant@example.com
+      responses:
+        '200':
+          description: Test email accepted by Gmail SMTP
+        '503':
+          description: Gmail SMTP is not configured or rejected the message
 
   /api/github/config:
     get:
@@ -1562,7 +1584,7 @@ paths:
               chapterName: SE1701
               teamRole: MEMBER
               githubAccessStatus: NOT_GRANTED
-              status: REGISTERED
+              status: INVITED
       responses:
         '201':
           description: Participant created
@@ -1601,6 +1623,23 @@ paths:
       responses:
         '200':
           description: Participant updated
+  /api/participants/me:
+    get:
+      summary: Get the authenticated user's participant registration for an event
+      tags: [Participants]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: eventId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Current participant returned
+        '404':
+          description: User is not registered for the event
   /api/participants/{id}/check-in:
     patch:
       summary: Update participant check-in status
@@ -1627,6 +1666,49 @@ paths:
       responses:
         '200':
           description: Check-in status updated
+  /api/participants/check-in/qr:
+    post:
+      summary: Generate a short-lived event check-in QR (coordinator/admin)
+      tags: [Participants]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId]
+              properties:
+                eventId:
+                  type: string
+      responses:
+        '200':
+          description: QR image, payload, and expiration returned
+  /api/participants/check-in/scan:
+    post:
+      summary: Participant scans an event QR to check in themselves
+      tags: [Participants]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  example: wdp301-checkin:opaque-token
+      responses:
+        '200':
+          description: Participant checked in
+        '410':
+          description: QR expired
+        '409':
+          description: Participant already checked in
   /api/participants/{id}/attendance:
     patch:
       summary: Update participant attendance activities

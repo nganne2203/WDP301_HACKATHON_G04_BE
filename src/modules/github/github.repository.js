@@ -89,7 +89,7 @@ const createAuditLog = async ({ userId, action, resourceType, resourceId, metada
 const findConfirmedTeamsByEvent = async (eventId) => {
   return await Team.find({
     eventId,
-    status: { $in: ['CONFIRMED', 'ACTIVE'] }
+    status: 'CONFIRMED'
   })
 }
 
@@ -100,7 +100,7 @@ const findRepositoriesByEvent = async (eventId) => {
 const findTeamMembersGithubUsernames = async (teamId) => {
   const participants = await Participant.find({
     teamId,
-    status: { $in: ['REGISTERED', 'ACTIVE'] }
+    status: { $in: ['ACTIVE'] }
   }).populate('userId')
 
   return participants

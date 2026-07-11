@@ -26,6 +26,10 @@ const userSchema = new Schema(
       enum: ['GOOGLE', 'LOCAL'],
       default: 'LOCAL'
     },
+    registrationSource: {
+      type: String,
+      enum: ['GOOGLE', 'FORM']
+    },
     passwordHash: { type: String },
     mustChangePassword: { type: Boolean, default: false },
     fullName: { type: String, required: true, trim: true },
@@ -43,7 +47,7 @@ const userSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'],
+      enum: ['PENDING', 'ACTIVE', 'REJECTED', 'SUSPENDED'],
       default: 'PENDING'
     },
     roles: [{ type: Schema.Types.ObjectId, ref: 'Role' }],
@@ -59,6 +63,14 @@ userSchema.index({ googleId: 1 }, { unique: true, sparse: true })
 userSchema.index({ 'googleAuth.googleId': 1 }, { unique: true, sparse: true })
 userSchema.index({ 'googleCalendar.connected': 1 })
 userSchema.index({ roles: 1 })
+userSchema.index(
+  { githubUsername: 1 },
+  {
+    unique: true,
+    sparse: true,
+    collation: { locale: 'en', strength: 2 }
+  }
+)
 
 const User = mongoose.model('User', userSchema)
 

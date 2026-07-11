@@ -1,17 +1,47 @@
+import crypto from 'node:crypto'
+
 import { AUTH_REPOSITORY } from './auth.repository.js'
-import {
-  buildGoogleOAuthUrl,
-  createGoogleOAuthClient,
-  generateGoogleOAuthState,
-  verifyGoogleOAuthState
-} from '#configs/google.js'
-import { env } from '#configs/environment.js'
 import { USER_SERVICE } from '#modules/users/user.service.js'
+import { EMAIL_SERVICE } from '#modules/notifications/email.service.js'
+import { EMAIL_TEMPLATE_KEYS } from '#modules/notifications/email-templates.js'
+import { env } from '#configs/environment.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { BCRYPT_UTILS } from '#utils/bcryptUtil.js'
 import { JWT_UTILS } from '#utils/jwtUtil.js'
-import { google } from 'googleapis'
+import {
+  REGISTRATION_SOURCES,
+  canAccessAuthenticatedRoutes,
+  getRegistrationSource
+} from '#utils/userAccountUtil.js'
+import { PARTICIPANT_ROLE_NAME } from '#utils/userRoleMigrationUtil.js'
+
+const FORM_REGISTRATION_FIELDS = [
+  'email',
+  'password',
+  'fullName',
+  'githubUsername',
+  'studentType',
+  'studentId'
+]
+
+const PASSWORD_RESET_GENERIC_RESULT = {
+  sent: true
+}
+
+export const isCompleteFormRegistrationPayload = (payload = {}) => {
+  const hasRequiredFields = FORM_REGISTRATION_FIELDS.every(field => {
+    const value = payload[field]
+    return value !== undefined && value !== null && String(value).trim() !== ''
+  })
+
+  if (!hasRequiredFields) return false
+  return payload.studentType !== 'EXTERNAL' || Boolean(payload.schoolName?.trim())
+}
+
+export const isGoogleLoginFallback = (payload = {}) => {
+  return Boolean(payload.googleId) && !isCompleteFormRegistrationPayload(payload)
+}
 
 const buildTokenPayload = (user) => {
   return {
@@ -31,37 +61,64 @@ const buildAuthResponse = (user) => {
   }
 }
 
-const buildFrontendRedirectUrl = ({ authData = null, error = null }) => {
-  const frontendUrl = env.client.frontendUrl || env.client.urls[0]
-  if (!frontendUrl) return null
-
-  const redirectUrl = new URL('/auth/google/callback', frontendUrl)
-  if (error) {
-    redirectUrl.searchParams.set('success', 'false')
-    redirectUrl.searchParams.set('error', error)
-    return redirectUrl.toString()
-  }
-
-  redirectUrl.searchParams.set('success', 'true')
-  redirectUrl.searchParams.set('accessToken', authData.tokens.accessToken)
-  redirectUrl.searchParams.set('refreshToken', authData.tokens.refreshToken)
-
-  return redirectUrl.toString()
-}
-
-const ensureApproved = (user) => {
-  if (user.status !== 'APPROVED') {
+const ensureActive = (user) => {
+  if (user.status !== 'ACTIVE') {
     throw new ApiError(ERROR_CODES.FORBIDDEN, [`Account status is ${user.status}`])
   }
 }
 
+const ensureAccountCanAccess = (user) => {
+  if (!canAccessAuthenticatedRoutes(user)) {
+    throw new ApiError(ERROR_CODES.FORBIDDEN, [`Account status is ${user.status}`])
+  }
+}
+
+const hashPasswordResetToken = (token) => {
+  return crypto.createHash('sha256').update(token).digest('hex')
+}
+
+const createPasswordResetToken = () => {
+  return crypto.randomBytes(32).toString('base64url')
+}
+
+const getFrontendUrl = (path) => {
+  const frontendUrl = env.client.frontendUrl || env.client.urls[0]
+  if (!frontendUrl) return null
+
+  try {
+    return new URL(path, frontendUrl).toString()
+  } catch {
+    return null
+  }
+}
+
+const appendSearchParams = (urlString, params = {}) => {
+  if (!urlString) return null
+
+  try {
+    const url = new URL(urlString)
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        url.searchParams.set(key, String(value))
+      }
+    })
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
 const register = async (payload) => {
+  if (isGoogleLoginFallback(payload)) {
+    return await googleLogin(payload)
+  }
+
   const existingUser = await AUTH_REPOSITORY.findUserByEmail(payload.email)
   if (existingUser) {
     throw new ApiError(ERROR_CODES.CONFLICT, ['Email already exists'])
   }
 
-  const userRole = await AUTH_REPOSITORY.findRoleByName('USER')
+  const participantRole = await AUTH_REPOSITORY.findRoleByName(PARTICIPANT_ROLE_NAME)
   const passwordHash = await BCRYPT_UTILS.hashPassword(payload.password)
 
   const createdUser = await AUTH_REPOSITORY.createUser({
@@ -73,8 +130,9 @@ const register = async (payload) => {
     schoolName: payload.studentType === 'EXTERNAL' ? payload.schoolName : undefined,
     passwordHash,
     authProvider: 'LOCAL',
+    registrationSource: REGISTRATION_SOURCES.FORM,
     status: 'PENDING',
-    roles: userRole ? [userRole._id] : []
+    roles: participantRole ? [participantRole._id] : []
   })
 
   const user = await AUTH_REPOSITORY.findUserById(createdUser._id)
@@ -82,98 +140,50 @@ const register = async (payload) => {
   return USER_SERVICE.normalizeUser(user)
 }
 
-const getGoogleLoginUrl = () => {
-  const state = generateGoogleOAuthState({ purpose: 'GOOGLE_LOGIN' })
-
-  return buildGoogleOAuthUrl({
-    redirectUri: env.google.authCallbackUrl,
-    state
-  })
-}
-
-const getGoogleProfile = async ({ code, redirectUri }) => {
-  const oauth2Client = createGoogleOAuthClient(redirectUri)
-  const { tokens } = await oauth2Client.getToken(code)
-  oauth2Client.setCredentials(tokens)
-
-  const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client })
-  const { data } = await oauth2.userinfo.get()
-
-  if (!data.email) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Google account email is required'])
-  }
-
-  return {
-    profile: data,
-    tokens
-  }
-}
-
-const handleGoogleCallback = async ({ code, state }) => {
-  if (!code) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Google authorization code is required'])
-  }
-
-  if (!state) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Google OAuth state is required'])
-  }
-
-  let statePayload
-  try {
-    statePayload = verifyGoogleOAuthState(state)
-  } catch {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Invalid Google OAuth state'])
-  }
-
-  if (statePayload.purpose !== 'GOOGLE_LOGIN') {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Invalid Google OAuth state'])
-  }
-
-  const { profile } = await getGoogleProfile({ code, redirectUri: env.google.authCallbackUrl })
+const googleLogin = async ({ googleId, email, name, avatar }) => {
   const googleAuth = {
-    googleId: profile.id,
-    email: profile.email,
-    name: profile.name,
-    picture: profile.picture
+    googleId,
+    email,
+    name,
+    picture: avatar || undefined
   }
 
-  const existingUser = await AUTH_REPOSITORY.findUserByEmail(profile.email) ||
-    await AUTH_REPOSITORY.findUserByGoogleId(profile.id)
+  const existingUser = await AUTH_REPOSITORY.findUserByGoogleId(googleId) ||
+    await AUTH_REPOSITORY.findUserByEmail(email)
 
-  if (existingUser) {
-    const user = await AUTH_REPOSITORY.updateUserById(existingUser._id, {
-      googleId: profile.id,
-      googleAuth,
-      authProvider: 'GOOGLE',
-      avatarUrl: existingUser.avatarUrl || profile.picture
-    })
-
-    ensureApproved(user)
-    const authData = buildAuthResponse(user)
-    return {
-      authData,
-      redirectUrl: buildFrontendRedirectUrl({ authData })
-    }
+  if (!existingUser) {
+    throw new ApiError(ERROR_CODES.GOOGLE_ACCOUNT_NOT_FOUND, [
+      `No account exists for ${email}. Register with the registration form first.`
+    ])
   }
 
-  const userRole = await AUTH_REPOSITORY.findRoleByName('USER')
-  const createdUser = await AUTH_REPOSITORY.createUser({
-    email: profile.email,
-    googleId: profile.id,
+  if (existingUser.email.toLowerCase() !== email.toLowerCase()) {
+    throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Google identity does not match the account email'])
+  }
+
+  const linkedGoogleId = existingUser.googleAuth?.googleId || existingUser.googleId
+  if (linkedGoogleId && linkedGoogleId !== googleId) {
+    throw new ApiError(ERROR_CODES.CONFLICT, ['This email is linked to a different Google account'])
+  }
+
+  if (['REJECTED', 'SUSPENDED'].includes(existingUser.status)) {
+    throw new ApiError(ERROR_CODES.FORBIDDEN, [`Account status is ${existingUser.status}`])
+  }
+  ensureAccountCanAccess(existingUser)
+
+  const updates = {
+    googleId,
     googleAuth,
-    authProvider: 'GOOGLE',
-    fullName: profile.name || profile.email,
-    avatarUrl: profile.picture,
-    status: 'APPROVED',
-    roles: userRole ? [userRole._id] : []
-  })
-  const user = await AUTH_REPOSITORY.findUserById(createdUser._id)
-  const authData = buildAuthResponse(user)
-
-  return {
-    authData,
-    redirectUrl: buildFrontendRedirectUrl({ authData })
+    registrationSource: existingUser.registrationSource || getRegistrationSource(existingUser),
+    avatarUrl: existingUser.avatarUrl || avatar || undefined
   }
+
+  if (!existingUser.passwordHash) {
+    updates.authProvider = 'GOOGLE'
+  }
+
+  const user = await AUTH_REPOSITORY.updateUserById(existingUser._id, updates)
+  return buildAuthResponse(user)
 }
 
 const login = async ({ email, password }) => {
@@ -187,7 +197,7 @@ const login = async ({ email, password }) => {
     throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Email or password is incorrect'])
   }
 
-  ensureApproved(user)
+  ensureActive(user)
 
   return buildAuthResponse(user)
 }
@@ -200,7 +210,7 @@ const refreshToken = async (refreshTokenValue) => {
     throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Invalid refresh token'])
   }
 
-  ensureApproved(user)
+  ensureAccountCanAccess(user)
 
   return buildAuthResponse(user)
 }
@@ -234,12 +244,73 @@ const changePassword = async (userId, { currentPassword, newPassword }) => {
   return USER_SERVICE.normalizeUser(updatedUser)
 }
 
+const requestPasswordReset = async ({ email }) => {
+  const user = await AUTH_REPOSITORY.findUserByEmail(email)
+
+  if (!user || !user.passwordHash || user.authProvider !== 'LOCAL') {
+    return PASSWORD_RESET_GENERIC_RESULT
+  }
+
+  const token = createPasswordResetToken()
+  const expiresMinutes = env.passwordReset.expiresMinutes
+  const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000)
+  const resetUrl = appendSearchParams(getFrontendUrl('/reset-password'), { token })
+
+  await AUTH_REPOSITORY.revokeActivePasswordResetTokens(user._id)
+  await AUTH_REPOSITORY.createPasswordResetToken({
+    userId: user._id,
+    tokenHash: hashPasswordResetToken(token),
+    expiresAt
+  })
+
+  await EMAIL_SERVICE.sendTemplateEmail({
+    to: user.email,
+    template: EMAIL_TEMPLATE_KEYS.PASSWORD_RESET,
+    context: {
+      fullName: user.fullName,
+      resetUrl,
+      expiresMinutes
+    },
+    metadata: {
+      source: 'password-reset',
+      userId: user._id.toString()
+    }
+  })
+
+  return PASSWORD_RESET_GENERIC_RESULT
+}
+
+const resetPassword = async ({ token, newPassword }) => {
+  const tokenHash = hashPasswordResetToken(token)
+  const resetToken = await AUTH_REPOSITORY.findPasswordResetTokenByHash(tokenHash)
+
+  if (!resetToken || resetToken.usedAt || resetToken.expiresAt <= new Date()) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Password reset link is invalid or expired'])
+  }
+
+  const user = await AUTH_REPOSITORY.findUserById(resetToken.userId)
+  if (!user || !user.passwordHash) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Password reset link is invalid or expired'])
+  }
+
+  const passwordHash = await BCRYPT_UTILS.hashPassword(newPassword)
+  await AUTH_REPOSITORY.updateUserById(user._id, {
+    passwordHash,
+    mustChangePassword: false
+  })
+  await AUTH_REPOSITORY.markPasswordResetTokenUsed(resetToken._id)
+  await AUTH_REPOSITORY.revokeActivePasswordResetTokens(user._id)
+
+  return { reset: true }
+}
+
 export const AUTH_SERVICE = {
   register,
   login,
-  getGoogleLoginUrl,
-  handleGoogleCallback,
+  googleLogin,
   refreshToken,
   getMe,
-  changePassword
+  changePassword,
+  requestPasswordReset,
+  resetPassword
 }

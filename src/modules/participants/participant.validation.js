@@ -6,7 +6,7 @@ const eligibilityStatus = Joi.string().trim().uppercase().valid('PENDING', 'ELIG
 const activity = Joi.string().trim().uppercase().valid('WORKSHOP', 'OPENING', 'TEAM_MEETING', 'CODING', 'PRESENTATION', 'CLOSING')
 const checkInStatus = Joi.string().trim().uppercase().valid('NOT_CHECKED_IN', 'CHECKED_IN')
 const githubAccessStatus = Joi.string().trim().uppercase().valid('NOT_GRANTED', 'GRANTED', 'REVOKED')
-const participantStatus = Joi.string().trim().uppercase().valid('INVITED', 'REGISTERED', 'ACTIVE', 'WITHDRAWN')
+const participantStatus = Joi.string().trim().uppercase().valid('INVITED', 'JOINED', 'WITHDRAWN')
 
 const idParam = Joi.object({
   id: objectId.required()
@@ -27,6 +27,12 @@ const listParticipants = {
   })
 }
 
+const getMyParticipant = {
+  query: Joi.object({
+    eventId: objectId.required()
+  })
+}
+
 const createParticipant = {
   body: Joi.object({
     eventId: objectId.required(),
@@ -40,7 +46,7 @@ const createParticipant = {
     attendedActivities: Joi.array().items(activity).unique().default([]),
     checkInStatus: checkInStatus.default('NOT_CHECKED_IN'),
     githubAccessStatus: githubAccessStatus.default('NOT_GRANTED'),
-    status: participantStatus.default('REGISTERED'),
+    status: participantStatus.default('INVITED'),
     joinedAt: Joi.date().iso()
   })
 }
@@ -70,6 +76,18 @@ const updateCheckIn = {
   })
 }
 
+const generateCheckInQr = {
+  body: Joi.object({
+    eventId: objectId.required()
+  })
+}
+
+const scanCheckInQr = {
+  body: Joi.object({
+    token: Joi.string().trim().min(32).max(1024).required()
+  })
+}
+
 const updateAttendance = {
   params: idParam,
   body: Joi.object({
@@ -90,9 +108,12 @@ const getParticipantById = {
 
 export const PARTICIPANT_VALIDATION = {
   listParticipants,
+  getMyParticipant,
   createParticipant,
   updateParticipant,
   updateCheckIn,
+  generateCheckInQr,
+  scanCheckInQr,
   updateAttendance,
   updateGithubAccess,
   getParticipantById

@@ -271,7 +271,7 @@ New permissions added to `constants/permissions.js` will be:
 
 ## 12. System Role Protection
 
-System roles (`ADMIN`, `COORDINATOR`, `JUDGE`, `MENTOR`, `SPEAKER`, `USER`, `PARTICIPANT`, `EVENT_COORDINATOR`) **cannot be deleted** or renamed via API.
+System roles (`ADMIN`, `COORDINATOR`, `JUDGE`, `MENTOR`, `SPEAKER`, `PARTICIPANT`, `EVENT_COORDINATOR`) **cannot be deleted** or renamed via API.
 
 Attempting to delete or rename a system role returns `403 FORBIDDEN`.
 

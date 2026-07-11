@@ -27,7 +27,7 @@ const router = Router()
  *           example: VALIDATION_ERROR
  *         message:
  *           type: string
- *           example: Có lỗi xác thực trong yêu cầu.
+ *           example: The request contains validation errors.
  *         errors:
  *           type: array
  *           items:
@@ -54,7 +54,7 @@ const router = Router()
  *           example: 664c3f6a3a6d4a5f3f93b002
  *         name:
  *           type: string
- *           example: USER
+ *           example: PARTICIPANT
  *         description:
  *           type: string
  *           example: Basic authenticated user
@@ -76,13 +76,17 @@ const router = Router()
  *           type: string
  *           enum: [GOOGLE, LOCAL]
  *           example: LOCAL
+ *         registrationSource:
+ *           type: string
+ *           enum: [GOOGLE, FORM]
+ *           example: FORM
  *         fullName:
  *           type: string
  *           example: Participant User
  *         status:
  *           type: string
- *           enum: [PENDING, APPROVED, REJECTED, SUSPENDED]
- *           example: APPROVED
+ *           enum: [PENDING, ACTIVE, REJECTED, SUSPENDED]
+ *           example: ACTIVE
  *         roles:
  *           type: array
  *           items:
@@ -104,6 +108,10 @@ const router = Router()
  *           type: string
  *           nullable: true
  *           example: Full-stack developer
+ *         githubUsername:
+ *           type: string
+ *           nullable: true
+ *           example: octocat
  *         studentType:
  *           type: string
  *           nullable: true
@@ -169,7 +177,7 @@ const router = Router()
  *           example: null
  *     RegisterRequest:
  *       type: object
- *       required: [email, password, fullName, studentType, studentId]
+ *       required: [email, password, fullName, githubUsername, studentType, studentId]
  *       properties:
  *         email:
  *           type: string
@@ -185,6 +193,12 @@ const router = Router()
  *           minLength: 2
  *           maxLength: 120
  *           example: New User
+ *         githubUsername:
+ *           type: string
+ *           minLength: 1
+ *           maxLength: 39
+ *           pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$'
+ *           example: octocat
  *         studentType:
  *           type: string
  *           enum: [FPT, EXTERNAL]
@@ -209,6 +223,21 @@ const router = Router()
  *         password:
  *           type: string
  *           example: Password123!
+ *     GoogleLoginRequest:
+ *       type: object
+ *       required: [googleId, email, name, avatar]
+ *       properties:
+ *         googleId:
+ *           type: string
+ *         email:
+ *           type: string
+ *           format: email
+ *         name:
+ *           type: string
+ *         avatar:
+ *           type: string
+ *           format: uri
+ *           nullable: true
  *     RefreshTokenRequest:
  *       type: object
  *       required: [refreshToken]
@@ -283,7 +312,7 @@ router.post(
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  *       403:
- *         description: Account is not approved
+ *         description: Account is not active
  *         content:
  *           application/json:
  *             schema:
@@ -296,12 +325,33 @@ router.post(
   AUTH_CONTROLLER.login
 )
 
-router.get('/google', authRateLimiter, AUTH_CONTROLLER.redirectToGoogle)
-router.get(
-  '/google/callback',
+/**
+ * @swagger
+ * /api/auth/google:
+ *   post:
+ *     summary: Login to an existing account with a Google profile
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/GoogleLoginRequest'
+ *     responses:
+ *       200:
+ *         description: Google login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthSuccessResponse'
+ *       404:
+ *         description: No account exists for the Google email
+ */
+router.post(
+  '/google',
   authRateLimiter,
-  validationHandlingMiddleware(AUTH_VALIDATION.googleCallback),
-  AUTH_CONTROLLER.googleCallback
+  validationHandlingMiddleware(AUTH_VALIDATION.googleLogin),
+  AUTH_CONTROLLER.googleLogin
 )
 
 /**
@@ -335,6 +385,20 @@ router.post(
   authRateLimiter,
   validationHandlingMiddleware(AUTH_VALIDATION.refreshToken),
   AUTH_CONTROLLER.refreshToken
+)
+
+router.post(
+  '/forgot-password',
+  authRateLimiter,
+  validationHandlingMiddleware(AUTH_VALIDATION.requestPasswordReset),
+  AUTH_CONTROLLER.requestPasswordReset
+)
+
+router.post(
+  '/reset-password',
+  authRateLimiter,
+  validationHandlingMiddleware(AUTH_VALIDATION.resetPassword),
+  AUTH_CONTROLLER.resetPassword
 )
 
 /**

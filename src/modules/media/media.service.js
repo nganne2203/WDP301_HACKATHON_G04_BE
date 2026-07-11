@@ -2,7 +2,7 @@ import path from 'node:path'
 import mongoose from 'mongoose'
 
 import { MEDIA_REPOSITORY } from './media.repository.js'
-import { SUPABASE_STORAGE } from './media.storage.js'
+import { CLOUDINARY_STORAGE, SUPABASE_STORAGE } from './media.storage.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { ENCRYPTION_UTILS } from '#utils/encryption.util.js'
@@ -16,6 +16,10 @@ const CONFIG_KEYS = {
   supabaseUrl: 'media.supabase_url',
   serviceRoleKey: 'media.supabase_service_role_key_encrypted',
   bucket: 'media.supabase_bucket',
+  cloudinaryCloudName: 'media.cloudinary_cloud_name',
+  cloudinaryApiKey: 'media.cloudinary_api_key',
+  cloudinaryApiSecret: 'media.cloudinary_api_secret_encrypted',
+  cloudinaryFolder: 'media.cloudinary_folder',
   visibility: 'media.bucket_visibility',
   maxImageSizeMb: 'media.max_image_size_mb',
   maxVideoSizeMb: 'media.max_video_size_mb',
@@ -27,8 +31,9 @@ const CONFIG_KEYS = {
 
 const CONFIG_KEY_LIST = Object.values(CONFIG_KEYS)
 const DEFAULT_CONFIG = {
-  provider: 'SUPABASE',
+  provider: 'CLOUDINARY',
   bucket: 'event-media',
+  cloudinaryFolder: 'event-media',
   visibility: 'private',
   maxImageSizeMb: 10,
   maxVideoSizeMb: 200,
@@ -39,11 +44,12 @@ const DEFAULT_CONFIG = {
 }
 
 const MEDIA_STATUSES = ['PENDING', 'APPROVED', 'REJECTED']
-const ACTIVE_PARTICIPANT_STATUSES = ['REGISTERED', 'ACTIVE']
+const ACTIVE_PARTICIPANT_STATUSES = ['JOINED']
 const UPLOAD_ENABLED_EVENT_STATUSES = ['OPEN_REGISTRATION', 'ONGOING', 'SCORING', 'COMPLETED']
 const SIGNED_URL_EXPIRES_IN = 600
 const DISALLOWED_EXTENSIONS = new Set(['exe', 'bat', 'sh', 'js'])
 const FILE_FIELDS = ['eventId', 'teamId', 'title', 'description']
+const STORAGE_PROVIDERS = ['SUPABASE', 'CLOUDINARY']
 
 const EXTENSION_RULES = {
   jpg: { mediaType: 'IMAGE', mimeTypes: ['image/jpeg'] },
@@ -103,20 +109,52 @@ const normalizeTypeList = (value, fallback = []) => {
   return normalized.length > 0 ? [...new Set(normalized)] : fallback
 }
 
+const normalizeProvider = (value) => {
+  const normalized = String(value || '').trim().toUpperCase()
+  return STORAGE_PROVIDERS.includes(normalized) ? normalized : undefined
+}
+
 const toNumber = (value, fallback) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
+const buildEnvMediaConfig = () => {
+  const inferredProvider = process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET
+    ? 'CLOUDINARY'
+    : undefined
+  const provider = normalizeProvider(process.env.MEDIA_STORAGE_PROVIDER)
+
+  return {
+    provider,
+    inferredProvider,
+    supabaseUrl: process.env.SUPABASE_URL || process.env.MEDIA_SUPABASE_URL,
+    serviceRoleKeyPlain: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.MEDIA_SUPABASE_SERVICE_ROLE_KEY,
+    bucket: process.env.SUPABASE_BUCKET || process.env.MEDIA_SUPABASE_BUCKET,
+    cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME,
+    cloudinaryApiKey: process.env.CLOUDINARY_API_KEY,
+    cloudinaryApiSecretPlain: process.env.CLOUDINARY_API_SECRET,
+    cloudinaryFolder: process.env.CLOUDINARY_FOLDER
+  }
+}
+
 const normalizeConfigRecords = (records = []) => {
   const configByKey = new Map(records.map(record => [record.key, record]))
   const getValue = (key) => configByKey.get(key)?.value
+  const envConfig = buildEnvMediaConfig()
+  const storedProvider = normalizeProvider(getValue(CONFIG_KEYS.provider))
 
   return {
-    provider: getValue(CONFIG_KEYS.provider) || DEFAULT_CONFIG.provider,
-    supabaseUrl: getValue(CONFIG_KEYS.supabaseUrl),
+    provider: storedProvider || envConfig.provider || envConfig.inferredProvider || DEFAULT_CONFIG.provider,
+    supabaseUrl: envConfig.supabaseUrl || getValue(CONFIG_KEYS.supabaseUrl),
     serviceRoleKeyEncrypted: getValue(CONFIG_KEYS.serviceRoleKey),
-    bucket: getValue(CONFIG_KEYS.bucket) || DEFAULT_CONFIG.bucket,
+    serviceRoleKeyPlain: envConfig.serviceRoleKeyPlain,
+    bucket: envConfig.bucket || getValue(CONFIG_KEYS.bucket) || DEFAULT_CONFIG.bucket,
+    cloudinaryCloudName: envConfig.cloudinaryCloudName || getValue(CONFIG_KEYS.cloudinaryCloudName),
+    cloudinaryApiKey: envConfig.cloudinaryApiKey || getValue(CONFIG_KEYS.cloudinaryApiKey),
+    cloudinaryApiSecretEncrypted: getValue(CONFIG_KEYS.cloudinaryApiSecret),
+    cloudinaryApiSecretPlain: envConfig.cloudinaryApiSecretPlain,
+    cloudinaryFolder: envConfig.cloudinaryFolder || getValue(CONFIG_KEYS.cloudinaryFolder) || DEFAULT_CONFIG.cloudinaryFolder,
     visibility: getValue(CONFIG_KEYS.visibility) || DEFAULT_CONFIG.visibility,
     maxImageSizeMb: toNumber(getValue(CONFIG_KEYS.maxImageSizeMb), DEFAULT_CONFIG.maxImageSizeMb),
     maxVideoSizeMb: toNumber(getValue(CONFIG_KEYS.maxVideoSizeMb), DEFAULT_CONFIG.maxVideoSizeMb),
@@ -130,9 +168,14 @@ const normalizeConfigRecords = (records = []) => {
 const normalizeSafeConfig = (config) => {
   return {
     provider: config.provider,
-    bucket: config.bucket,
+    bucket: config.provider === 'CLOUDINARY' ? config.cloudinaryFolder : config.bucket,
     visibility: config.visibility,
-    hasSecret: Boolean(config.serviceRoleKeyEncrypted)
+    hasSecret: Boolean(
+      config.serviceRoleKeyEncrypted ||
+      config.serviceRoleKeyPlain ||
+      config.cloudinaryApiSecretEncrypted ||
+      config.cloudinaryApiSecretPlain
+    )
   }
 }
 
@@ -166,6 +209,18 @@ const normalizeTeamSummary = (team) => {
     id: getId(team),
     name: team.name,
     status: team.status
+  }
+}
+
+const normalizeMediaSummary = (media) => {
+  if (!media) return null
+  if (typeof media === 'string' || media instanceof mongoose.Types.ObjectId) return { id: media.toString() }
+
+  return {
+    id: getId(media),
+    title: media.title,
+    originalFileName: media.originalFileName,
+    mediaType: media.mediaType
   }
 }
 
@@ -386,6 +441,10 @@ const buildStoragePath = ({ eventId, userId, originalFileName }) => {
   return `events/${eventId}/users/${userId}/${Date.now()}-${sanitizeFileName(originalFileName)}`
 }
 
+const buildAvatarStoragePath = ({ userId, originalFileName }) => {
+  return `avatars/users/${userId}/${Date.now()}-${sanitizeFileName(originalFileName)}`
+}
+
 const createPagination = ({ page, limit, totalItems }) => {
   return {
     currentPage: page,
@@ -397,10 +456,21 @@ const createPagination = ({ page, limit, totalItems }) => {
 
 export const createMediaService = ({
   repository = MEDIA_REPOSITORY,
-  storage = SUPABASE_STORAGE,
+  storage,
+  storageClients = {
+    SUPABASE: SUPABASE_STORAGE,
+    CLOUDINARY: CLOUDINARY_STORAGE
+  },
   encryption = ENCRYPTION_UTILS,
   logger = LOGGER
 } = {}) => {
+  const resolvedStorageClients = storage
+    ? {
+      SUPABASE: storage,
+      CLOUDINARY: storage
+    }
+    : storageClients
+
   const audit = async ({ actor, action, resourceType = 'Media', resourceId, metadata = {} }) => {
     try {
       await repository.createAuditLog({
@@ -425,31 +495,63 @@ export const createMediaService = ({
   const loadOperationalConfig = async () => {
     const config = await loadStoredConfig()
 
-    if (config.provider !== 'SUPABASE') {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Media storage provider must be SUPABASE'])
+    if (config.provider === 'SUPABASE') {
+      if (!config.supabaseUrl) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Supabase URL is not configured'])
+      }
+
+      let serviceRoleKey = config.serviceRoleKeyPlain
+      if (!serviceRoleKey) {
+        if (!config.serviceRoleKeyEncrypted) {
+          throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Supabase service role key is not configured'])
+        }
+
+        try {
+          serviceRoleKey = encryption.decrypt(config.serviceRoleKeyEncrypted)
+        } catch (error) {
+          throw new ApiError(ERROR_CODES.BAD_REQUEST, [
+            `Could not decrypt Supabase service role key: ${error.message}`
+          ])
+        }
+      }
+
+      return {
+        ...config,
+        serviceRoleKey
+      }
     }
 
-    if (!config.supabaseUrl) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Supabase URL is not configured'])
+    if (config.provider === 'CLOUDINARY') {
+      if (!config.cloudinaryCloudName) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Cloudinary cloud name is not configured'])
+      }
+
+      if (!config.cloudinaryApiKey) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Cloudinary API key is not configured'])
+      }
+
+      let cloudinaryApiSecret = config.cloudinaryApiSecretPlain
+      if (!cloudinaryApiSecret) {
+        if (!config.cloudinaryApiSecretEncrypted) {
+          throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Cloudinary API secret is not configured'])
+        }
+
+        try {
+          cloudinaryApiSecret = encryption.decrypt(config.cloudinaryApiSecretEncrypted)
+        } catch (error) {
+          throw new ApiError(ERROR_CODES.BAD_REQUEST, [
+            `Could not decrypt Cloudinary API secret: ${error.message}`
+          ])
+        }
+      }
+
+      return {
+        ...config,
+        cloudinaryApiSecret
+      }
     }
 
-    if (!config.serviceRoleKeyEncrypted) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Supabase service role key is not configured'])
-    }
-
-    let serviceRoleKey
-    try {
-      serviceRoleKey = encryption.decrypt(config.serviceRoleKeyEncrypted)
-    } catch (error) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [
-        `Could not decrypt Supabase service role key: ${error.message}`
-      ])
-    }
-
-    return {
-      ...config,
-      serviceRoleKey
-    }
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Media storage provider is not supported'])
   }
 
   const getStorageConfig = async () => {
@@ -458,10 +560,14 @@ export const createMediaService = ({
 
   const saveStorageConfig = async (payload = {}, actor = {}) => {
     const existingConfig = await loadStoredConfig()
+    const provider = normalizeProvider(payload.provider) || existingConfig.provider || DEFAULT_CONFIG.provider
     const configUpdates = [
-      { key: CONFIG_KEYS.provider, value: DEFAULT_CONFIG.provider, isEncrypted: false },
-      { key: CONFIG_KEYS.supabaseUrl, value: payload.supabaseUrl, isEncrypted: false },
+      { key: CONFIG_KEYS.provider, value: provider, isEncrypted: false },
+      { key: CONFIG_KEYS.supabaseUrl, value: payload.supabaseUrl || '', isEncrypted: false },
       { key: CONFIG_KEYS.bucket, value: payload.bucket || DEFAULT_CONFIG.bucket, isEncrypted: false },
+      { key: CONFIG_KEYS.cloudinaryCloudName, value: payload.cloudinaryCloudName || '', isEncrypted: false },
+      { key: CONFIG_KEYS.cloudinaryApiKey, value: payload.cloudinaryApiKey || '', isEncrypted: false },
+      { key: CONFIG_KEYS.cloudinaryFolder, value: payload.cloudinaryFolder || DEFAULT_CONFIG.cloudinaryFolder, isEncrypted: false },
       { key: CONFIG_KEYS.visibility, value: payload.visibility || DEFAULT_CONFIG.visibility, isEncrypted: false },
       { key: CONFIG_KEYS.maxImageSizeMb, value: payload.maxImageSizeMb || DEFAULT_CONFIG.maxImageSizeMb, isEncrypted: false },
       { key: CONFIG_KEYS.maxVideoSizeMb, value: payload.maxVideoSizeMb || DEFAULT_CONFIG.maxVideoSizeMb, isEncrypted: false },
@@ -488,6 +594,23 @@ export const createMediaService = ({
       })
     }
 
+    if (payload.cloudinaryApiSecret) {
+      let encryptedCloudinaryApiSecret
+      try {
+        encryptedCloudinaryApiSecret = encryption.encrypt(payload.cloudinaryApiSecret)
+      } catch (error) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, [
+          `Could not encrypt Cloudinary API secret: ${error.message}`
+        ])
+      }
+
+      configUpdates.push({
+        key: CONFIG_KEYS.cloudinaryApiSecret,
+        value: encryptedCloudinaryApiSecret,
+        isEncrypted: true
+      })
+    }
+
     await Promise.all(configUpdates.map(update => repository.upsertConfig({
       ...update,
       updatedBy: actor.id
@@ -498,11 +621,18 @@ export const createMediaService = ({
       action: 'MEDIA_CONFIG_UPDATED',
       resourceType: 'SystemConfiguration',
       metadata: {
-        provider: DEFAULT_CONFIG.provider,
-        bucket: payload.bucket || DEFAULT_CONFIG.bucket,
+        provider,
+        bucket: provider === 'CLOUDINARY'
+          ? (payload.cloudinaryFolder || DEFAULT_CONFIG.cloudinaryFolder)
+          : (payload.bucket || DEFAULT_CONFIG.bucket),
         visibility: payload.visibility || DEFAULT_CONFIG.visibility,
-        secretUpdated: Boolean(payload.serviceRoleKey),
-        hadSecretBeforeUpdate: Boolean(existingConfig.serviceRoleKeyEncrypted)
+        secretUpdated: Boolean(payload.serviceRoleKey || payload.cloudinaryApiSecret),
+        hadSecretBeforeUpdate: Boolean(
+          existingConfig.serviceRoleKeyEncrypted ||
+          existingConfig.serviceRoleKeyPlain ||
+          existingConfig.cloudinaryApiSecretEncrypted ||
+          existingConfig.cloudinaryApiSecretPlain
+        )
       }
     })
 
@@ -579,14 +709,30 @@ export const createMediaService = ({
       userId: actor.id,
       originalFileName: fileMetadata.originalFileName
     })
-    const uploadResult = await storage.uploadObject({
-      supabaseUrl: config.supabaseUrl,
-      serviceRoleKey: config.serviceRoleKey,
-      bucket: config.bucket,
-      storagePath,
-      buffer: file.buffer,
-      mimeType: fileMetadata.mimeType
-    })
+    const storageClient = resolvedStorageClients[config.provider]
+    if (!storageClient) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Unsupported media storage provider: ${config.provider}`])
+    }
+
+    const uploadResult = config.provider === 'CLOUDINARY'
+      ? await storageClient.uploadObject({
+        cloudName: config.cloudinaryCloudName,
+        apiKey: config.cloudinaryApiKey,
+        apiSecret: config.cloudinaryApiSecret,
+        folder: config.cloudinaryFolder,
+        storagePath,
+        buffer: file.buffer,
+        mimeType: fileMetadata.mimeType,
+        mediaType: fileMetadata.mediaType
+      })
+      : await storageClient.uploadObject({
+        supabaseUrl: config.supabaseUrl,
+        serviceRoleKey: config.serviceRoleKey,
+        bucket: config.bucket,
+        storagePath,
+        buffer: file.buffer,
+        mimeType: fileMetadata.mimeType
+      })
 
     let media
     try {
@@ -598,8 +744,8 @@ export const createMediaService = ({
         description: safePayload.description,
         mediaType: fileMetadata.mediaType,
         storageProvider: config.provider,
-        bucketName: config.bucket,
-        storagePath,
+        bucketName: config.provider === 'CLOUDINARY' ? config.cloudinaryFolder : config.bucket,
+        storagePath: uploadResult.storagePath || storagePath,
         fileUrl: uploadResult.fileUrl,
         originalFileName: fileMetadata.originalFileName,
         mimeType: fileMetadata.mimeType,
@@ -610,13 +756,24 @@ export const createMediaService = ({
         uploadedAt: new Date()
       })
     } catch (error) {
-      await storage.deleteObject({
-        supabaseUrl: config.supabaseUrl,
-        serviceRoleKey: config.serviceRoleKey,
-        bucket: config.bucket,
-        storagePath
-      }).catch(cleanupError => logger.warn('Could not clean up uploaded Supabase object after media save failure', {
-        storagePath,
+      const uploadedStoragePath = uploadResult.storagePath || storagePath
+      const cleanupPromise = config.provider === 'CLOUDINARY'
+        ? storageClient.deleteObject({
+          cloudName: config.cloudinaryCloudName,
+          apiKey: config.cloudinaryApiKey,
+          apiSecret: config.cloudinaryApiSecret,
+          storagePath: uploadedStoragePath,
+          mediaType: fileMetadata.mediaType
+        })
+        : storageClient.deleteObject({
+          supabaseUrl: config.supabaseUrl,
+          serviceRoleKey: config.serviceRoleKey,
+          bucket: config.bucket,
+          storagePath: uploadedStoragePath
+        })
+
+      await cleanupPromise.catch(cleanupError => logger.warn('Could not clean up uploaded media after media save failure', {
+        storagePath: uploadedStoragePath,
         error: cleanupError.message
       }))
       throw error
@@ -628,7 +785,7 @@ export const createMediaService = ({
       userId: actor.id,
       action: 'UPLOAD',
       metadata: {
-        storagePath,
+        storagePath: uploadResult.storagePath || storagePath,
         mediaType: media.mediaType,
         fileSize: media.fileSize
       }
@@ -647,6 +804,53 @@ export const createMediaService = ({
     })
 
     return normalizeMedia(await repository.findMediaById(media._id))
+  }
+
+  const uploadProfileAvatar = async (file, actor = {}) => {
+    if (!actor.id) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authentication is required'])
+    }
+
+    const config = await loadOperationalConfig()
+    const fileMetadata = validateMediaFile({ file, config })
+    if (fileMetadata.mediaType !== 'IMAGE') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Avatar must be an image file'])
+    }
+
+    const storagePath = buildAvatarStoragePath({
+      userId: actor.id,
+      originalFileName: fileMetadata.originalFileName
+    })
+    const storageClient = resolvedStorageClients[config.provider]
+    if (!storageClient) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Unsupported media storage provider: ${config.provider}`])
+    }
+
+    const uploadResult = config.provider === 'CLOUDINARY'
+      ? await storageClient.uploadObject({
+        cloudName: config.cloudinaryCloudName,
+        apiKey: config.cloudinaryApiKey,
+        apiSecret: config.cloudinaryApiSecret,
+        folder: config.cloudinaryFolder,
+        storagePath,
+        buffer: file.buffer,
+        mimeType: fileMetadata.mimeType,
+        mediaType: fileMetadata.mediaType
+      })
+      : await storageClient.uploadObject({
+        supabaseUrl: config.supabaseUrl,
+        serviceRoleKey: config.serviceRoleKey,
+        bucket: config.bucket,
+        storagePath,
+        buffer: file.buffer,
+        mimeType: fileMetadata.mimeType
+      })
+
+    return {
+      avatarUrl: uploadResult.fileUrl,
+      storageProvider: config.provider,
+      storagePath: uploadResult.storagePath || storagePath
+    }
   }
 
   const listMyHistory = async (query = {}, actor = {}) => {
@@ -732,13 +936,23 @@ export const createMediaService = ({
     await ensureEventExists(getId(media.eventId))
 
     const config = await loadOperationalConfig()
-    const result = await storage.createSignedUrl({
-      supabaseUrl: config.supabaseUrl,
-      serviceRoleKey: config.serviceRoleKey,
-      bucket: media.bucketName || config.bucket,
-      storagePath: media.storagePath,
-      expiresIn: SIGNED_URL_EXPIRES_IN
-    })
+    const storageClient = resolvedStorageClients[config.provider]
+    if (!storageClient) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Unsupported media storage provider: ${config.provider}`])
+    }
+
+    const result = config.provider === 'CLOUDINARY'
+      ? await storageClient.createSignedUrl({
+        fileUrl: media.fileUrl,
+        expiresIn: SIGNED_URL_EXPIRES_IN
+      })
+      : await storageClient.createSignedUrl({
+        supabaseUrl: config.supabaseUrl,
+        serviceRoleKey: config.serviceRoleKey,
+        bucket: media.bucketName || config.bucket,
+        storagePath: media.storagePath,
+        expiresIn: SIGNED_URL_EXPIRES_IN
+      })
 
     await repository.createActivity({
       mediaId: media._id,
@@ -775,13 +989,27 @@ export const createMediaService = ({
     const media = await ensureMediaExists(mediaId)
     ensureCanDeleteMedia(media, actor)
     const config = await loadOperationalConfig()
+    const storageClient = resolvedStorageClients[config.provider]
+    if (!storageClient) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Unsupported media storage provider: ${config.provider}`])
+    }
 
-    await storage.deleteObject({
-      supabaseUrl: config.supabaseUrl,
-      serviceRoleKey: config.serviceRoleKey,
-      bucket: media.bucketName || config.bucket,
-      storagePath: media.storagePath
-    })
+    if (config.provider === 'CLOUDINARY') {
+      await storageClient.deleteObject({
+        cloudName: config.cloudinaryCloudName,
+        apiKey: config.cloudinaryApiKey,
+        apiSecret: config.cloudinaryApiSecret,
+        storagePath: media.storagePath,
+        mediaType: media.mediaType
+      })
+    } else {
+      await storageClient.deleteObject({
+        supabaseUrl: config.supabaseUrl,
+        serviceRoleKey: config.serviceRoleKey,
+        bucket: media.bucketName || config.bucket,
+        storagePath: media.storagePath
+      })
+    }
 
     await repository.createActivity({
       mediaId: media._id,
@@ -929,6 +1157,21 @@ export const createMediaService = ({
       ])
     ])
 
+    const participantIds = byParticipant
+      .map(item => item._id)
+      .filter(Boolean)
+    const mediaIds = mostViewedMedia
+      .map(item => item._id)
+      .filter(Boolean)
+
+    const [participantUsers, viewedMediaSummaries] = await Promise.all([
+      participantIds.length > 0 ? repository.findUsersByIds(participantIds) : [],
+      mediaIds.length > 0 ? repository.findMediaSummariesByIds(mediaIds) : []
+    ])
+
+    const usersById = new Map(participantUsers.map(user => [getId(user), normalizeActorSummary(user)]))
+    const mediaById = new Map(viewedMediaSummaries.map(media => [getId(media), normalizeMediaSummary(media)]))
+
     const statusCounts = Object.fromEntries(MEDIA_STATUSES.map(status => [status, 0]))
     for (const item of byStatus) {
       if (item._id) statusCounts[item._id] = item.count
@@ -946,8 +1189,22 @@ export const createMediaService = ({
       uploadsByWeek: byWeek.map(item => ({ week: item._id, count: item.count })),
       uploadsByMonth: byMonth.map(item => ({ month: item._id, count: item.count })),
       uploadsByMediaType: byMediaType.map(item => ({ mediaType: item._id, count: item.count })),
-      mostActiveParticipants: byParticipant.slice(0, 10).map(item => ({ participantId: getId(item._id), uploads: item.count })),
-      mostViewedMedia: mostViewedMedia.map(item => ({ mediaId: getId(item._id), views: item.views }))
+      mostActiveParticipants: byParticipant.slice(0, 10).map(item => {
+        const participantId = getId(item._id)
+        return {
+          participantId,
+          participant: usersById.get(participantId) || null,
+          uploads: item.count
+        }
+      }),
+      mostViewedMedia: mostViewedMedia.map(item => {
+        const mediaId = getId(item._id)
+        return {
+          mediaId,
+          media: mediaById.get(mediaId) || null,
+          views: item.views
+        }
+      })
     }
   }
 
@@ -955,6 +1212,7 @@ export const createMediaService = ({
     getStorageConfig,
     saveStorageConfig,
     uploadMedia,
+    uploadProfileAvatar,
     listMyHistory,
     listAdminMedia,
     getEventGallery,

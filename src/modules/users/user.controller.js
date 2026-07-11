@@ -43,12 +43,38 @@ const createUser = async (req, res, next) => {
   }
 }
 
+const updateUser = async (req, res, next) => {
+  try {
+    const user = await USER_SERVICE.updateUser(req.params.id, req.body, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Update user successfully',
+      data: user
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const updateMe = async (req, res, next) => {
   try {
     const user = await USER_SERVICE.updateProfile(req.user.id, req.body)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Update profile successfully',
+      data: user
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const updateMyAvatar = async (req, res, next) => {
+  try {
+    const user = await USER_SERVICE.updateProfileAvatar(req.user.id, req.file, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Update avatar successfully',
       data: user
     }))
   } catch (error) {
@@ -74,7 +100,7 @@ const approveUser = async (req, res, next) => {
     const user = await USER_SERVICE.approveUser(req.params.id)
 
     res.status(StatusCodes.OK).json(responseSuccess({
-      message: 'Approve user successfully',
+      message: 'Activate user successfully',
       data: user
     }))
   } catch (error) {
@@ -152,7 +178,9 @@ export const USER_CONTROLLER = {
   listUsers,
   getUserById,
   createUser,
+  updateUser,
   updateMe,
+  updateMyAvatar,
   updateStatus,
   approveUser,
   rejectUser,

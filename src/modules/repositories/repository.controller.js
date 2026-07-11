@@ -71,10 +71,78 @@ const listRepositoryCommits = async (req, res, next) => {
   }
 }
 
+const listStaticAnalysis = async (req, res, next) => {
+  try {
+    const { repository, analysisResults, pagination } = await REPOSITORY_SERVICE.listStaticAnalysis({
+      repositoryId: req.params.id,
+      query: req.validated?.query || req.query
+    })
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get repository static analysis successfully',
+      data: analysisResults,
+      pagination
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const listCommitDiffs = async (req, res, next) => {
+  try {
+    const { commitDiffs, pagination } = await REPOSITORY_SERVICE.listCommitDiffs({
+      repositoryId: req.params.id,
+      query: req.validated?.query || req.query
+    })
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get repository commit diffs successfully',
+      data: commitDiffs,
+      pagination
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const listImpactDecisions = async (req, res, next) => {
+  try {
+    const { impactDecisions, pagination } = await REPOSITORY_SERVICE.listImpactDecisions({
+      repositoryId: req.params.id,
+      query: req.validated?.query || req.query
+    })
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get repository impact decisions successfully',
+      data: impactDecisions,
+      pagination
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const syncRepositoryCommits = async (req, res, next) => {
+  try {
+    const result = await REPOSITORY_SERVICE.syncRepositoryCommits({
+      repositoryId: req.params.id,
+      requestedBy: req.user?.id || null
+    })
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Sync repository commits successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const REPOSITORY_CONTROLLER = {
   listRepositories,
   getRepositoryById,
   createRepository,
   updateRepository,
-  listRepositoryCommits
+  listRepositoryCommits,
+  listStaticAnalysis,
+  listCommitDiffs,
+  listImpactDecisions,
+  syncRepositoryCommits
 }

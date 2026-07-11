@@ -1,13 +1,22 @@
 import { StatusCodes } from 'http-status-codes'
 
-import { AUTH_SERVICE } from './auth.service.js'
+import { AUTH_SERVICE, isGoogleLoginFallback } from './auth.service.js'
 import { responseSuccess } from '#utils/responseUtil.js'
 
 const register = async (req, res, next) => {
   try {
+    if (isGoogleLoginFallback(req.body)) {
+      const authData = await AUTH_SERVICE.googleLogin(req.body)
+
+      return res.status(StatusCodes.OK).json(responseSuccess({
+        message: 'Login with Google successfully',
+        data: authData
+      }))
+    }
+
     const user = await AUTH_SERVICE.register(req.body)
 
-    res.status(StatusCodes.CREATED).json(responseSuccess({
+    return res.status(StatusCodes.CREATED).json(responseSuccess({
       message: 'Register successfully. Your account is pending approval.',
       data: user
     }))
@@ -29,24 +38,11 @@ const login = async (req, res, next) => {
   }
 }
 
-const redirectToGoogle = async (req, res, next) => {
+const googleLogin = async (req, res, next) => {
   try {
-    const url = AUTH_SERVICE.getGoogleLoginUrl()
-    res.redirect(url)
-  } catch (error) {
-    next(error)
-  }
-}
+    const authData = await AUTH_SERVICE.googleLogin(req.body)
 
-const googleCallback = async (req, res, next) => {
-  try {
-    const { authData, redirectUrl } = await AUTH_SERVICE.handleGoogleCallback(req.validated?.query || req.query)
-
-    if (redirectUrl) {
-      return res.redirect(redirectUrl)
-    }
-
-    return res.status(StatusCodes.OK).json(responseSuccess({
+    res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Login with Google successfully',
       data: authData
     }))
@@ -94,6 +90,32 @@ const changePassword = async (req, res, next) => {
   }
 }
 
+const requestPasswordReset = async (req, res, next) => {
+  try {
+    const result = await AUTH_SERVICE.requestPasswordReset(req.body)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'If this email exists, a password reset link has been sent.',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const resetPassword = async (req, res, next) => {
+  try {
+    const result = await AUTH_SERVICE.resetPassword(req.body)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Password reset successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const logout = async (req, res, next) => {
   try {
     res.status(StatusCodes.OK).json(responseSuccess({
@@ -108,10 +130,11 @@ const logout = async (req, res, next) => {
 export const AUTH_CONTROLLER = {
   register,
   login,
-  redirectToGoogle,
-  googleCallback,
+  googleLogin,
   refreshToken,
   getMe,
   changePassword,
+  requestPasswordReset,
+  resetPassword,
   logout
 }

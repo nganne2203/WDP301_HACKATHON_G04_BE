@@ -17,10 +17,6 @@ const clientUrls = process.env.CLIENT_URLS?.split(',').map(url => url.trim()).fi
 const localFrontendUrl = ['prod', 'production'].includes(nodeEnv) ? undefined : 'http://localhost:5173'
 const frontendUrl = process.env.FRONTEND_URL || clientUrls[0] || localFrontendUrl
 const allowedClientUrls = clientUrls.length > 0 ? clientUrls : (frontendUrl ? [frontendUrl] : [])
-const legacyEmailHost = process.env.EMAIL_HOST
-const legacyEmailHostIsAddress = legacyEmailHost?.includes('@')
-const emailUser = process.env.SMTP_USER || process.env.EMAIL_USER || (legacyEmailHostIsAddress ? legacyEmailHost : undefined)
-const emailHost = process.env.SMTP_HOST || (!legacyEmailHostIsAddress ? legacyEmailHost : undefined)
 
 export const env = {
   server: {
@@ -49,36 +45,42 @@ export const env = {
     refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN
   },
   email: {
-    service: process.env.EMAIL_SERVICE,
-    host: emailHost,
-    port: parseNumber(process.env.SMTP_PORT),
-    secure: parseBoolean(process.env.SMTP_SECURE, false),
-    user: emailUser,
-    password: process.env.SMTP_PASSWORD || process.env.EMAIL_PASSWORD,
-    from: process.env.EMAIL_FROM || process.env.SMTP_FROM || emailUser,
-    devMode: process.env.EMAIL_DEV_MODE || (['dev', 'development', 'test'].includes(nodeEnv) ? 'console' : 'silent')
+    devMode: process.env.EMAIL_DEV_MODE || (['dev', 'development', 'test'].includes(nodeEnv) ? 'console' : 'silent'),
+    gmailUser: process.env.GMAIL_USER,
+    gmailClientId: process.env.GMAIL_CLIENT_ID,
+    gmailClientSecret: process.env.GMAIL_CLIENT_SECRET,
+    gmailRefreshToken: process.env.GMAIL_REFRESH_TOKEN,
+    from: process.env.MAIL_FROM
   },
   teamInvitation: {
     expiresHours: parseNumber(process.env.TEAM_INVITATION_EXPIRES_HOURS) || 72,
     temporaryPassword: process.env.TEAM_INVITATION_TEMP_PASSWORD || 'test'
   },
+  checkInQr: {
+    expiresMinutes: parseNumber(process.env.CHECK_IN_QR_EXPIRES_MINUTES) || 5
+  },
   otp: {
     expiresIn: process.env.OTP_EXPIRES_IN
+  },
+  passwordReset: {
+    expiresMinutes: parseNumber(process.env.PASSWORD_RESET_EXPIRES_MINUTES) || 30
   },
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    authCallbackUrl: process.env.GOOGLE_AUTH_CALLBACK_URL,
     connectCallbackUrl: process.env.GOOGLE_CONNECT_CALLBACK_URL
   },
   n8n: {
     enabled: parseBoolean(process.env.N8N_ENABLED, false),
     perPushWebhookUrl: process.env.N8N_PER_PUSH_WEBHOOK_URL,
-    teamAggregateWebhookUrl: process.env.N8N_TEAM_AGGREGATE_WEBHOOK_URL,
+    aggregateWebhookUrl: process.env.N8N_AGGREGATE_WEBHOOK_URL || process.env.N8N_TEAM_AGGREGATE_WEBHOOK_URL,
+    teamAggregateWebhookUrl: process.env.N8N_AGGREGATE_WEBHOOK_URL || process.env.N8N_TEAM_AGGREGATE_WEBHOOK_URL,
     callbackSecret: process.env.N8N_CALLBACK_SECRET,
-    dispatchMaxRetries: parseNumber(process.env.N8N_DISPATCH_MAX_RETRIES) ?? 2
+    dispatchMaxRetries: parseNumber(process.env.N8N_DISPATCH_MAX_RETRIES) ?? 2,
+    dispatchTimeoutMs: parseNumber(process.env.N8N_DISPATCH_TIMEOUT_MS) ?? 15000
   },
   github: {
+    token: process.env.GITHUB_TOKEN,
     webhookSecret: process.env.GITHUB_WEBHOOK_SECRET,
     webhookCallbackUrl: process.env.GITHUB_WEBHOOK_CALLBACK_URL,
     webhookEvents: process.env.GITHUB_WEBHOOK_EVENTS?.split(',').map(value => value.trim()).filter(Boolean) || ['push']
@@ -90,6 +92,7 @@ export const env = {
     concurrency: parseNumber(process.env.WORKER_CONCURRENCY) || 3
   },
   security: {
-    tokenEncryptionSecret: process.env.TOKEN_ENCRYPTION_SECRET
+    tokenEncryptionSecret: process.env.GITHUB_TOKEN_DECRYPTION_KEY,
+    githubTokenAesKey: process.env.GITHUB_TOKEN_AES_KEY
   }
 }

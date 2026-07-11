@@ -6,8 +6,9 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
+import { TEAM_REJECTION_REASONS, TEAM_SERVICE } from '#modules/teams/team.service.js'
 
-const EVENT_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED']
+const EVENT_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED']
 const RANKING_SCOPES = ['TEAM', 'CHAPTER', 'INDIVIDUAL']
 const FINALIST_SELECTION_MODES = ['FIXED_PER_BOARD', 'TOP_PER_BOARD_WITH_WILDCARD', 'OVERALL_SCORE', 'CUSTOM']
 const EVENT_FIELDS = [
@@ -225,6 +226,8 @@ const normalizeEvent = (event) => {
     theme: plainEvent.theme,
     registrationStart: plainEvent.registrationStart,
     registrationEnd: plainEvent.registrationEnd,
+    registrationClosedAt: plainEvent.registrationClosedAt,
+    registrationCloseReason: plainEvent.registrationCloseReason,
     startDate: plainEvent.startDate,
     endDate: plainEvent.endDate,
     maxTeams: plainEvent.maxTeams,
@@ -242,7 +245,8 @@ const normalizeEvent = (event) => {
 
 const createEventService = ({
   repository = EVENT_REPOSITORY,
-  notificationService = NOTIFICATION_SERVICE
+  notificationService = NOTIFICATION_SERVICE,
+  teamService = TEAM_SERVICE
 } = {}) => {
   const ensureEventExists = async (id) => {
     ensureObjectId(id)
@@ -296,6 +300,12 @@ const createEventService = ({
 
     const event = await repository.create({
       ...normalizedPayload,
+      ...(normalizedPayload.status === 'OPEN_REGISTRATION'
+        ? {
+          registrationClosedAt: null,
+          registrationCloseReason: null
+        }
+        : {}),
       createdBy: actor.id
     })
 
@@ -320,7 +330,30 @@ const createEventService = ({
     ensureCompetitionRule(competitionConfig)
 
     const normalizedPayload = syncLegacyEventFields(safePayload, competitionConfig, existingEvent)
+    const shouldRejectUnconfirmedTeams =
+      normalizedPayload.status === 'REGISTRATION_CLOSED' &&
+      existingEvent.status !== 'REGISTRATION_CLOSED'
+
+    if (normalizedPayload.status === 'OPEN_REGISTRATION') {
+      normalizedPayload.registrationClosedAt = null
+      normalizedPayload.registrationCloseReason = null
+    } else if (
+      normalizedPayload.status === 'REGISTRATION_CLOSED' &&
+      !existingEvent.registrationClosedAt &&
+      !normalizedPayload.registrationClosedAt
+    ) {
+      normalizedPayload.registrationClosedAt = new Date()
+      normalizedPayload.registrationCloseReason = existingEvent.registrationCloseReason || 'MANUALLY_CLOSED'
+    }
+
     const event = await repository.updateById(id, normalizedPayload)
+    if (event && shouldRejectUnconfirmedTeams) {
+      await teamService.rejectUnconfirmedTeamsForRegistrationClosure({
+        event,
+        reason: TEAM_REJECTION_REASONS.REGISTRATION_CLOSED
+      })
+    }
+
     return normalizeEvent(event)
   }
 
@@ -330,9 +363,26 @@ const createEventService = ({
     }
 
     ensureObjectId(id)
-    const event = await repository.updateById(id, { status })
+    const existingEvent = await ensureEventExists(id)
+    const updatePayload = { status }
+    if (status === 'OPEN_REGISTRATION') {
+      updatePayload.registrationClosedAt = null
+      updatePayload.registrationCloseReason = null
+    } else if (status === 'REGISTRATION_CLOSED') {
+      updatePayload.registrationClosedAt = new Date()
+      updatePayload.registrationCloseReason = 'MANUALLY_CLOSED'
+    }
+
+    const event = await repository.updateById(id, updatePayload)
     if (!event) {
       throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+    }
+
+    if (status === 'REGISTRATION_CLOSED' && existingEvent.status !== 'REGISTRATION_CLOSED') {
+      await teamService.rejectUnconfirmedTeamsForRegistrationClosure({
+        event,
+        reason: TEAM_REJECTION_REASONS.REGISTRATION_CLOSED
+      })
     }
 
     return normalizeEvent(event)

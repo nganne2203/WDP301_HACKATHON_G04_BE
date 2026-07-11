@@ -84,7 +84,7 @@ const isWorkshopSpeaker = (workshop, actor = {}) => {
 const ensureCanViewInsights = (workshop, actor = {}, permission) => {
   if (hasPermission(actor, permission) || isWorkshopSpeaker(workshop, actor)) return
 
-  throw new ApiError(ERROR_CODES.FORBIDDEN, ['Bạn không có quyền thực hiện hành động này'])
+  throw new ApiError(ERROR_CODES.FORBIDDEN, ['You do not have permission to perform this action'])
 }
 
 const ensureCanCreateGoogleMeet = ({ workshop, actor = {}, organizerUserId }) => {
@@ -96,7 +96,7 @@ const ensureCanCreateGoogleMeet = ({ workshop, actor = {}, organizerUserId }) =>
     return
   }
 
-  throw new ApiError(ERROR_CODES.FORBIDDEN, ['Bạn không có quyền thực hiện hành động này'])
+  throw new ApiError(ERROR_CODES.FORBIDDEN, ['You do not have permission to perform this action'])
 }
 
 const buildWorkshopFilter = (query = {}) => {
@@ -133,7 +133,8 @@ const normalizeUserSummary = (user) => {
   return {
     id: user._id?.toString() || user.id,
     fullName: user.fullName,
-    email: user.email
+    email: user.email,
+    githubUsername: user.githubUsername
   }
 }
 

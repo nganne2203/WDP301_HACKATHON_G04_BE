@@ -1,8 +1,11 @@
 import { Router } from 'express'
+import { StatusCodes } from 'http-status-codes'
+import Joi from 'joi'
 
 import adminMediaRoutes from '#modules/media/admin-media.route.js'
 import auditLogRoutes from '#modules/audit-logs/audit-log.route.js'
 import authRoutes from '#modules/auth/auth.route.js'
+import chatRoutes from '#modules/chat/chat.route.js'
 import aiReviewRoutes from '#modules/ai-reviews/ai-review.route.js'
 import eventRoutes from '#modules/events/event.route.js'
 import githubRoutes from '#modules/github/github.route.js'
@@ -28,17 +31,50 @@ import rankingRoutes from '#modules/rankings/ranking.route.js'
 import finalistRoutes from '#modules/finalists/finalist.route.js'
 import permissionRoutes from '#modules/permissions/permission.route.js'
 import roleRoutes from '#modules/roles/role.route.js'
+import { EMAIL_SERVICE } from '#modules/notifications/email.service.js'
+import { validationHandlingMiddleware } from '#middlewares/validationHandlingMiddleware.js'
+import { responseSuccess } from '#utils/responseUtil.js'
 
 const router = Router()
+
+const testEmailValidation = {
+  body: Joi.object({
+    to: Joi.string().email().trim().lowercase().required()
+  })
+}
+
+const sendTestEmail = async (req, res, next) => {
+  try {
+    const result = await EMAIL_SERVICE.sendEmail({
+      to: req.body.to,
+      subject: 'SEAL Hackathon test email',
+      text: 'This is a test email from SEAL Hackathon via Gmail SMTP.',
+      html: '<p>This is a test email from <strong>SEAL Hackathon</strong> via Gmail SMTP.</p>',
+      metadata: {
+        source: 'test-email-endpoint'
+      }
+    })
+
+    res.status(result.sent ? StatusCodes.OK : StatusCodes.SERVICE_UNAVAILABLE).json(responseSuccess({
+      message: result.sent ? 'Send test email successfully' : 'Test email was not sent',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
 
 router.get('/status', (req, res) => {
   res.status(200).json({ status: 'ok' })
 })
 
+router.post('/test-email', validationHandlingMiddleware(testEmailValidation), sendTestEmail)
+
 router.use('/admin/media', adminMediaRoutes)
 router.use('/audit-logs', auditLogRoutes)
 router.use('/ai-reviews', aiReviewRoutes)
 router.use('/auth', authRoutes)
+router.use('/chat', chatRoutes)
 router.use('/events', eventRoutes)
 router.use('/github/webhooks', githubWebhookRoutes)
 router.use('/github', githubRoutes)
