@@ -420,6 +420,106 @@ test('acceptInvitation creates account and sends temporary account email for unk
   assert.deepEqual(notifications[0].channels, ['IN_APP'])
 })
 
+test('acceptInvitation confirms team without placement when event has no tracks configured', async () => {
+  const token = createInvitationToken()
+  const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'ACTIVE' }
+  const member = {
+    _id: 'member-1',
+    email: 'member@example.com',
+    fullName: 'Member User',
+    status: 'ACTIVE',
+    roles: [{ name: 'PARTICIPANT' }]
+  }
+  const event = {
+    _id: 'event-1',
+    title: 'SEAL Hackathon',
+    status: 'OPEN_REGISTRATION',
+    minTeamMembers: 2,
+    maxTeamMembers: 5,
+    maxTeams: 30
+  }
+  let team = {
+    _id: 'team-1',
+    eventId: event,
+    leaderId: leader,
+    memberIds: [leader],
+    name: 'Code Wizards',
+    status: 'WAITING_FOR_MEMBERS'
+  }
+  let invitation = {
+    _id: 'invitation-1',
+    eventId: 'event-1',
+    teamId: 'team-1',
+    leaderId: 'leader-1',
+    invitedEmail: 'member@example.com',
+    invitedUserId: 'member-1',
+    tokenHash: hashInvitationToken(token),
+    status: 'PENDING',
+    expiresAt: new Date('2099-06-02T00:00:00.000Z')
+  }
+
+  const repository = {
+    createSession,
+    findInvitationByTokenHash: async (tokenHash) => tokenHash === invitation.tokenHash ? invitation : null,
+    findTeamById: async () => team,
+    findEventById: async () => event,
+    countTeams: async () => 0,
+    findUserById: async (id) => id === member._id ? member : leader,
+    findParticipantByEventAndUser: async () => null,
+    findBlockingInvitation: async () => null,
+    upsertParticipant: async () => ({}),
+    updateTeamById: async (id, data) => {
+      if (data.$addToSet?.memberIds) {
+        team = {
+          ...team,
+          memberIds: [leader, member]
+        }
+        return team
+      }
+
+      team = { ...team, ...data, _id: id }
+      return team
+    },
+    updateInvitationById: async (id, data) => {
+      invitation = { ...invitation, ...data, _id: id }
+      return invitation
+    },
+    findTracksByEvent: async () => [],
+    findParticipantsByTeam: async () => [{
+      _id: 'participant-1',
+      eventId: 'event-1',
+      teamId: 'team-1',
+      userId: leader,
+      teamRole: 'LEADER',
+      status: 'JOINED'
+    }, {
+      _id: 'participant-2',
+      eventId: 'event-1',
+      teamId: 'team-1',
+      userId: member,
+      teamRole: 'MEMBER',
+      status: 'JOINED'
+    }],
+    findInvitationsByTeam: async () => [invitation]
+  }
+
+  const service = createTeamService({
+    repository,
+    notificationService: {
+      notifyUser: async () => ({ notification: null, email: null, errors: [] })
+    },
+    logger: createLogger()
+  })
+
+  const result = await service.acceptInvitation(token)
+
+  assert.equal(result.status, 'ACCEPTED')
+  assert.equal(result.team.status, 'CONFIRMED')
+  assert.equal(result.team.trackId, undefined)
+  assert.equal(result.team.placementSlot, null)
+  assert.equal(invitation.invitedUserId, 'member-1')
+})
+
 test('createTeam rejects duplicate active participant membership in the same event', async () => {
   const leader = { _id: 'leader-1', email: 'leader@example.com', fullName: 'Leader', status: 'ACTIVE' }
   const repository = {

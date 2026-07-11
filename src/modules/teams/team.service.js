@@ -786,20 +786,24 @@ const assignTeamPlacement = async ({
   preferredTrackId = null,
   trackAssignmentMethod = 'SYSTEM',
   session,
-  allowWaitlist = true
+  allowWaitlist = true,
+  allowUnassignedPlacement = false
 }) => {
   const eventId = getId(event)
   const tracks = await repository.findTracksByEvent(eventId, { session })
   if (tracks.length === 0) {
-    return await repository.updateTeamById(getId(team), {
-      trackId: null,
-      boardNumber: null,
-      placementSlot: null,
-      waitlistPosition: null,
-      trackAssignmentMethod: null,
-      trackAssignedAt: null,
-      status: team.status === TEAM_STATUSES.WAITLISTED ? TEAM_STATUSES.CONFIRMED : team.status
-    }, { session })
+    if (allowUnassignedPlacement) {
+      return await repository.updateTeamById(getId(team), {
+        trackId: null,
+        boardNumber: null,
+        placementSlot: null,
+        waitlistPosition: null,
+        trackAssignmentMethod,
+        trackAssignedAt: null
+      }, { session })
+    }
+
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['No tracks are configured for this event'])
   }
 
   const boardNumberByTrackId = buildBoardInfoByTrack(tracks)
@@ -1684,7 +1688,8 @@ export const createTeamService = ({
               preferredTrackId: payload.trackId,
               trackAssignmentMethod: payload.trackId ? 'MANUAL' : 'SYSTEM',
               session,
-              allowWaitlist: true
+              allowWaitlist: true,
+              allowUnassignedPlacement: true
             })
 
             await syncEventRegistrationStatus({
@@ -1953,7 +1958,8 @@ export const createTeamService = ({
               preferredTrackId: getId(updatedTeam.trackId),
               trackAssignmentMethod: getId(updatedTeam.trackId) ? 'MANUAL' : 'SYSTEM',
               session,
-              allowWaitlist: true
+              allowWaitlist: true,
+              allowUnassignedPlacement: true
             })
 
             // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
