@@ -363,13 +363,19 @@ export const createSubmissionService = ({
 
   const ensureSubmissionWindow = ({ round }) => {
     const now = new Date()
+    const submissionOpenAt = round.submissionOpenAt || round.startTime
+    const submissionCloseAt = round.submissionCloseAt || round.submissionDeadline
 
     if (round.status !== 'OPEN') {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round is not accepting submissions at this time'])
     }
 
-    if (round.submissionDeadline && now > new Date(round.submissionDeadline)) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Submission deadline has passed'])
+    if (submissionOpenAt && now < new Date(submissionOpenAt)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Submission window has not opened'])
+    }
+
+    if (submissionCloseAt && now > new Date(submissionCloseAt)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Submission window has closed'])
     }
 
     if (round.endTime && now > new Date(round.endTime)) {

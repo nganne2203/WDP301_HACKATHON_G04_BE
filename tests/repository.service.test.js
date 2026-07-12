@@ -93,6 +93,47 @@ test('listRepositories treats search text as plain text', async () => {
   assert.equal(receivedFilter.$or[0].repositoryFullName.source, '\\[team\\]\\+repo')
 })
 
+test('listConfirmedTeamsMissingRepositories reports confirmed teams without a repo', async () => {
+  const eventModule = await import('../src/models/event.model.js')
+  const teamModule = await import('../src/models/team.model.js')
+
+  const EventModel = eventModule.default
+  const TeamModel = teamModule.default
+
+  const originalEventFindById = EventModel.findById
+  const originalTeamFind = TeamModel.find
+
+  EventModel.findById = async () => ({ _id: '000000000000000000000101', title: 'SEAL' })
+  TeamModel.find = () => ({
+    sort: async () => [
+      { _id: '000000000000000000000201', eventId: '000000000000000000000101', name: 'Team Alpha', status: 'CONFIRMED' },
+      { _id: '000000000000000000000202', eventId: '000000000000000000000101', name: 'Team Beta', status: 'CONFIRMED' }
+    ]
+  })
+
+  const repository = {
+    findAll: async () => [
+      { _id: 'repo-1', eventId: '000000000000000000000101', teamId: '000000000000000000000201' }
+    ],
+    count: async () => 1
+  }
+  const service = createRepositoryService({ repository })
+
+  try {
+    const result = await service.listConfirmedTeamsMissingRepositories({
+      eventId: '000000000000000000000101'
+    })
+
+    assert.equal(result.summary.confirmedTeamCount, 2)
+    assert.equal(result.summary.missingRepositoryCount, 1)
+    assert.equal(result.teams[0].id, '000000000000000000000202')
+    assert.equal(result.summary.provisioningMode, 'BULK_OR_MANUAL_REQUIRED')
+  } finally {
+    EventModel.findById = originalEventFindById
+    TeamModel.find = originalTeamFind
+  }
+})
+
 test('createRepository rejects linking the same team twice', async () => {
   const eventModule = await import('../src/models/event.model.js')
   const teamModule = await import('../src/models/team.model.js')

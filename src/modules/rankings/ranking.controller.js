@@ -28,7 +28,20 @@ const generateRankings = async (req, res, next) => {
   }
 }
 
+const resolveTieBreak = async (req, res, next) => {
+  try {
+    const result = await RANKING_SERVICE.resolveTieBreak(req.body, req.user)
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Resolve ranking tie-break successfully',
+      data: result
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const RANKING_CONTROLLER = {
   listRankings,
-  generateRankings
+  generateRankings,
+  resolveTieBreak
 }

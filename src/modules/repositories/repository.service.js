@@ -81,7 +81,9 @@ const normalizeRepository = (repository) => {
     status: plain.status,
     accessState: plain.accessState,
     accessGrantedAt: plain.accessGrantedAt || null,
+    accessRevokeRequestedAt: plain.accessRevokeRequestedAt || null,
     accessRevokedAt: plain.accessRevokedAt || null,
+    lastAccessRevokeError: plain.lastAccessRevokeError || null,
     webhookRegisteredAt: plain.webhookRegisteredAt || null,
     webhookStatus: plain.webhookStatus || 'NOT_CONFIGURED',
     lastWebhookRegistrationError: plain.lastWebhookRegistrationError || null,
@@ -206,6 +208,31 @@ export const createRepositoryService = ({
   }
 
   const getRepositoryById = async (id) => normalizeRepository(await ensureRepositoryExists(id))
+
+  const listConfirmedTeamsMissingRepositories = async ({ eventId }) => {
+    const event = await ensureEventExists(eventId)
+    const [confirmedTeams, repositories] = await Promise.all([
+      Team.find({ eventId: event._id, status: 'CONFIRMED' }).sort({ name: 1, createdAt: 1 }),
+      repository.findAll({ filter: { eventId: event._id }, skip: 0, limit: 10000 })
+    ])
+    const teamIdsWithRepositories = new Set(repositories
+      .map(item => item.teamId?._id?.toString?.() || item.teamId?.toString?.())
+      .filter(Boolean))
+    const teams = confirmedTeams
+      .filter(team => !teamIdsWithRepositories.has(team._id.toString()))
+      .map(normalizeTeam)
+
+    return {
+      event: normalizeEvent(event),
+      teams,
+      summary: {
+        confirmedTeamCount: confirmedTeams.length,
+        repositoryLinkedTeamCount: teamIdsWithRepositories.size,
+        missingRepositoryCount: teams.length,
+        provisioningMode: 'BULK_OR_MANUAL_REQUIRED'
+      }
+    }
+  }
 
   const listRepositoryCommits = async ({ repositoryId, query = {} }) => {
     const existingRepository = await ensureRepositoryExists(repositoryId)
@@ -491,6 +518,7 @@ export const createRepositoryService = ({
   return {
     listRepositories,
     getRepositoryById,
+    listConfirmedTeamsMissingRepositories,
     listRepositoryCommits,
     listStaticAnalysis,
     listCommitDiffs,

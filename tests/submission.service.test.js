@@ -63,6 +63,7 @@ const createRepositoryModel = (items) => ({
 
 const createSubmissionFixture = ({
   deadlineOffsetMs = 60 * 60 * 1000,
+  openOffsetMs = -60 * 60 * 1000,
   roundStatus = 'OPEN',
   assignedTeamIds = [ids.team],
   memberParticipantStatus = 'JOINED',
@@ -76,6 +77,8 @@ const createSubmissionFixture = ({
       eventId: ids.event,
       status: roundStatus,
       assignedTeamIds,
+      submissionOpenAt: new Date(Date.now() + openOffsetMs),
+      submissionCloseAt: new Date(Date.now() + deadlineOffsetMs),
       submissionDeadline: new Date(Date.now() + deadlineOffsetMs)
     }
   ]])
@@ -204,7 +207,23 @@ test('submission writes require a JOINED participant membership, not only Team.m
   )
 })
 
-test('createSubmission rejects when round deadline has passed', async () => {
+test('createSubmission rejects when round submission window is not open', async () => {
+  const { service } = createSubmissionFixture({
+    openOffsetMs: 60 * 1000
+  })
+
+  await assert.rejects(
+    () => service.createSubmission({
+      eventId: ids.event,
+      roundId: ids.round,
+      teamId: ids.team,
+      demoUrl: 'https://example.com/demo'
+    }, leaderActor),
+    (error) => error instanceof ApiError && error.errors.includes('Submission window has not opened')
+  )
+})
+
+test('createSubmission rejects when round submission window has closed', async () => {
   const { service } = createSubmissionFixture({
     deadlineOffsetMs: -60 * 1000
   })
@@ -216,7 +235,7 @@ test('createSubmission rejects when round deadline has passed', async () => {
       teamId: ids.team,
       demoUrl: 'https://example.com/demo'
     }, leaderActor),
-    (error) => error instanceof ApiError && error.errors.includes('Submission deadline has passed')
+    (error) => error instanceof ApiError && error.errors.includes('Submission window has closed')
   )
 })
 

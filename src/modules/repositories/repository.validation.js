@@ -2,7 +2,7 @@ import Joi from 'joi'
 
 const objectId = Joi.string().hex().length(24)
 const repositoryStatus = Joi.string().trim().uppercase().valid('PENDING', 'ACTIVE', 'ARCHIVED', 'DISCONNECTED')
-const accessState = Joi.string().trim().uppercase().valid('UNKNOWN', 'PENDING', 'GRANTED', 'REVOKED')
+const accessState = Joi.string().trim().uppercase().valid('UNKNOWN', 'PENDING', 'GRANTED', 'REVOKE_PENDING', 'REVOKE_FAILED', 'REVOKED')
 
 const idParam = Joi.object({
   id: objectId.required()
@@ -66,8 +66,15 @@ const getRepositoryById = {
   params: idParam
 }
 
+const missingConfirmedTeams = {
+  query: Joi.object({
+    eventId: objectId.required()
+  })
+}
+
 export const REPOSITORY_VALIDATION = {
   listRepositories,
+  missingConfirmedTeams,
   createRepository,
   updateRepository,
   getRepositoryById,

@@ -10,6 +10,7 @@ import {
   getActorId,
   getIdString,
   idsEqual,
+  isActiveJudge,
   isPrivilegedEventActor
 } from '#utils/domainAccessUtil.js'
 import Event from '#models/event.model.js'
@@ -179,6 +180,13 @@ export const createScoreSheetService = ({
     return scoreSheet
   }
 
+  const findJudgeById = async (judgeId) => {
+    const query = userModel.findById(judgeId)
+    return query && typeof query.populate === 'function'
+      ? await query.populate({ path: 'roles', select: 'name code' })
+      : await query
+  }
+
   const ensureJudgeContext = async ({
     eventId,
     roundId,
@@ -194,7 +202,7 @@ export const createScoreSheetService = ({
       boardModel.findById(boardId),
       teamModel.findById(teamId),
       submissionModel.findById(submissionId),
-      userModel.findById(judgeId)
+      findJudgeById(judgeId)
     ])
 
     if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
@@ -216,8 +224,8 @@ export const createScoreSheetService = ({
     if (!['SUBMITTED', 'ACCEPTED'].includes(submission.status)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only submitted or accepted submissions can be scored'])
     }
-    if (judge.status !== 'ACTIVE') {
-      throw new ApiError(ERROR_CODES.FORBIDDEN, ['Judge account must be ACTIVE to score'])
+    if (!isActiveJudge(judge)) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['Judge account must be ACTIVE and have the JUDGE role to score'])
     }
 
     if (round.eventId?.toString() !== eventId.toString()) {

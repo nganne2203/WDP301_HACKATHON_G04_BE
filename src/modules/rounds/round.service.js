@@ -12,6 +12,7 @@ import Team from '#models/team.model.js'
 import Track from '#models/track.model.js'
 import User from '#models/user.model.js'
 import { JUDGING_BOARD_REPOSITORY } from '#modules/judging-boards/judging-board.repository.js'
+import { isActiveJudge } from '#utils/domainAccessUtil.js'
 
 const ROUND_FIELDS = [
   'eventId',
@@ -25,6 +26,8 @@ const ROUND_FIELDS = [
   'maxPromotedTeams',
   'startTime',
   'endTime',
+  'submissionOpenAt',
+  'submissionCloseAt',
   'submissionDeadline',
   'publishTime',
   'assignedJudgeIds',
@@ -44,6 +47,9 @@ const ensureObjectId = (id, fieldName = 'round id') => {
 }
 
 const ensureDateOrder = (payload = {}) => {
+  const submissionOpenAt = payload.submissionOpenAt || payload.startTime
+  const submissionCloseAt = payload.submissionCloseAt || payload.submissionDeadline
+
   if (payload.startTime && payload.endTime && new Date(payload.startTime) > new Date(payload.endTime)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['startTime must be before or equal to endTime'])
   }
@@ -54,6 +60,18 @@ const ensureDateOrder = (payload = {}) => {
 
   if (payload.submissionDeadline && payload.endTime && new Date(payload.submissionDeadline) > new Date(payload.endTime)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['submissionDeadline must be before or equal to endTime'])
+  }
+
+  if (submissionOpenAt && submissionCloseAt && new Date(submissionOpenAt) > new Date(submissionCloseAt)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['submissionOpenAt must be before or equal to submissionCloseAt'])
+  }
+
+  if (payload.startTime && payload.submissionOpenAt && new Date(payload.submissionOpenAt) < new Date(payload.startTime)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['submissionOpenAt must be after or equal to startTime'])
+  }
+
+  if (payload.submissionCloseAt && payload.endTime && new Date(payload.submissionCloseAt) > new Date(payload.endTime)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['submissionCloseAt must be before or equal to endTime'])
   }
 
   if (payload.publishTime && payload.endTime && new Date(payload.publishTime) < new Date(payload.endTime)) {
@@ -148,6 +166,8 @@ const normalizeRound = (round) => {
     maxPromotedTeams: plainRound.maxPromotedTeams,
     startTime: plainRound.startTime,
     endTime: plainRound.endTime,
+    submissionOpenAt: plainRound.submissionOpenAt,
+    submissionCloseAt: plainRound.submissionCloseAt,
     submissionDeadline: plainRound.submissionDeadline,
     publishTime: plainRound.publishTime,
     assignedJudges: (plainRound.assignedJudgeIds || []).map(normalizeJudge),
@@ -215,9 +235,17 @@ const ensureUsersExist = async (userIds = []) => {
   for (const userId of userIds) {
     ensureObjectId(userId, 'judge id')
   }
-  const users = await User.find({ _id: { $in: userIds } })
+  const query = User.find({ _id: { $in: userIds } })
+  const users = query && typeof query.populate === 'function'
+    ? await query.populate({ path: 'roles', select: 'name code' })
+    : await query
   if (users.length !== userIds.length) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more judges do not exist'])
+  }
+  for (const user of users) {
+    if (!isActiveJudge(user)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned judges must have ACTIVE accounts and the JUDGE role'])
+    }
   }
 }
 
@@ -349,6 +377,8 @@ export const createRoundService = ({
     const mergedPayload = {
       startTime: safePayload.startTime ?? existingRound.startTime,
       endTime: safePayload.endTime ?? existingRound.endTime,
+      submissionOpenAt: safePayload.submissionOpenAt ?? existingRound.submissionOpenAt,
+      submissionCloseAt: safePayload.submissionCloseAt ?? existingRound.submissionCloseAt,
       submissionDeadline: safePayload.submissionDeadline ?? existingRound.submissionDeadline,
       publishTime: safePayload.publishTime ?? existingRound.publishTime
     }

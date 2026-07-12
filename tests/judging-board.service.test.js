@@ -406,3 +406,69 @@ test('createBoard rejects teamIds beyond maxTeams', async () => {
     UserModel.find = originalUserFind
   }
 })
+
+test('createBoard rejects judges without ACTIVE judge role', async () => {
+  const eventModule = await import('../src/models/event.model.js')
+  const roundModule = await import('../src/models/round.model.js')
+  const trackModule = await import('../src/models/track.model.js')
+  const teamModule = await import('../src/models/team.model.js')
+  const userModule = await import('../src/models/user.model.js')
+
+  const EventModel = eventModule.default
+  const RoundModel = roundModule.default
+  const TrackModel = trackModule.default
+  const TeamModel = teamModule.default
+  const UserModel = userModule.default
+
+  const originalEventFindById = EventModel.findById
+  const originalRoundFindById = RoundModel.findById
+  const originalTrackFindById = TrackModel.findById
+  const originalTeamFind = TeamModel.find
+  const originalUserFind = UserModel.find
+
+  const repository = {
+    count: async () => 0,
+    findAll: async () => [],
+    findById: async () => null,
+    create: async (data) => data,
+    updateById: async () => null,
+    deleteById: async () => null,
+    findByRoundAndBoardNumber: async () => null
+  }
+
+  EventModel.findById = async () => ({ _id: '000000000000000000000101' })
+  RoundModel.findById = async () => ({ _id: '000000000000000000000201', eventId: '000000000000000000000101', trackId: '000000000000000000000401' })
+  TrackModel.findById = async () => ({ _id: '000000000000000000000401', eventId: '000000000000000000000101' })
+  TeamModel.find = async () => [
+    { _id: '000000000000000000000301', eventId: '000000000000000000000101', trackId: '000000000000000000000401' }
+  ]
+  UserModel.find = async () => [
+    { _id: '000000000000000000000501', status: 'ACTIVE', roles: [{ name: 'PARTICIPANT' }] }
+  ]
+
+  const service = createJudgingBoardService({ repository })
+
+  try {
+    await assert.rejects(
+      service.createBoard({
+        eventId: '000000000000000000000101',
+        roundId: '000000000000000000000201',
+        trackId: '000000000000000000000401',
+        name: 'Board 1',
+        boardNumber: 1,
+        teamIds: ['000000000000000000000301'],
+        judgeIds: ['000000000000000000000501'],
+        maxTeams: 1
+      }),
+      (error) => error instanceof ApiError &&
+        error.code === 'BAD_REQUEST' &&
+        error.errors.includes('Assigned judges must have ACTIVE accounts and the JUDGE role')
+    )
+  } finally {
+    EventModel.findById = originalEventFindById
+    RoundModel.findById = originalRoundFindById
+    TrackModel.findById = originalTrackFindById
+    TeamModel.find = originalTeamFind
+    UserModel.find = originalUserFind
+  }
+})

@@ -12,6 +12,8 @@ import { AUDIT_LOG_REPOSITORY } from '#modules/audit-logs/audit-log.repository.j
 import Round from '#models/round.model.js'
 import Submission from '#models/submission.model.js'
 import JudgingBoard from '#models/judgingBoard.model.js'
+import User from '#models/user.model.js'
+import { isActiveJudge } from '#utils/domainAccessUtil.js'
 
 const EVENT_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED']
 const EVENT_TRANSITIONS = {
@@ -304,6 +306,7 @@ const createEventService = ({
   roundModel = Round,
   submissionModel = Submission,
   boardModel = JudgingBoard,
+  userModel = User,
   nowProvider = () => new Date()
 } = {}) => {
   const ensureEventExists = async (id) => {
@@ -393,6 +396,43 @@ const createEventService = ({
     }
   }
 
+  const findActiveJudges = async (judgeIds = []) => {
+    const normalizedJudgeIds = [...new Set((judgeIds || []).map(judge => judge?._id?.toString?.() || judge?.toString?.()).filter(Boolean))]
+    if (normalizedJudgeIds.length === 0) return []
+
+    const query = userModel.find({ _id: { $in: normalizedJudgeIds } })
+    const users = query && typeof query.populate === 'function'
+      ? await query.populate({ path: 'roles', select: 'name code' })
+      : await query
+
+    if (users.length !== normalizedJudgeIds.length || users.some(user => !isActiveJudge(user))) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['All scoring board judges must have ACTIVE accounts and the JUDGE role'])
+    }
+
+    return users
+  }
+
+  const findScoringBoards = async ({ eventId, roundId }) => {
+    if (boardModel.find) {
+      return await boardModel.find({
+        eventId,
+        roundId,
+        status: 'SCORING',
+        judgeIds: { $exists: true, $ne: [] },
+        teamIds: { $exists: true, $ne: [] }
+      })
+    }
+
+    const board = await boardModel.findOne({
+      eventId,
+      roundId,
+      status: 'SCORING',
+      judgeIds: { $exists: true, $ne: [] },
+      teamIds: { $exists: true, $ne: [] }
+    })
+    return board ? [board] : []
+  }
+
   const ensureScoringReady = async (eventId) => {
     const scoringRound = await roundModel.findOne({
       eventId,
@@ -404,14 +444,8 @@ const createEventService = ({
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['At least one round with an active rubric must be in SCORING before the event can enter SCORING'])
     }
 
-    const [scoringBoard, scorableSubmission] = await Promise.all([
-      boardModel.findOne({
-        eventId,
-        roundId: scoringRound._id,
-        status: 'SCORING',
-        judgeIds: { $exists: true, $ne: [] },
-        teamIds: { $exists: true, $ne: [] }
-      }),
+    const [scoringBoards, scorableSubmission] = await Promise.all([
+      findScoringBoards({ eventId, roundId: scoringRound._id }),
       submissionModel.findOne({
         eventId,
         roundId: scoringRound._id,
@@ -419,11 +453,15 @@ const createEventService = ({
       })
     ])
 
-    if (!scoringBoard) {
+    if (scoringBoards.length === 0) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['At least one judging board must be in SCORING before the event can enter SCORING'])
     }
     if (!scorableSubmission) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['At least one submitted or accepted submission is required before the event can enter SCORING'])
+    }
+
+    for (const board of scoringBoards) {
+      await findActiveJudges(board.judgeIds || [])
     }
   }
 

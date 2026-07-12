@@ -3,10 +3,10 @@ import RoundTeamPlacement from '#models/roundTeamPlacement.model.js'
 
 const boardPopulate = [
   { path: 'eventId', select: 'title semester season year status competitionConfig' },
-  { path: 'roundId', select: 'name roundType status trackId startTime endTime submissionDeadline publishTime' },
+  { path: 'roundId', select: 'name roundType status trackId startTime endTime submissionOpenAt submissionCloseAt submissionDeadline publishTime' },
   { path: 'trackId', select: 'code name type maxTeams status' },
   { path: 'teamIds', select: 'name chapterName projectName status trackId boardNumber placementSlot' },
-  { path: 'judgeIds', select: 'email fullName status' }
+  { path: 'judgeIds', select: 'email fullName status roles', populate: { path: 'roles', select: 'name code' } }
 ]
 
 const count = async (filter = {}) => {

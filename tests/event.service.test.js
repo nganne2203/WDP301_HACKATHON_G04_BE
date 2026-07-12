@@ -313,3 +313,56 @@ test('updateEventStatus requires scoring round, board, and submission before eve
       error.errors.includes('At least one round with an active rubric must be in SCORING before the event can enter SCORING')
   )
 })
+
+test('updateEventStatus verifies scoring board judges are active judges', async () => {
+  const repository = createRepository()
+  const service = createEventService({
+    repository,
+    notificationService: { sendEventInvitations: async () => ({}) },
+    auditLogRepository: testAuditLogRepository,
+    roundModel: {
+      async findOne() {
+        return {
+          _id: '000000000000000000000201',
+          eventId: '000000000000000000000101',
+          status: 'SCORING',
+          rubricId: '000000000000000000000301'
+        }
+      }
+    },
+    boardModel: {
+      async find() {
+        return [{
+          _id: '000000000000000000000401',
+          eventId: '000000000000000000000101',
+          roundId: '000000000000000000000201',
+          status: 'SCORING',
+          teamIds: ['000000000000000000000501'],
+          judgeIds: ['000000000000000000000601']
+        }]
+      }
+    },
+    submissionModel: {
+      async findOne() {
+        return { _id: '000000000000000000000701', status: 'SUBMITTED' }
+      }
+    },
+    userModel: {
+      async find() {
+        return [{ _id: '000000000000000000000601', status: 'ACTIVE', roles: [{ name: 'PARTICIPANT' }] }]
+      }
+    }
+  })
+
+  const created = await service.createEvent({
+    title: 'Scoring Judge Readiness Event'
+  }, { id: '000000000000000000000099' })
+  await repository.updateById(created.id, { status: 'ONGOING' })
+
+  await assert.rejects(
+    service.updateEventStatus(created.id, 'SCORING', { id: '000000000000000000000099' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('All scoring board judges must have ACTIVE accounts and the JUDGE role')
+  )
+})

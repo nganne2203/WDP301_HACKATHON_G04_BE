@@ -16,6 +16,18 @@ export const actorHasRole = (actor = {}, roleName) => {
   return getActorRoles(actor).includes(normalizedRole)
 }
 
+export const getSubjectRoles = (subject = {}) => {
+  return (Array.isArray(subject.roles) ? subject.roles : [subject.role])
+    .map(role => role?.code || role?.name || role)
+    .filter(Boolean)
+    .map(role => String(role).trim().toUpperCase())
+}
+
+export const isActiveJudge = (user = {}) => {
+  if (!user || user.status !== 'ACTIVE') return false
+  return getSubjectRoles(user).includes('JUDGE')
+}
+
 export const isPrivilegedEventActor = (actor = {}) => {
   return getActorRoles(actor).some(role => PRIVILEGED_EVENT_ROLES.has(role))
 }

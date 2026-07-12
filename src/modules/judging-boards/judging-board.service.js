@@ -11,6 +11,7 @@ import Round from '#models/round.model.js'
 import Team from '#models/team.model.js'
 import Track from '#models/track.model.js'
 import User from '#models/user.model.js'
+import { isActiveJudge } from '#utils/domainAccessUtil.js'
 
 const BOARD_FIELDS = [
   'eventId',
@@ -198,12 +199,8 @@ const ensureUsersExist = async (userIds = []) => {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more judges do not exist'])
   }
   for (const user of users) {
-    if (user.status && user.status !== 'ACTIVE') {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Judges must have ACTIVE accounts'])
-    }
-    const roles = (user.roles || []).map(role => String(role?.name || role?.code || role).toUpperCase())
-    if (roles.length > 0 && !roles.includes('JUDGE')) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned judges must have the JUDGE role'])
+    if (!isActiveJudge(user)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned judges must have ACTIVE accounts and the JUDGE role'])
     }
   }
 }

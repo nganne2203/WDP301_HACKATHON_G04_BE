@@ -1708,7 +1708,7 @@ export const createTeamService = ({
               }, { session })
             })
 
-            // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
+            // Repository provisioning is bulk/manual; use the missing-confirmed-teams report to reconcile.
           }
 
           const createdTeam = await repository.findTeamById(getId(team), { session })
@@ -1968,7 +1968,7 @@ export const createTeamService = ({
               allowUnassignedPlacement: true
             })
 
-            // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
+            // Repository provisioning is bulk/manual; use the missing-confirmed-teams report to reconcile.
 
             if (CONFIRMED_TEAM_STATUSES.includes(updatedTeam.status) && confirmedCountBeforeUpdate + 1 >= getMaxTeams(event)) {
               await rejectOpenTeams({
@@ -2349,7 +2349,7 @@ export const createTeamService = ({
             confirmedCount
           })
 
-          // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
+          // Repository provisioning is bulk/manual; use the missing-confirmed-teams report to reconcile.
         } else if (nextStatus === TEAM_STATUSES.REJECTED) {
           updatedTeam = await repository.updateTeamById(getId(team), {
             status: TEAM_STATUSES.REJECTED,
