@@ -17,6 +17,12 @@ const createModel = (items) => ({
   }
 })
 
+const countModel = (value) => ({
+  async countDocuments() {
+    return value
+  }
+})
+
 test('updateCriterion and deleteCriterion recompute rubric totalScore', async () => {
   const rubrics = new Map([[
     ids.rubric,
@@ -64,7 +70,8 @@ test('updateCriterion and deleteCriterion recompute rubric totalScore', async ()
   const service = createRubricService({
     repository,
     eventModel: createModel(new Map([[ids.event, { _id: ids.event }]])),
-    roundModel: createModel(new Map([[ids.round, { _id: ids.round, eventId: ids.event }]]))
+    roundModel: createModel(new Map([[ids.round, { _id: ids.round, eventId: ids.event }]])),
+    scoreSheetModel: countModel(0)
   })
 
   const updated = await service.updateCriterion(ids.rubric, ids.criterion2, {
@@ -75,4 +82,61 @@ test('updateCriterion and deleteCriterion recompute rubric totalScore', async ()
   const deleted = await service.deleteCriterion(ids.rubric, ids.criterion1)
   assert.equal(deleted.rubric.totalScore, 15)
   assert.equal(deleted.deletedCriterionId, ids.criterion1)
+})
+
+test('rubric criteria cannot change after score sheets exist', async () => {
+  const rubrics = new Map([[
+    ids.rubric,
+    {
+      _id: ids.rubric,
+      eventId: ids.event,
+      roundId: ids.round,
+      title: 'Locked Rubric',
+      totalScore: 30,
+      status: 'ACTIVE'
+    }
+  ]])
+  const criteria = new Map([
+    [ids.criterion1, { _id: ids.criterion1, rubricId: ids.rubric, name: 'Correctness', maxScore: 10, weight: 1, order: 1 }]
+  ])
+
+  const repository = {
+    async findRubricById(id) {
+      return rubrics.get(id) || null
+    },
+    async updateRubricById() {
+      throw new Error('should not update locked rubric')
+    },
+    async findCriteriaByRubricId(rubricId) {
+      return [...criteria.values()].filter(item => item.rubricId === rubricId)
+    },
+    async findCriterionById(id) {
+      return criteria.get(id) || null
+    },
+    async updateCriterionById() {
+      throw new Error('should not update locked criterion')
+    },
+    async deleteCriterionById() {
+      throw new Error('should not delete locked criterion')
+    }
+  }
+
+  const service = createRubricService({
+    repository,
+    eventModel: createModel(new Map([[ids.event, { _id: ids.event }]])),
+    roundModel: createModel(new Map([[ids.round, { _id: ids.round, eventId: ids.event }]])),
+    scoreSheetModel: countModel(1)
+  })
+
+  await assert.rejects(
+    service.updateCriterion(ids.rubric, ids.criterion1, { maxScore: 8 }),
+    error => error instanceof Error &&
+      error.errors.includes('Rubric cannot be changed after score sheets have been created; create a new rubric version instead')
+  )
+
+  await assert.rejects(
+    service.deleteCriterion(ids.rubric, ids.criterion1),
+    error => error instanceof Error &&
+      error.errors.includes('Rubric cannot be changed after score sheets have been created; create a new rubric version instead')
+  )
 })

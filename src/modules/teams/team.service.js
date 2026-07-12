@@ -1055,10 +1055,10 @@ const runWithOptionalTransaction = async ({ repository, logger, work }) => {
     const unsupportedTransaction = /Transaction numbers|replica set member|mongos/i.test(error.message)
     if (!unsupportedTransaction) throw error
 
-    logger.warn('MongoDB transaction is not available; running team flow without transaction', {
+    logger.error('MongoDB transaction is not available for a critical team flow', {
       error: error.message
     })
-    return await work(null)
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['MongoDB transactions are required for this team operation; configure MongoDB as a replica set'])
   } finally {
     await session.endSession()
   }
@@ -1708,7 +1708,7 @@ export const createTeamService = ({
               }, { session })
             })
 
-            // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
+            // Repository provisioning is bulk/manual; use the missing-confirmed-teams report to reconcile.
           }
 
           const createdTeam = await repository.findTeamById(getId(team), { session })
@@ -1968,7 +1968,7 @@ export const createTeamService = ({
               allowUnassignedPlacement: true
             })
 
-            // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
+            // Repository provisioning is bulk/manual; use the missing-confirmed-teams report to reconcile.
 
             if (CONFIRMED_TEAM_STATUSES.includes(updatedTeam.status) && confirmedCountBeforeUpdate + 1 >= getMaxTeams(event)) {
               await rejectOpenTeams({
@@ -2349,7 +2349,7 @@ export const createTeamService = ({
             confirmedCount
           })
 
-          // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
+          // Repository provisioning is bulk/manual; use the missing-confirmed-teams report to reconcile.
         } else if (nextStatus === TEAM_STATUSES.REJECTED) {
           updatedTeam = await repository.updateTeamById(getId(team), {
             status: TEAM_STATUSES.REJECTED,

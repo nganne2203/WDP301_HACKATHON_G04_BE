@@ -7,6 +7,7 @@ import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import Event from '#models/event.model.js'
 import Round from '#models/round.model.js'
+import ScoreSheet from '#models/scoreSheet.model.js'
 
 const RUBRIC_FIELDS = [
   'eventId',
@@ -101,7 +102,8 @@ const ensureObjectId = (id, fieldName = 'id') => {
 export const createRubricService = ({
   repository = RUBRIC_REPOSITORY,
   eventModel = Event,
-  roundModel = Round
+  roundModel = Round,
+  scoreSheetModel = ScoreSheet
 } = {}) => {
   const ensureRubricExists = async (id) => {
     ensureObjectId(id, 'rubric id')
@@ -132,6 +134,18 @@ export const createRubricService = ({
     }
 
     return { event, round }
+  }
+
+  const countScoreSheetsForRubric = async (rubricId) => {
+    if (!scoreSheetModel?.countDocuments) return 0
+    return await scoreSheetModel.countDocuments({ rubricId })
+  }
+
+  const ensureRubricMutable = async (rubric) => {
+    const scoreSheetCount = await countScoreSheetsForRubric(rubric._id || rubric.id)
+    if (scoreSheetCount > 0) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric cannot be changed after score sheets have been created; create a new rubric version instead'])
+    }
   }
 
   const listRubrics = async (query = {}) => {
@@ -176,6 +190,7 @@ export const createRubricService = ({
 
   const updateRubric = async (id, payload = {}) => {
     const existingRubric = await ensureRubricExists(id)
+    await ensureRubricMutable(existingRubric)
     const safePayload = pickSafeFields(payload, RUBRIC_UPDATE_FIELDS)
 
     const updatedRubric = await repository.updateRubricById(existingRubric._id, safePayload)
@@ -183,7 +198,8 @@ export const createRubricService = ({
   }
 
   const addCriterion = async (rubricId, payload = {}) => {
-    await ensureRubricExists(rubricId)
+    const rubric = await ensureRubricExists(rubricId)
+    await ensureRubricMutable(rubric)
     const criteria = await repository.findCriteriaByRubricId(rubricId)
     const criterion = await repository.createCriterion({
       rubricId,
@@ -208,7 +224,8 @@ export const createRubricService = ({
   }
 
   const updateCriterion = async (rubricId, criterionId, payload = {}) => {
-    await ensureRubricExists(rubricId)
+    const rubric = await ensureRubricExists(rubricId)
+    await ensureRubricMutable(rubric)
     const criterion = await ensureCriterionExists(criterionId)
     if (criterion.rubricId?.toString() !== rubricId.toString()) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Criterion does not belong to the specified rubric'])
@@ -236,7 +253,8 @@ export const createRubricService = ({
   }
 
   const deleteCriterion = async (rubricId, criterionId) => {
-    await ensureRubricExists(rubricId)
+    const rubric = await ensureRubricExists(rubricId)
+    await ensureRubricMutable(rubric)
     const criterion = await ensureCriterionExists(criterionId)
     if (criterion.rubricId?.toString() !== rubricId.toString()) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Criterion does not belong to the specified rubric'])

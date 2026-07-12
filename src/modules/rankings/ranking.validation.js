@@ -22,6 +22,20 @@ export const RANKING_VALIDATION = {
       rankingType: rankingType.default('TEAM')
     })
   },
+  resolveTieBreak: {
+    body: Joi.object({
+      eventId: objectId.required(),
+      roundId: objectId.required(),
+      decisions: Joi.array().items(Joi.object({
+        teamId: objectId.required(),
+        tieBreakMethod: Joi.string().trim().uppercase().valid('PENALTY_EVALUATION', 'MINI_TEST').required(),
+        tieBreakScore: Joi.number().min(0),
+        penaltyScore: Joi.number().min(0),
+        miniTestScore: Joi.number().min(0),
+        tieBreakReason: Joi.string().trim().min(1).max(1000).required()
+      })).unique('teamId').min(2).max(200).required()
+    })
+  },
   publishResults: {
     body: Joi.object({
       eventId: objectId.required(),

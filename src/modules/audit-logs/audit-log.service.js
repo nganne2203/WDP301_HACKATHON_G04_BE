@@ -6,7 +6,7 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { AUDIT_RESULTS } from '#constants/audit.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
-import sanitize from '#utils/sanitizeUtil.js'
+import sanitize, { normalizeSearchTerm } from '#utils/sanitizeUtil.js'
 
 const ensureObjectId = (id, fieldName = 'id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -69,7 +69,7 @@ const normalizeAuditLog = (auditLog) => {
   }
 }
 
-const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const escapeRegex = (value) => normalizeSearchTerm(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const buildAuditFilter = (query = {}) => {
   const filter = {}

@@ -3,9 +3,12 @@ import mongoose from 'mongoose'
 import { CHAT_REPOSITORY } from './chat.repository.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
+import { env } from '#configs/environment.js'
 
 const MESSAGE_TYPES = ['text', 'image', 'file']
 const ACTIVE_CHAT_TEAM_STATUSES = ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED']
+const READABLE_CHAT_EVENT_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED']
+const WRITABLE_CHAT_EVENT_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING']
 
 const getId = (value) => {
   return value?._id?.toString?.() || value?.id || value?.toString?.()
@@ -53,8 +56,30 @@ const ensureTeamChatActive = (team) => {
   }
 }
 
-const ensureTeamChatAccess = (team, actor) => {
+const getTeamEventStatus = (team) => {
+  return team?.eventId?.status || team?.event?.status || null
+}
+
+const ensureTeamChatVisible = (team) => {
   ensureTeamChatActive(team)
+  if (env.workflow.relaxedDemoRules) return
+  const eventStatus = getTeamEventStatus(team)
+  if (eventStatus && !READABLE_CHAT_EVENT_STATUSES.includes(eventStatus)) {
+    throw new ApiError(ERROR_CODES.NOT_FOUND, ['Chat room not found'])
+  }
+}
+
+const ensureTeamChatWritable = (team) => {
+  ensureTeamChatVisible(team)
+  if (env.workflow.relaxedDemoRules) return
+  const eventStatus = getTeamEventStatus(team)
+  if (eventStatus && !WRITABLE_CHAT_EVENT_STATUSES.includes(eventStatus)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Chat room is read-only after event completion'])
+  }
+}
+
+const ensureTeamChatAccess = (team, actor) => {
+  ensureTeamChatVisible(team)
   const role = getParticipantRole(team, actor)
   if (!role) {
     throw new ApiError(ERROR_CODES.FORBIDDEN, ['You are not a participant in this team chat'])
@@ -103,7 +128,8 @@ const normalizeTeam = (team) => {
     eventId: getId(team.eventId),
     name: team.name,
     projectName: team.projectName || null,
-    status: team.status
+    status: team.status,
+    eventStatus: getTeamEventStatus(team) || null
   }
 }
 
@@ -140,6 +166,11 @@ const listRooms = async ({ actor, repository = CHAT_REPOSITORY } = {}) => {
   for (const team of teams) {
     const role = getParticipantRole(team, actor)
     if (!role) continue
+    try {
+      ensureTeamChatVisible(team)
+    } catch {
+      continue
+    }
 
     const room = await repository.ensureRoomForTeam(getId(team))
     const participant = await repository.upsertParticipant({
@@ -211,6 +242,7 @@ const createMessage = async ({ teamId, chatRoomId, message, messageType = 'text'
     room = await repository.ensureRoomForTeam(getId(team))
   }
 
+  ensureTeamChatWritable(team)
   const participant = await ensureRoomParticipant({ room, team, actor, repository })
 
   if (clientMessageId) {

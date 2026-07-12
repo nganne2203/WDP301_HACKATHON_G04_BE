@@ -34,9 +34,29 @@ const createRepository = () => {
   }
 }
 
+const countModel = (value) => ({
+  async countDocuments() {
+    return value
+  }
+})
+
+const testAuditLogRepository = {
+  async create(entry) {
+    return entry
+  }
+}
+
+const createService = (overrides = {}) => {
+  return createEventService({
+    repository: createRepository(),
+    notificationService: { sendEventInvitations: async () => ({}) },
+    auditLogRepository: testAuditLogRepository,
+    ...overrides
+  })
+}
+
 test('createEvent stores dynamic competition config and syncs legacy finalist fields', async () => {
-  const repository = createRepository()
-  const service = createEventService({ repository, notificationService: { sendEventInvitations: async () => ({}) } })
+  const service = createService()
 
   const event = await service.createEvent({
     title: 'SEAL Hackathon Spring 2026',
@@ -48,7 +68,7 @@ test('createEvent stores dynamic competition config and syncs legacy finalist fi
       finalistCount: 6,
       finalistsPerBoard: 2,
       finalistSelectionMode: 'FIXED_PER_BOARD',
-      rankingScopes: ['TEAM', 'CHAPTER'],
+      rankingScopes: ['TEAM'],
       tieBreakRule: '10-minute mini test'
     }
   }, { id: '000000000000000000000099' })
@@ -57,14 +77,29 @@ test('createEvent stores dynamic competition config and syncs legacy finalist fi
   assert.equal(event.competitionConfig.trackCount, 3)
   assert.equal(event.competitionConfig.finalistCount, 6)
   assert.equal(event.competitionConfig.finalistsPerBoard, 2)
-  assert.deepEqual(event.competitionConfig.rankingScopes, ['TEAM', 'CHAPTER'])
+  assert.deepEqual(event.competitionConfig.rankingScopes, ['TEAM'])
   assert.equal(event.finalistSlotsPerTrack, 2)
   assert.equal(event.totalFinalistSlots, 6)
 })
 
+test('createEvent rejects unsupported ranking scopes until official generation exists', async () => {
+  const service = createService()
+
+  await assert.rejects(
+    service.createEvent({
+      title: 'Unsupported Ranking Scope',
+      competitionConfig: {
+        rankingScopes: ['TEAM', 'CHAPTER']
+      }
+    }, { id: '000000000000000000000099' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Ranking scope CHAPTER is not supported for official generation yet')
+  )
+})
+
 test('createEvent derives competition config from legacy finalist fields for backward compatibility', async () => {
-  const repository = createRepository()
-  const service = createEventService({ repository, notificationService: { sendEventInvitations: async () => ({}) } })
+  const service = createService()
 
   const event = await service.createEvent({
     title: 'Legacy-Compatible Event',
@@ -80,7 +115,7 @@ test('createEvent derives competition config from legacy finalist fields for bac
 
 test('only admin and coordinators can list or retrieve draft events', async () => {
   const repository = createRepository()
-  const service = createEventService({ repository, notificationService: { sendEventInvitations: async () => ({}) } })
+  const service = createEventService({ repository, notificationService: { sendEventInvitations: async () => ({}) }, auditLogRepository: testAuditLogRepository })
   const draft = await service.createEvent({ title: 'Hidden draft', status: 'DRAFT' }, { id: '000000000000000000000099' })
   let receivedFilter = null
   const originalFindAll = repository.findAll
@@ -106,8 +141,9 @@ test('only admin and coordinators can list or retrieve draft events', async () =
 
 test('participant can only list and retrieve events they joined or can register for', async () => {
   const repository = createRepository()
-  const service = createEventService({ repository, notificationService: { sendEventInvitations: async () => ({}) } })
-  const event = await service.createEvent({ title: 'Joined event', status: 'COMPLETED' }, { id: '000000000000000000000099' })
+  const service = createEventService({ repository, notificationService: { sendEventInvitations: async () => ({}) }, auditLogRepository: testAuditLogRepository })
+  const event = await service.createEvent({ title: 'Joined event' }, { id: '000000000000000000000099' })
+  await repository.updateById(event.id, { status: 'COMPLETED' })
   let receivedFilter = null
   repository.findAll = async ({ filter }) => {
     receivedFilter = filter
@@ -126,7 +162,8 @@ test('participant can only list and retrieve events they joined or can register 
   const joinedEvent = await service.getEventById(event.id, { id: '000000000000000000000301', roles: ['PARTICIPANT'] })
   assert.equal(joinedEvent.id, event.id)
 
-  const openEvent = await service.createEvent({ title: 'Open event', status: 'OPEN_REGISTRATION' }, { id: '000000000000000000000099' })
+  const openEvent = await service.createEvent({ title: 'Open event' }, { id: '000000000000000000000099' })
+  await repository.updateById(openEvent.id, { status: 'OPEN_REGISTRATION' })
   repository.findOpenRegistrationEventIds = async () => [openEvent.id]
   const visibleOpenEvent = await service.getEventById(openEvent.id, { id: '000000000000000000000301', roles: ['PARTICIPANT'] })
   assert.equal(visibleOpenEvent.id, openEvent.id)
@@ -139,8 +176,7 @@ test('participant can only list and retrieve events they joined or can register 
 })
 
 test('updateEvent rejects invalid fixed-per-board finalist math', async () => {
-  const repository = createRepository()
-  const service = createEventService({ repository, notificationService: { sendEventInvitations: async () => ({}) } })
+  const service = createService()
 
   const created = await service.createEvent({
     title: 'SEAL Hackathon Fall 2025',
@@ -170,9 +206,16 @@ test('updateEvent rejects invalid fixed-per-board finalist math', async () => {
 test('updateEventStatus rejects unconfirmed teams when registration closes', async () => {
   const repository = createRepository()
   const rejectedEvents = []
+  const auditLogs = []
   const service = createEventService({
     repository,
     notificationService: { sendEventInvitations: async () => ({}) },
+    auditLogRepository: {
+      async create(entry) {
+        auditLogs.push(entry)
+        return entry
+      }
+    },
     teamService: {
       rejectUnconfirmedTeamsForRegistrationClosure: async (payload) => {
         rejectedEvents.push(payload)
@@ -182,10 +225,10 @@ test('updateEventStatus rejects unconfirmed teams when registration closes', asy
   })
 
   const created = await service.createEvent({
-    title: 'SEAL Hackathon Registration',
-    status: 'OPEN_REGISTRATION'
+    title: 'SEAL Hackathon Registration'
   }, { id: '000000000000000000000099' })
 
+  await service.updateEventStatus(created.id, 'OPEN_REGISTRATION', { id: '000000000000000000000099' })
   const event = await service.updateEventStatus(created.id, 'REGISTRATION_CLOSED')
 
   assert.equal(event.status, 'REGISTRATION_CLOSED')
@@ -193,32 +236,195 @@ test('updateEventStatus rejects unconfirmed teams when registration closes', asy
   assert.equal(rejectedEvents.length, 1)
   assert.equal(rejectedEvents[0].event._id, created.id)
   assert.equal(rejectedEvents[0].reason, 'Registration has closed before this team was fully confirmed.')
+  assert.deepEqual(auditLogs.map(log => log.metadata.toStatus), ['OPEN_REGISTRATION', 'REGISTRATION_CLOSED'])
 })
 
-test('updateEvent rejects unconfirmed teams when status is changed to registration closed', async () => {
+test('updateEvent rejects direct status changes outside the lifecycle endpoint', async () => {
   const repository = createRepository()
-  const rejectedEvents = []
   const service = createEventService({
     repository,
     notificationService: { sendEventInvitations: async () => ({}) },
-    teamService: {
-      rejectUnconfirmedTeamsForRegistrationClosure: async (payload) => {
-        rejectedEvents.push(payload)
-        return { rejectedCount: 1 }
+    auditLogRepository: testAuditLogRepository
+  })
+
+  const created = await service.createEvent({
+    title: 'SEAL Hackathon Update Close'
+  }, { id: '000000000000000000000099' })
+
+  await assert.rejects(
+    service.updateEvent(created.id, { status: 'REGISTRATION_CLOSED' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Use the event status workflow endpoint to change event status')
+  )
+})
+
+test('deleteEvent only allows unused draft events', async () => {
+  const repository = createRepository()
+  const service = createEventService({
+    repository,
+    notificationService: { sendEventInvitations: async () => ({}) },
+    auditLogRepository: testAuditLogRepository,
+    roundModel: countModel(0),
+    submissionModel: {
+      async findOne() { return null },
+      async countDocuments() { return 0 }
+    },
+    boardModel: {
+      async findOne() { return null },
+      async countDocuments() { return 0 }
+    },
+    teamModel: countModel(0),
+    repositoryModel: countModel(0),
+    rankingModel: countModel(0),
+    workshopModel: countModel(0),
+    timelineModel: countModel(0),
+    trackModel: countModel(0)
+  })
+
+  const draft = await service.createEvent({ title: 'Unused Draft' }, { id: '000000000000000000000099' })
+  await service.deleteEvent(draft.id)
+  await assert.rejects(
+    service.getEventById(draft.id, { roles: ['ADMIN'] }),
+    error => error instanceof ApiError && error.code === 'NOT_FOUND'
+  )
+
+  const nonDraft = await service.createEvent({ title: 'Open Event' }, { id: '000000000000000000000099' })
+  await repository.updateById(nonDraft.id, { status: 'OPEN_REGISTRATION' })
+  await assert.rejects(
+    service.deleteEvent(nonDraft.id),
+    error => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Only unused DRAFT events can be deleted; archive the event through the lifecycle workflow instead')
+  )
+})
+
+test('createEvent rejects non-draft lifecycle status', async () => {
+  const service = createService()
+
+  await assert.rejects(
+    service.createEvent({
+      title: 'Invalid Direct Completed Event',
+      status: 'COMPLETED'
+    }, { id: '000000000000000000000099' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Events must be created in DRAFT status and moved through the lifecycle workflow')
+  )
+})
+
+test('updateEventStatus rejects skipped lifecycle transitions and impossible manual timing', async () => {
+  const service = createService({
+    nowProvider: () => new Date('2026-07-12T00:00:00.000Z')
+  })
+
+  const created = await service.createEvent({
+    title: 'Lifecycle Test Event',
+    registrationStart: '2026-07-13T00:00:00.000Z',
+    registrationEnd: '2026-07-14T00:00:00.000Z',
+    startDate: '2026-07-15T00:00:00.000Z'
+  }, { id: '000000000000000000000099' })
+
+  await assert.rejects(
+    service.updateEventStatus(created.id, 'SCORING', { id: '000000000000000000000099' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Invalid event status transition from DRAFT to SCORING')
+  )
+
+  await assert.rejects(
+    service.updateEventStatus(created.id, 'OPEN_REGISTRATION', { id: '000000000000000000000099' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Registration cannot be opened before registrationStart')
+  )
+})
+
+test('updateEventStatus requires scoring round, board, and submission before event scoring', async () => {
+  const repository = createRepository()
+  const service = createEventService({
+    repository,
+    notificationService: { sendEventInvitations: async () => ({}) },
+    auditLogRepository: testAuditLogRepository,
+    roundModel: {
+      async findOne() {
+        return null
+      }
+    },
+    boardModel: {
+      async findOne() {
+        return null
+      }
+    },
+    submissionModel: {
+      async findOne() {
+        return null
       }
     }
   })
 
   const created = await service.createEvent({
-    title: 'SEAL Hackathon Update Close',
-    status: 'OPEN_REGISTRATION'
+    title: 'Scoring Readiness Event'
   }, { id: '000000000000000000000099' })
+  await repository.updateById(created.id, { status: 'ONGOING' })
 
-  await service.updateEvent(created.id, {
-    status: 'REGISTRATION_CLOSED'
+  await assert.rejects(
+    service.updateEventStatus(created.id, 'SCORING', { id: '000000000000000000000099' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('At least one round with an active rubric must be in SCORING before the event can enter SCORING')
+  )
+})
+
+test('updateEventStatus verifies scoring board judges are active judges', async () => {
+  const repository = createRepository()
+  const service = createEventService({
+    repository,
+    notificationService: { sendEventInvitations: async () => ({}) },
+    auditLogRepository: testAuditLogRepository,
+    roundModel: {
+      async findOne() {
+        return {
+          _id: '000000000000000000000201',
+          eventId: '000000000000000000000101',
+          status: 'SCORING',
+          rubricId: '000000000000000000000301'
+        }
+      }
+    },
+    boardModel: {
+      async find() {
+        return [{
+          _id: '000000000000000000000401',
+          eventId: '000000000000000000000101',
+          roundId: '000000000000000000000201',
+          status: 'SCORING',
+          teamIds: ['000000000000000000000501'],
+          judgeIds: ['000000000000000000000601']
+        }]
+      }
+    },
+    submissionModel: {
+      async findOne() {
+        return { _id: '000000000000000000000701', status: 'SUBMITTED' }
+      }
+    },
+    userModel: {
+      async find() {
+        return [{ _id: '000000000000000000000601', status: 'ACTIVE', roles: [{ name: 'PARTICIPANT' }] }]
+      }
+    }
   })
 
-  assert.equal(rejectedEvents.length, 1)
-  assert.equal(rejectedEvents[0].event._id, created.id)
-  assert.equal(rejectedEvents[0].reason, 'Registration has closed before this team was fully confirmed.')
+  const created = await service.createEvent({
+    title: 'Scoring Judge Readiness Event'
+  }, { id: '000000000000000000000099' })
+  await repository.updateById(created.id, { status: 'ONGOING' })
+
+  await assert.rejects(
+    service.updateEventStatus(created.id, 'SCORING', { id: '000000000000000000000099' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('All scoring board judges must have ACTIVE accounts and the JUDGE role')
+  )
 })

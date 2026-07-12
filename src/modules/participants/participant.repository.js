@@ -80,7 +80,7 @@ const findEventById = async (id) => {
 }
 
 const findUserById = async (id) => {
-  return await User.findById(id)
+  return await User.findById(id).populate({ path: 'roles', select: 'name code' })
 }
 
 const findTeamById = async (id) => {

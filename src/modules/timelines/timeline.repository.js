@@ -1,3 +1,5 @@
+import Event from '#models/event.model.js'
+import Participant from '#models/participant.model.js'
 import TimelineEvent from '#models/timelineEvent.model.js'
 
 const timelinePopulate = [
@@ -35,11 +37,32 @@ const deleteById = async (id) => {
   return await TimelineEvent.findByIdAndDelete(id)
 }
 
+const findEventIdsForParticipant = async (userId) => {
+  return await Participant.find({ userId, status: 'JOINED' }).distinct('eventId')
+}
+
+const findOpenRegistrationEventIds = async (now = new Date()) => {
+  return await Event.find({
+    status: 'OPEN_REGISTRATION',
+    $and: [
+      { $or: [{ registrationStart: { $exists: false } }, { registrationStart: null }, { registrationStart: { $lte: now } }] },
+      { $or: [{ registrationEnd: { $exists: false } }, { registrationEnd: null }, { registrationEnd: { $gte: now } }] }
+    ]
+  }).distinct('_id')
+}
+
+const findNonDraftEventIds = async () => {
+  return await Event.find({ status: { $ne: 'DRAFT' } }).distinct('_id')
+}
+
 export const TIMELINE_REPOSITORY = {
   count,
   create,
   findAll,
   findById,
   updateById,
-  deleteById
+  deleteById,
+  findEventIdsForParticipant,
+  findOpenRegistrationEventIds,
+  findNonDraftEventIds
 }

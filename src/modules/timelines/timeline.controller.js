@@ -5,7 +5,7 @@ import { responseSuccess } from '#utils/responseUtil.js'
 
 const listTimelines = async (req, res, next) => {
   try {
-    const { timelines, pagination } = await TIMELINE_SERVICE.listTimelines(req.validated?.query || req.query)
+    const { timelines, pagination } = await TIMELINE_SERVICE.listTimelines(req.validated?.query || req.query, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get timelines successfully',
@@ -19,7 +19,7 @@ const listTimelines = async (req, res, next) => {
 
 const getTimelineById = async (req, res, next) => {
   try {
-    const timeline = await TIMELINE_SERVICE.getTimelineById(req.params.id)
+    const timeline = await TIMELINE_SERVICE.getTimelineById(req.params.id, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get timeline successfully',

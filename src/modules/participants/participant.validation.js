@@ -48,7 +48,8 @@ const createParticipant = {
     checkInStatus: checkInStatus.default('NOT_CHECKED_IN'),
     githubAccessStatus: githubAccessStatus.default('NOT_GRANTED'),
     status: participantStatus.default('INVITED'),
-    joinedAt: Joi.date().iso()
+    joinedAt: Joi.date().iso(),
+    overrideReason: Joi.string().trim().max(500)
   })
 }
 
@@ -73,7 +74,8 @@ const updateParticipant = {
 const updateCheckIn = {
   params: idParam,
   body: Joi.object({
-    checkInStatus: checkInStatus.required()
+    checkInStatus: checkInStatus.required(),
+    overrideReason: Joi.string().trim().max(500)
   })
 }
 

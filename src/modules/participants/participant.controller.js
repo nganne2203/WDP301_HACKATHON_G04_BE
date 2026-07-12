@@ -71,7 +71,9 @@ const updateParticipant = async (req, res, next) => {
 
 const updateCheckInStatus = async (req, res, next) => {
   try {
-    const participant = await PARTICIPANT_SERVICE.updateCheckInStatus(req.params.id, req.body.checkInStatus)
+    const participant = await PARTICIPANT_SERVICE.updateCheckInStatus(req.params.id, req.body.checkInStatus, req.user, {
+      overrideReason: req.body.overrideReason
+    })
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Update participant check-in successfully',

@@ -7,11 +7,13 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { PERMISSIONS } from '#constants/permissions.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { LOGGER } from '#utils/logger.js'
+import { isActiveJudge } from '#utils/domainAccessUtil.js'
 import Event from '#models/event.model.js'
 import Repository from '#models/repository.model.js'
 import Round from '#models/round.model.js'
 import Team from '#models/team.model.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
+import { env } from '#configs/environment.js'
 
 const IN_APP_ONLY = ['IN_APP']
 
@@ -28,6 +30,28 @@ const normalizeRanking = (ranking) => {
     trackId: plainRanking.trackId?._id?.toString?.() || plainRanking.trackId?.toString?.() || plainRanking.trackId || null,
     teamId: plainRanking.teamId?._id?.toString?.() || plainRanking.teamId?.toString?.() || plainRanking.teamId || null,
     rankingType: plainRanking.rankingType,
+    event: plainRanking.eventId && typeof plainRanking.eventId === 'object'
+      ? {
+        id: plainRanking.eventId._id?.toString() || plainRanking.eventId.id,
+        title: plainRanking.eventId.title,
+        status: plainRanking.eventId.status
+      }
+      : null,
+    round: plainRanking.roundId && typeof plainRanking.roundId === 'object'
+      ? {
+        id: plainRanking.roundId._id?.toString() || plainRanking.roundId.id,
+        name: plainRanking.roundId.name,
+        roundType: plainRanking.roundId.roundType,
+        status: plainRanking.roundId.status
+      }
+      : null,
+    track: plainRanking.trackId && typeof plainRanking.trackId === 'object'
+      ? {
+        id: plainRanking.trackId._id?.toString() || plainRanking.trackId.id,
+        code: plainRanking.trackId.code,
+        name: plainRanking.trackId.name
+      }
+      : null,
     team: plainRanking.teamId && typeof plainRanking.teamId === 'object'
       ? {
         id: plainRanking.teamId._id?.toString() || plainRanking.teamId.id,
@@ -41,6 +65,17 @@ const normalizeRanking = (ranking) => {
     rank: plainRanking.rank,
     tieBreakMethod: plainRanking.tieBreakMethod,
     tieBreakScore: plainRanking.tieBreakScore,
+    penaltyScore: plainRanking.penaltyScore,
+    miniTestScore: plainRanking.miniTestScore,
+    tieBreakReason: plainRanking.tieBreakReason || null,
+    tieBreakResolvedAt: plainRanking.tieBreakResolvedAt || null,
+    tieBreakResolvedBy: plainRanking.tieBreakResolvedBy && typeof plainRanking.tieBreakResolvedBy === 'object'
+      ? {
+        id: plainRanking.tieBreakResolvedBy._id?.toString() || plainRanking.tieBreakResolvedBy.id,
+        fullName: plainRanking.tieBreakResolvedBy.fullName,
+        email: plainRanking.tieBreakResolvedBy.email
+      }
+      : plainRanking.tieBreakResolvedBy || null,
     rankSortScore: plainRanking.rankSortScore,
     calculationSource: plainRanking.calculationSource,
     calculationSummary: plainRanking.calculationSummary,
@@ -154,16 +189,125 @@ const buildTieNotes = ({ rankedTeams, tieBreakRule }) => {
   }))
 }
 
+const assignSharedRanks = (rankedTeams = []) => {
+  let previousScore = null
+  let previousRank = 0
+
+  return rankedTeams.map((team, index) => {
+    const rank = previousScore !== null && team.score === previousScore
+      ? previousRank
+      : index + 1
+    previousScore = team.score
+    previousRank = rank
+    return { ...team, rank }
+  })
+}
+
+const buildRankingTieGroups = (rankings = []) => {
+  const groups = new Map()
+  for (const ranking of rankings) {
+    const key = String(Number(ranking.score || 0))
+    const current = groups.get(key) || []
+    current.push(ranking)
+    groups.set(key, current)
+  }
+
+  return [...groups.values()].filter(group => group.length > 1)
+}
+
+const isTieBreakResolved = (ranking) => {
+  return ranking.tieBreakMethod && ranking.tieBreakMethod !== 'NONE' && ranking.tieBreakResolvedAt
+}
+
+const ensureNoUnresolvedCutoffTie = ({ rankings = [], selectedTeamIds = [], action }) => {
+  const selectedSet = new Set(selectedTeamIds.map(String))
+  const unresolvedCutoffTie = buildRankingTieGroups(rankings).find(group => {
+    const selectedCount = group.filter(ranking => selectedSet.has(getId(ranking.teamId))).length
+    if (selectedCount === 0 || selectedCount === group.length) return false
+    return group.some(ranking => !isTieBreakResolved(ranking))
+  })
+
+  if (unresolvedCutoffTie) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, [
+      `Resolve tie-break before ${action}`,
+      `Tied score: ${unresolvedCutoffTie[0].score}`
+    ])
+  }
+}
+
+const ensureExactFinalistCount = ({ selectedCount, finalistCount, mode, exceptionReason = null }) => {
+  if (!finalistCount) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['competitionConfig.finalistCount is required before selecting finalists'])
+  }
+  if (selectedCount === finalistCount) return
+  if (exceptionReason?.trim()) return
+
+  throw new ApiError(ERROR_CODES.BAD_REQUEST, [
+    `Finalist selection must contain exactly ${finalistCount} teams`,
+    `Current finalist count: ${selectedCount}`,
+    `Selection mode: ${mode}`
+  ])
+}
+
 const selectFixedPerBoard = ({ rankings, finalistsPerBoard }) => {
   const grouped = new Map()
   for (const ranking of rankings) {
-    const boardNumber = ranking.boardNumber || 0
-    const current = grouped.get(boardNumber) || []
+    const boardKey = ranking.selectionGroupKey || ranking.boardNumber || 0
+    const current = grouped.get(boardKey) || []
     current.push(ranking)
-    grouped.set(boardNumber, current)
+    grouped.set(boardKey, current)
   }
 
   return [...grouped.values()].flatMap(group => group.slice(0, finalistsPerBoard))
+}
+
+const validateRankingCompleteness = async ({ repository, eventId, roundId, scoreSheets = [] }) => {
+  if (!repository.findBoardsForRanking) return
+
+  const boards = await repository.findBoardsForRanking({ eventId, roundId })
+  if (boards.length === 0) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Judging boards with assigned teams and judges are required before ranking generation'])
+  }
+
+  const lockedSheetPairs = new Set(scoreSheets.map(scoreSheet => {
+    const teamId = getId(scoreSheet.teamId)
+    const judgeId = getId(scoreSheet.judgeId)
+    return teamId && judgeId ? `${teamId}:${judgeId}` : null
+  }).filter(Boolean))
+  const missingPairs = []
+  const inactiveJudges = []
+
+  for (const board of boards) {
+    const boardNumber = board.boardNumber || null
+    const teamIds = (board.teamIds || []).map(getId).filter(Boolean)
+    const judges = board.judgeIds || []
+    const judgeIds = judges.map(getId).filter(Boolean)
+
+    for (const judge of judges) {
+      if (judge && typeof judge === 'object' && (judge.status || Array.isArray(judge.roles)) && !isActiveJudge(judge)) {
+        inactiveJudges.push(getId(judge))
+      }
+    }
+
+    for (const teamId of teamIds) {
+      for (const judgeId of judgeIds) {
+        if (!lockedSheetPairs.has(`${teamId}:${judgeId}`)) {
+          missingPairs.push({ boardNumber, teamId, judgeId })
+        }
+      }
+    }
+  }
+
+  if (inactiveJudges.length > 0) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['All ranking judges must have ACTIVE accounts and the JUDGE role'])
+  }
+
+  if (missingPairs.length > 0) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, [
+      'Official ranking requires locked score sheets from every assigned judge for every team',
+      `Missing score sheets: ${missingPairs.length}`
+    ])
+  }
 }
 
 export const createRankingService = ({
@@ -173,7 +317,8 @@ export const createRankingService = ({
   roundModel = Round,
   teamModel = Team,
   notificationService = null,
-  repositoryModel = Repository
+  repositoryModel = Repository,
+  relaxedWorkflow = false
 } = {}) => {
   const ensureEventRoundContext = async ({ eventId, roundId }) => {
     ensureObjectId(eventId, 'event id')
@@ -220,19 +365,39 @@ export const createRankingService = ({
     }
 
     const { event, round } = await ensureEventRoundContext({ eventId, roundId })
+    if (round.roundType !== 'FINAL') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rankings can only be generated for the final round'])
+    }
     const scoreSheets = await repository.findScoreSheetsForRanking({ eventId, roundId })
     if (scoreSheets.length === 0) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['No submitted score sheets found for ranking generation'])
     }
+    if (!relaxedWorkflow) {
+      await validateRankingCompleteness({
+        repository,
+        eventId,
+        roundId,
+        scoreSheets
+      })
+    }
+
+    const roundPlacements = repository.findRoundTeamPlacements
+      ? await repository.findRoundTeamPlacements({ eventId, roundId })
+      : []
+    const placementsByTeamId = new Map((roundPlacements || []).map(placement => [
+      getId(placement.teamId),
+      placement
+    ]))
 
     const teamGroups = new Map()
     for (const scoreSheet of scoreSheets) {
       const teamId = scoreSheet.teamId?._id?.toString?.() || scoreSheet.teamId?.toString?.()
+      const placement = placementsByTeamId.get(teamId)
       const current = teamGroups.get(teamId) || {
         teamId,
         teamName: scoreSheet.teamId?.name || 'Unknown Team',
         chapterName: scoreSheet.teamId?.chapterName || null,
-        boardNumber: scoreSheet.teamId?.boardNumber || scoreSheet.boardId?.boardNumber || null,
+        boardNumber: placement?.boardNumber || scoreSheet.teamId?.boardNumber || scoreSheet.boardId?.boardNumber || null,
         trackId: scoreSheet.teamId?.trackId || null,
         scores: [],
         judgeIds: []
@@ -243,11 +408,11 @@ export const createRankingService = ({
       teamGroups.set(teamId, current)
     }
 
-    const rankedTeams = sortTeamGroups([...teamGroups.values()].map(team => ({
+    const rankedTeams = assignSharedRanks(sortTeamGroups([...teamGroups.values()].map(team => ({
       ...team,
       score: Number((team.scores.reduce((sum, value) => sum + value, 0) / team.scores.length).toFixed(4)),
       note: null
-    })))
+    }))))
 
     const tiedGroups = buildTieNotes({
       rankedTeams,
@@ -255,7 +420,7 @@ export const createRankingService = ({
     })
 
     const calculatedAt = new Date()
-    const rankingDocuments = rankedTeams.map((team, index) => ({
+    const rankingDocuments = rankedTeams.map(team => ({
       eventId,
       roundId,
       rankingType,
@@ -263,14 +428,15 @@ export const createRankingService = ({
       trackId: team.trackId || null,
       score: team.score,
       rankSortScore: team.score,
-      rank: index + 1,
+      rank: team.rank,
       tieBreakMethod: team.note ? 'NONE' : 'NONE',
       tieBreakScore: 0,
       calculationSource: 'OFFICIAL_JUDGE_SCORES_ONLY',
       calculationSummary: {
         judgeCount: team.judgeIds.filter(Boolean).length,
         source: 'LOCKED_SCORE_SHEETS_ONLY',
-        aiReviewUsed: false
+        aiReviewUsed: false,
+        boardNumber: team.boardNumber || null
       },
       calculatedAt,
       isSelectedForFinal: false,
@@ -308,27 +474,126 @@ export const createRankingService = ({
     }
   }
 
-  const selectFinalists = async ({ eventId, roundId }, actor = {}) => {
-    const { event } = await ensureEventRoundContext({ eventId, roundId })
+  const resolveTieBreak = async ({ eventId, roundId, decisions = [] }, actor = {}) => {
+    await ensureEventRoundContext({ eventId, roundId })
+
+    if (!Array.isArray(decisions) || decisions.length < 2) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Tie-break resolution requires at least two team decisions'])
+    }
+
+    const teamIds = [...new Set(decisions.map(item => item.teamId?.toString()).filter(Boolean))]
+    if (teamIds.length !== decisions.length) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Tie-break team decisions must contain unique teamIds'])
+    }
+
     const rankings = await repository.findRankings({
       filter: { eventId, roundId, rankingType: 'TEAM' },
+      limit: 500
+    })
+    const rankingsByTeamId = new Map(rankings.map(ranking => [getId(ranking.teamId), ranking]))
+    const targetRankings = teamIds.map(teamId => rankingsByTeamId.get(teamId))
+    if (targetRankings.some(ranking => !ranking)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Tie-break teams must exist in generated rankings for this round'])
+    }
+
+    const tiedScores = new Set(targetRankings.map(ranking => Number(ranking.score || 0)))
+    if (tiedScores.size !== 1) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Tie-break decisions must target teams with the same score'])
+    }
+
+    const resolvedAt = new Date()
+    const updatedRankings = []
+    for (const decision of decisions) {
+      const ranking = rankingsByTeamId.get(decision.teamId.toString())
+      const method = decision.tieBreakMethod
+      const tieBreakScore = Number(decision.tieBreakScore ?? decision.miniTestScore ?? decision.penaltyScore ?? 0)
+      if (!['PENALTY_EVALUATION', 'MINI_TEST'].includes(method)) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['tieBreakMethod must be PENALTY_EVALUATION or MINI_TEST'])
+      }
+      if (!decision.tieBreakReason?.trim()) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['tieBreakReason is required for tie-break resolution'])
+      }
+
+      updatedRankings.push(await repository.updateRankingById(ranking._id, {
+        tieBreakMethod: method,
+        tieBreakScore,
+        penaltyScore: Number(decision.penaltyScore ?? (method === 'PENALTY_EVALUATION' ? tieBreakScore : ranking.penaltyScore || 0)),
+        miniTestScore: Number(decision.miniTestScore ?? (method === 'MINI_TEST' ? tieBreakScore : ranking.miniTestScore || 0)),
+        rankSortScore: Number(ranking.score || 0) + (tieBreakScore / 1000000),
+        tieBreakReason: decision.tieBreakReason.trim(),
+        tieBreakResolvedAt: resolvedAt,
+        tieBreakResolvedBy: actor.id || null,
+        note: null
+      }))
+    }
+
+    await auditLogRepository.create({
+      userId: actor.id || null,
+      action: 'RANKING_TIE_BREAK_RESOLVED',
+      resourceType: 'Ranking',
+      metadata: {
+        eventId,
+        roundId,
+        teamIds,
+        decisions: decisions.map(item => ({
+          teamId: item.teamId,
+          tieBreakMethod: item.tieBreakMethod,
+          tieBreakScore: Number(item.tieBreakScore ?? item.miniTestScore ?? item.penaltyScore ?? 0)
+        }))
+      }
+    })
+
+    return {
+      rankings: updatedRankings.map(normalizeRanking),
+      summary: {
+        resolvedCount: updatedRankings.length,
+        teamIds
+      }
+    }
+  }
+
+  const selectFinalists = async ({ eventId, roundId }, actor = {}) => {
+    const { event, round } = await ensureEventRoundContext({ eventId, roundId })
+    const config = event.competitionConfig || {}
+    const mode = config.finalistSelectionMode || 'OVERALL_SCORE'
+    const selectAcrossPreliminaryStage = round.roundType === 'PRELIMINARY' &&
+      ['FIXED_PER_BOARD', 'TOP_PER_BOARD_WITH_WILDCARD'].includes(mode)
+
+    const scopedRounds = selectAcrossPreliminaryStage
+      ? await roundModel.find({ eventId, roundType: 'PRELIMINARY' }).select('_id')
+      : [round]
+    const scopedRoundIds = scopedRounds.map(item => item._id?.toString?.() || item.id || item.toString())
+    const rankings = await repository.findRankings({
+      filter: {
+        eventId,
+        roundId: selectAcrossPreliminaryStage ? { $in: scopedRoundIds } : roundId,
+        rankingType: 'TEAM'
+      },
       limit: 500
     })
     if (rankings.length === 0) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Generate rankings before selecting finalists'])
     }
 
-    const config = event.competitionConfig || {}
     const finalistCount = Number(config.finalistCount || 0)
     const finalistsPerBoard = Number(config.finalistsPerBoard || 0)
-    const mode = config.finalistSelectionMode || 'OVERALL_SCORE'
     const normalizedRankings = rankings.map(item => ({
       ranking: item,
       teamId: item.teamId?._id?.toString?.() || item.teamId?.toString?.(),
       teamName: item.teamId?.name || 'Unknown Team',
-      boardNumber: item.teamId?.boardNumber || 0,
-      score: item.score
-    }))
+      roundId: item.roundId?._id?.toString?.() || item.roundId?.toString?.(),
+      boardNumber: item.calculationSummary?.boardNumber || item.teamId?.boardNumber || 0,
+      selectionGroupKey: selectAcrossPreliminaryStage
+        ? `${item.roundId?._id?.toString?.() || item.roundId?.toString?.()}:${item.calculationSummary?.boardNumber || item.teamId?.boardNumber || 0}`
+        : String(item.calculationSummary?.boardNumber || item.teamId?.boardNumber || 0),
+      score: item.score,
+      rank: item.rank,
+      rankSortScore: item.rankSortScore ?? item.score
+    })).sort((left, right) => {
+      if (left.rank !== right.rank) return left.rank - right.rank
+      if (right.rankSortScore !== left.rankSortScore) return right.rankSortScore - left.rankSortScore
+      return left.teamName.localeCompare(right.teamName)
+    })
 
     let selected = []
     if (mode === 'FIXED_PER_BOARD') {
@@ -350,10 +615,7 @@ export const createRankingService = ({
         }
       }
     } else if (mode === 'CUSTOM') {
-      selected = normalizedRankings.slice(0, finalistCount).map(item => ({
-        ...item,
-        customReason: 'CUSTOM mode requires coordinator review; provisional finalists selected by current overall ranking.'
-      }))
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['CUSTOM finalist selection requires the manual finalist endpoint'])
     } else {
       selected = normalizedRankings.slice(0, finalistCount)
     }
@@ -369,19 +631,37 @@ export const createRankingService = ({
       }
     }
 
+    ensureExactFinalistCount({
+      selectedCount: selected.length,
+      finalistCount,
+      mode
+    })
+    ensureNoUnresolvedCutoffTie({
+      rankings,
+      selectedTeamIds: selected.map(item => item.teamId),
+      action: 'selecting finalists'
+    })
+
     await repository.updateManyRankings(
-      { eventId, roundId, rankingType: 'TEAM' },
+      {
+        eventId,
+        roundId: selectAcrossPreliminaryStage ? { $in: scopedRoundIds } : roundId,
+        rankingType: 'TEAM'
+      },
       { isSelectedForFinal: false, selectionReason: null }
     )
 
     const selectedIds = new Set(selected.map(item => item.teamId))
     const updatedSelections = []
-    const promotedTeamIds = []
+    const promotedTeamIdsByRound = new Map(scopedRoundIds.map(id => [id, []]))
     for (const ranking of rankings) {
       const teamId = ranking.teamId?._id?.toString?.() || ranking.teamId?.toString?.()
       if (!selectedIds.has(teamId)) continue
       const selectedEntry = selected.find(item => item.teamId === teamId)
+      const rankingRoundId = ranking.roundId?._id?.toString?.() || ranking.roundId?.toString?.()
+      const promotedTeamIds = promotedTeamIdsByRound.get(rankingRoundId) || []
       promotedTeamIds.push(teamId)
+      promotedTeamIdsByRound.set(rankingRoundId, promotedTeamIds)
       updatedSelections.push(await repository.updateRankingById(ranking._id, {
         isSelectedForFinal: true,
         selectionReason: selectedEntry.customReason
@@ -389,9 +669,11 @@ export const createRankingService = ({
       }))
     }
 
-    await roundModel.findByIdAndUpdate(roundId, {
-      promotedTeamIds
-    })
+    await Promise.all([...promotedTeamIdsByRound.entries()].map(([scopedRoundId, promotedTeamIds]) =>
+      roundModel.findByIdAndUpdate(scopedRoundId, { promotedTeamIds })
+    ))
+
+    const promotedTeamIds = [...new Set([...promotedTeamIdsByRound.values()].flat())]
 
     await auditLogRepository.create({
       userId: actor.id || null,
@@ -400,6 +682,7 @@ export const createRankingService = ({
       metadata: {
         eventId,
         roundId,
+        scopedRoundIds,
         finalistSelectionMode: mode,
         finalistCount: updatedSelections.length,
         promotedTeamIds,
@@ -444,7 +727,7 @@ export const createRankingService = ({
   }
 
   const selectManualFinalists = async ({ eventId, roundId, teamIds = [], selectionReason }, actor = {}) => {
-    await ensureEventRoundContext({ eventId, roundId })
+    const { event } = await ensureEventRoundContext({ eventId, roundId })
 
     const requestedTeamIds = [...new Set(teamIds.map(teamId => teamId.toString()))]
     const rankings = await repository.findRankings({
@@ -463,19 +746,33 @@ export const createRankingService = ({
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Selected teams must exist in the generated rankings for this round'])
     }
 
+    const finalistCount = Number(event.competitionConfig?.finalistCount || 0)
+    const reason = selectionReason?.trim() || ''
+    ensureExactFinalistCount({
+      selectedCount: requestedTeamIds.length,
+      finalistCount,
+      mode: 'CUSTOM',
+      exceptionReason: reason
+    })
+    ensureNoUnresolvedCutoffTie({
+      rankings,
+      selectedTeamIds: requestedTeamIds,
+      action: 'manual finalist selection'
+    })
+
     await repository.updateManyRankings(
       { eventId, roundId, rankingType: 'TEAM' },
       { isSelectedForFinal: false, selectionReason: null }
     )
 
-    const reason = selectionReason?.trim() || 'Manually selected by organizer review'
+    const finalReason = reason || 'Manually selected by organizer review'
     for (const ranking of rankings) {
       const teamId = ranking.teamId?._id?.toString?.() || ranking.teamId?.toString?.()
       if (!requestedTeamIds.includes(teamId)) continue
 
       await repository.updateRankingById(ranking._id, {
         isSelectedForFinal: true,
-        selectionReason: reason
+        selectionReason: finalReason
       })
     }
 
@@ -493,6 +790,8 @@ export const createRankingService = ({
         finalistSelectionMode: 'CUSTOM',
         finalistCount: requestedTeamIds.length,
         promotedTeamIds: requestedTeamIds,
+        expectedFinalistCount: finalistCount,
+        selectionExceptionReason: requestedTeamIds.length === finalistCount ? null : finalReason,
         source: 'OFFICIAL_JUDGE_SCORES_ONLY',
         aiReviewUsed: false
       }
@@ -534,9 +833,9 @@ export const createRankingService = ({
 
     const update = action === 'REVOKE'
       ? {
-        accessState: 'REVOKED',
-        accessRevokedAt: publishedAt,
-        status: 'ARCHIVED',
+        accessState: 'REVOKE_PENDING',
+        accessRevokeRequestedAt: publishedAt,
+        lastAccessRevokeError: null,
         roundId
       }
       : {
@@ -545,6 +844,23 @@ export const createRankingService = ({
       }
 
     const result = await repositoryModel.updateMany(filter, update)
+    const updateRepositoryRevokeState = async (repo, data) => {
+      const repoId = repo._id || repo.id
+      if (!repoId) return
+      if (typeof repositoryModel.updateOne === 'function') {
+        await repositoryModel.updateOne({ _id: repoId }, data)
+        return
+      }
+      await repositoryModel.updateMany({ _id: repoId }, data)
+    }
+
+    const summary = {
+      action,
+      affectedRepositories: result.modifiedCount || result.matchedCount || 0,
+      pendingRepositories: action === 'REVOKE' ? (result.modifiedCount || result.matchedCount || 0) : 0,
+      revokedRepositories: 0,
+      failedRepositories: 0
+    }
 
     if (action === 'REVOKE' && typeof repositoryModel.find === 'function') {
       try {
@@ -555,6 +871,7 @@ export const createRankingService = ({
         for (const repo of repos) {
           const repoName = repo.repoName || repo.githubRepo
           if (!repoName) continue
+          const errors = []
 
           try {
             const usernames = await GITHUB_REPOSITORY.findTeamMembersGithubUsernames(repo.teamId)
@@ -566,6 +883,7 @@ export const createRankingService = ({
                   username
                 }, actor)
               } catch (err) {
+                errors.push(`${username}: ${err.message}`)
                 LOGGER.warn('Failed to revoke collaborator on GitHub during result publication', {
                   repoName,
                   username,
@@ -574,10 +892,29 @@ export const createRankingService = ({
               }
             }
           } catch (err) {
+            errors.push(err.message)
             LOGGER.error('Failed to resolve usernames or revoke collaborators for repository', {
               repoId: repo._id,
               error: err.message
             })
+          }
+
+          if (errors.length > 0) {
+            await updateRepositoryRevokeState(repo, {
+              accessState: 'REVOKE_FAILED',
+              lastAccessRevokeError: errors.join('; ').slice(0, 500),
+              roundId
+            })
+            summary.failedRepositories += 1
+          } else {
+            await updateRepositoryRevokeState(repo, {
+              accessState: 'REVOKED',
+              accessRevokedAt: publishedAt,
+              lastAccessRevokeError: null,
+              status: 'ARCHIVED',
+              roundId
+            })
+            summary.revokedRepositories += 1
           }
         }
       } catch (importErr) {
@@ -587,10 +924,8 @@ export const createRankingService = ({
       }
     }
 
-    return {
-      action,
-      affectedRepositories: result.modifiedCount || result.matchedCount || 0
-    }
+    summary.pendingRepositories = Math.max(0, summary.pendingRepositories - summary.revokedRepositories - summary.failedRepositories)
+    return summary
   }
 
   const publishResults = async ({ eventId, roundId, repositoryAccessAction = 'NONE' }, actor = {}) => {
@@ -603,6 +938,24 @@ export const createRankingService = ({
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['No rankings available to publish'])
     }
 
+    const selectedRankings = rankings.filter(item => item.isSelectedForFinal)
+    const selectedTeamIds = selectedRankings
+      .map(item => item.teamId?._id?.toString?.() || item.teamId?.toString?.())
+      .filter(Boolean)
+    const finalistCount = Number(event.competitionConfig?.finalistCount || 0)
+    const selectionExceptionReason = selectedRankings.find(item => item.selectionReason)?.selectionReason || null
+    ensureExactFinalistCount({
+      selectedCount: selectedRankings.length,
+      finalistCount,
+      mode: event.competitionConfig?.finalistSelectionMode || 'OVERALL_SCORE',
+      exceptionReason: selectionExceptionReason
+    })
+    ensureNoUnresolvedCutoffTie({
+      rankings,
+      selectedTeamIds,
+      action: 'publishing results'
+    })
+
     const publishedAt = new Date()
     const teamIds = rankings
       .map(item => item.teamId?._id?.toString?.() || item.teamId?.toString?.())
@@ -614,10 +967,7 @@ export const createRankingService = ({
     await roundModel.findByIdAndUpdate(roundId, {
       status: 'COMPLETED',
       publishTime: publishedAt,
-      promotedTeamIds: rankings
-        .filter(item => item.isSelectedForFinal)
-        .map(item => item.teamId?._id?.toString?.() || item.teamId?.toString?.())
-        .filter(Boolean)
+      promotedTeamIds: selectedTeamIds
     })
     const repositoryActionSummary = await applyRepositoryAccessAction({
       eventId,
@@ -638,9 +988,30 @@ export const createRankingService = ({
         source: 'OFFICIAL_JUDGE_SCORES_ONLY',
         aiReviewUsed: false,
         repositoryAccessAction: repositoryActionSummary.action,
-        affectedRepositories: repositoryActionSummary.affectedRepositories
+        affectedRepositories: repositoryActionSummary.affectedRepositories,
+        pendingRepositories: repositoryActionSummary.pendingRepositories,
+        revokedRepositories: repositoryActionSummary.revokedRepositories,
+        failedRepositories: repositoryActionSummary.failedRepositories
       }
     })
+
+    let eventCompleted = false
+    if (round.roundType === 'FINAL' && ['ONGOING', 'SCORING'].includes(event.status) && typeof eventModel.findByIdAndUpdate === 'function') {
+      await eventModel.findByIdAndUpdate(eventId, { status: 'COMPLETED' })
+      eventCompleted = true
+      await auditLogRepository.create({
+        userId: actor.id || null,
+        action: 'EVENT_COMPLETED_AFTER_FINAL_RESULTS',
+        resourceType: 'Event',
+        resourceId: eventId,
+        metadata: {
+          eventId,
+          roundId,
+          fromStatus: event.status,
+          toStatus: 'COMPLETED'
+        }
+      })
+    }
 
     const publishedRankings = await repository.findRankings({
       filter: { eventId, roundId, rankingType: 'TEAM' },
@@ -658,7 +1029,8 @@ export const createRankingService = ({
     return {
       publishedAt,
       rankings: publishedRankings.map(normalizeRanking),
-      repositoryAccessAction: repositoryActionSummary
+      repositoryAccessAction: repositoryActionSummary,
+      eventCompleted
     }
   }
 
@@ -717,6 +1089,7 @@ export const createRankingService = ({
   return {
     listRankings,
     generateRankings,
+    resolveTieBreak,
     selectFinalists,
     selectManualFinalists,
     listFinalists,
@@ -725,6 +1098,9 @@ export const createRankingService = ({
 }
 
 export const RANKING_SERVICE = {
-  ...createRankingService({ notificationService: NOTIFICATION_SERVICE }),
+  ...createRankingService({
+    notificationService: NOTIFICATION_SERVICE,
+    relaxedWorkflow: env.workflow.relaxedDemoRules
+  }),
   normalizeRanking
 }

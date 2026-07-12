@@ -25,6 +25,9 @@ const rankingSchema = new Schema(
     tieBreakScore: { type: Number, default: 0 },
     penaltyScore: { type: Number, default: 0 },
     miniTestScore: { type: Number, default: 0 },
+    tieBreakReason: { type: String, trim: true },
+    tieBreakResolvedAt: { type: Date },
+    tieBreakResolvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     rankSortScore: { type: Number },
     rank: { type: Number, required: true },
     calculationSource: {
@@ -47,7 +50,7 @@ rankingSchema.index({ eventId: 1, rankingType: 1, roundId: 1, trackId: 1 })
 rankingSchema.index({ eventId: 1, rankingType: 1, teamId: 1 })
 rankingSchema.index({ eventId: 1, rankingType: 1, participantId: 1 })
 rankingSchema.index({ eventId: 1, rankingType: 1, chapterName: 1 })
-rankingSchema.index({ eventId: 1, rankingType: 1, roundId: 1, trackId: 1, rank: 1 }, { unique: true })
+rankingSchema.index({ eventId: 1, rankingType: 1, roundId: 1, trackId: 1, rank: 1 })
 rankingSchema.index({ eventId: 1, roundId: 1, isSelectedForFinal: 1 })
 rankingSchema.index({ rank: 1 })
 

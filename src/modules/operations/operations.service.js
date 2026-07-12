@@ -6,12 +6,33 @@ import Repository from '#models/repository.model.js'
 import Submission from '#models/submission.model.js'
 import Team from '#models/team.model.js'
 import { QUEUE_SERVICE } from '#services/queue.service.js'
+import { env } from '#configs/environment.js'
 
 const buildEventRoundFilter = ({ eventId, roundId }) => {
   const filter = {}
   if (eventId) filter.eventId = eventId
   if (roundId) filter.roundId = roundId
   return filter
+}
+
+const buildIntegrationChecks = (queueSummary = {}, config = env) => {
+  const counts = queueSummary.counts || {}
+  const queueLag = Number(counts.waiting || 0) + Number(counts.delayed || 0)
+  const failedJobs = Number(counts.failed || 0)
+
+  return {
+    redisStatus: queueSummary.redisStatus || 'unknown',
+    queueLag,
+    failedJobs,
+    workerRequired: Boolean(config.n8n?.enabled || config.github?.webhookSecret),
+    githubWebhookSecretConfigured: Boolean(config.github?.webhookSecret),
+    githubWebhookCallbackConfigured: Boolean(config.github?.webhookCallbackUrl || config.server?.publicUrl),
+    n8nEnabled: Boolean(config.n8n?.enabled),
+    n8nCallbackSecretConfigured: Boolean(config.n8n?.callbackSecret),
+    n8nPerPushWebhookConfigured: Boolean(config.n8n?.perPushWebhookUrl),
+    n8nAggregateWebhookConfigured: Boolean(config.n8n?.aggregateWebhookUrl || config.n8n?.teamAggregateWebhookUrl),
+    workerConcurrency: Number(config.worker?.concurrency || 0)
+  }
 }
 
 export const createOperationsService = ({
@@ -22,7 +43,8 @@ export const createOperationsService = ({
   aiReviewModel = AiReview,
   commitDiffModel = CommitDiff,
   githubWebhookEventModel = GitHubWebhookEvent,
-  queueService = QUEUE_SERVICE
+  queueService = QUEUE_SERVICE,
+  config = env
 } = {}) => {
   const getDashboardMetrics = async ({ eventId, roundId } = {}) => {
     const baseFilter = buildEventRoundFilter({ eventId, roundId })
@@ -74,6 +96,8 @@ export const createOperationsService = ({
       })
     ])
 
+    const integrationChecks = buildIntegrationChecks(queueSummary, config)
+
     return {
       scope: {
         eventId: eventId || null,
@@ -90,7 +114,8 @@ export const createOperationsService = ({
         manualRedispatchRequiredAiReviews,
         failedJobs: Number(queueSummary.counts?.failed || 0)
       },
-      queue: queueSummary
+      queue: queueSummary,
+      integrationChecks
     }
   }
 
@@ -132,12 +157,15 @@ export const createOperationsService = ({
       ])
     ])
 
+    const integrationChecks = buildIntegrationChecks(queueSummary, config)
+
     return {
       scope: {
         eventId: eventId || null,
         roundId: roundId || null
       },
       queue: queueSummary,
+      integrationChecks,
       webhookStatusBreakdown,
       commitDiffStatusBreakdown,
       aiReviewStatusBreakdown
