@@ -8,6 +8,10 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { env } from '#configs/environment.js'
+import { escapeRegex } from '#utils/sanitizeUtil.js'
+import { AUDIT_LOG_REPOSITORY } from '#modules/audit-logs/audit-log.repository.js'
+import { actorHasRole, getActorId } from '#utils/domainAccessUtil.js'
+import { normalizeLegacyRoleName, PARTICIPANT_ROLE_NAME } from '#utils/userRoleMigrationUtil.js'
 
 const PARTICIPANT_FIELDS = [
   'eventId',
@@ -26,6 +30,7 @@ const PARTICIPANT_FIELDS = [
 ]
 
 const APPROVER_PERMISSIONS = new Set(['PARTICIPANT_APPROVE'])
+const ACTIVE_TEAM_STATUSES = new Set(['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED'])
 const CHECK_IN_QR_PREFIX = 'wdp301-checkin:'
 
 const hashCheckInToken = (token) => crypto.createHash('sha256').update(token).digest('hex')
@@ -88,7 +93,7 @@ const buildParticipantFilter = (query = {}) => {
   if (query.chapterName) filter.chapterName = query.chapterName
 
   if (query.search) {
-    const pattern = new RegExp(query.search, 'i')
+    const pattern = new RegExp(escapeRegex(query.search), 'i')
     filter.$or = [
       { chapterName: pattern }
     ]
@@ -180,8 +185,21 @@ const hasApproverPermission = (actor = {}) => {
   return Array.isArray(actor.permissions) && actor.permissions.some(permission => APPROVER_PERMISSIONS.has(permission))
 }
 
+const userHasRole = (user = {}, roleName) => {
+  const normalizedRoleName = normalizeLegacyRoleName(roleName)
+  return (user.roles || []).some(role => normalizeLegacyRoleName(role?.name || role?.code || role) === normalizedRoleName)
+}
+
+const isEventRegistrationOpen = (event, now) => {
+  if (event?.status !== 'OPEN_REGISTRATION') return false
+  if (event.registrationStart && now < new Date(event.registrationStart)) return false
+  if (event.registrationEnd && now > new Date(event.registrationEnd)) return false
+  return true
+}
+
 export const createParticipantService = ({
   repository = PARTICIPANT_REPOSITORY,
+  auditLogRepository = AUDIT_LOG_REPOSITORY,
   qrEncoder = QRCode,
   randomToken = () => crypto.randomBytes(32).toString('base64url'),
   now = () => new Date(),
@@ -235,6 +253,82 @@ export const createParticipantService = ({
     return team
   }
 
+  const ensureCheckInWindowOpen = async (eventId, { allowOverride = false, overrideReason = null, actor = null } = {}) => {
+    const event = await ensureEventExists(eventId)
+    const currentTime = now()
+    const timeline = repository.findOpenCheckInTimeline
+      ? await repository.findOpenCheckInTimeline({ eventId, now: currentTime })
+      : null
+
+    const eventTimeOpen = event.status === 'ONGOING' &&
+      (!event.startDate || currentTime >= new Date(event.startDate)) &&
+      (!event.endDate || currentTime <= new Date(event.endDate))
+
+    if (eventTimeOpen && timeline) return { event, timeline, overridden: false }
+
+    if (allowOverride) {
+      const reason = String(overrideReason || '').trim()
+      if (!reason) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['overrideReason is required for manual check-in override'])
+      }
+      await auditLogRepository.create({
+        userId: getActorId(actor),
+        action: 'CHECK_IN_WINDOW_OVERRIDE',
+        resourceType: 'Event',
+        resourceId: eventId,
+        metadata: {
+          reason,
+          eventStatus: event.status,
+          eventTimeOpen,
+          timelineOpen: Boolean(timeline)
+        }
+      })
+      return { event, timeline, overridden: true }
+    }
+
+    if (event.status !== 'ONGOING') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Check-in is only available while the event is ONGOING'])
+    }
+    if (!eventTimeOpen) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Check-in is outside the event time window'])
+    }
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Check-in timeline is not open'])
+  }
+
+  const ensureUserCanRegisterForEvent = async ({ event, user, actor = {}, overrideReason = null }) => {
+    if (hasApproverPermission(actor)) {
+      const normalFlow = isEventRegistrationOpen(event, now())
+      if (!normalFlow) {
+        const reason = String(overrideReason || '').trim()
+        if (!reason) {
+          throw new ApiError(ERROR_CODES.BAD_REQUEST, ['overrideReason is required for participant registration override'])
+        }
+        await auditLogRepository.create({
+          userId: getActorId(actor),
+          action: 'PARTICIPANT_REGISTRATION_OVERRIDE',
+          resourceType: 'Participant',
+          metadata: {
+            eventId: event._id || event.id,
+            targetUserId: user._id || user.id,
+            reason,
+            eventStatus: event.status
+          }
+        })
+      }
+      return
+    }
+
+    if (!isEventRegistrationOpen(event, now())) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Event registration is not open'])
+    }
+    if (user.status !== 'ACTIVE') {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['User account must be ACTIVE to register for an event'])
+    }
+    if (!userHasRole(user, PARTICIPANT_ROLE_NAME)) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only participant accounts can register for events'])
+    }
+  }
+
   const ensureUniqueParticipant = async ({ eventId, userId, ignoreParticipantId = null }) => {
     const existingParticipant = await repository.findByEventAndUser({ eventId, userId })
     if (existingParticipant && existingParticipant._id.toString() !== ignoreParticipantId) {
@@ -282,7 +376,7 @@ export const createParticipantService = ({
   }
 
   const createParticipant = async (payload = {}, actor = {}) => {
-    await ensureEventExists(payload.eventId)
+    const event = await ensureEventExists(payload.eventId)
 
     const targetUserId = payload.userId || actor.id
     if (!targetUserId) {
@@ -293,8 +387,17 @@ export const createParticipantService = ({
       throw new ApiError(ERROR_CODES.FORBIDDEN, ['You do not have permission to register another user as a participant'])
     }
 
-    await ensureUserExists(targetUserId)
-    await ensureTeamBelongsToEvent({ teamId: payload.teamId, eventId: payload.eventId })
+    const user = await ensureUserExists(targetUserId)
+    await ensureUserCanRegisterForEvent({
+      event,
+      user,
+      actor,
+      overrideReason: payload.overrideReason
+    })
+    const team = await ensureTeamBelongsToEvent({ teamId: payload.teamId, eventId: payload.eventId })
+    if (team && !ACTIVE_TEAM_STATUSES.has(team.status)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Participant can only be assigned to an active team'])
+    }
     await ensureUniqueParticipant({ eventId: payload.eventId, userId: targetUserId })
 
     const participant = await repository.create({
@@ -336,11 +439,24 @@ export const createParticipantService = ({
     return normalizeParticipant(participant)
   }
 
-  const updateCheckInStatus = async (id, checkInStatus) => {
+  const updateCheckInStatus = async (id, checkInStatus, actor = {}, options = {}) => {
     const existingParticipant = await ensureParticipantExists(id)
     await ensureParticipantHasConfirmedTeam(existingParticipant)
+    const eventId = existingParticipant.eventId?._id?.toString?.() || existingParticipant.eventId?.toString?.() || existingParticipant.eventId
+    const allowOverride = hasApproverPermission(actor) && actorHasRole(actor, 'ADMIN') && Boolean(options.overrideReason)
+    await ensureCheckInWindowOpen(eventId, {
+      allowOverride,
+      overrideReason: options.overrideReason,
+      actor
+    })
     const participant = await repository.updateById(id, {
-      checkInStatus
+      checkInStatus,
+      ...(checkInStatus === 'CHECKED_IN'
+        ? {
+          checkedInAt: now(),
+          checkedInBy: getActorId(actor)
+        }
+        : {})
     })
     return normalizeParticipant(participant)
   }
@@ -349,7 +465,7 @@ export const createParticipantService = ({
     if (!hasApproverPermission(actor)) {
       throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only coordinators can generate an event check-in QR'])
     }
-    await ensureEventExists(eventId)
+    await ensureCheckInWindowOpen(eventId)
 
     const token = randomToken()
     const tokenPayload = `${CHECK_IN_QR_PREFIX}${token}`
@@ -396,6 +512,7 @@ export const createParticipantService = ({
     }
 
     const eventId = session.eventId?._id?.toString?.() || session.eventId?.toString?.() || session.eventId
+    await ensureCheckInWindowOpen(eventId)
     const existingParticipant = await repository.findByEventAndUser({ eventId, userId: actor.id })
     if (!existingParticipant) {
       throw new ApiError(ERROR_CODES.NOT_FOUND, ['You are not registered as a participant for this event'])

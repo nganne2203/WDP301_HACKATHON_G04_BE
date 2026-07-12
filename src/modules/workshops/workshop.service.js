@@ -7,6 +7,11 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
+import {
+  getActorId,
+  getIdString,
+  isPrivilegedEventActor
+} from '#utils/domainAccessUtil.js'
 
 const WORKSHOP_STATUSES = ['SCHEDULED', 'LIVE', 'COMPLETED', 'CANCELLED']
 const WORKSHOP_FIELDS = [
@@ -99,6 +104,10 @@ const ensureCanCreateGoogleMeet = ({ workshop, actor = {}, organizerUserId }) =>
   throw new ApiError(ERROR_CODES.FORBIDDEN, ['You do not have permission to perform this action'])
 }
 
+const escapeRegex = (value = '') => {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 const buildWorkshopFilter = (query = {}) => {
   const filter = {}
 
@@ -115,7 +124,7 @@ const buildWorkshopFilter = (query = {}) => {
   }
 
   if (query.search) {
-    const pattern = new RegExp(query.search, 'i')
+    const pattern = new RegExp(escapeRegex(query.search), 'i')
     filter.$or = [
       { title: pattern },
       { description: pattern },
@@ -124,6 +133,15 @@ const buildWorkshopFilter = (query = {}) => {
   }
 
   return filter
+}
+
+const isParticipantOnly = (actor = {}) => {
+  const roles = (Array.isArray(actor.roles) ? actor.roles : [actor.role])
+    .map(role => role?.code || role?.name || role)
+    .filter(Boolean)
+    .map(role => String(role).trim().toUpperCase())
+
+  return roles.length > 0 && roles.every(role => role === 'PARTICIPANT' || role === 'USER')
 }
 
 const normalizeUserSummary = (user) => {
@@ -254,9 +272,72 @@ const normalizeFeedback = (feedback) => {
   }
 }
 
-const listWorkshops = async (query = {}) => {
+const findVisibleEventIdsForActor = async (actor = {}) => {
+  if (isPrivilegedEventActor(actor)) return null
+
+  const actorId = getActorId(actor)
+  if (!actorId) {
+    throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authentication is required'])
+  }
+
+  if (isParticipantOnly(actor)) {
+    const [participantEventIds, openRegistrationEventIds] = await Promise.all([
+      WORKSHOP_REPOSITORY.findEventIdsForParticipant(actorId),
+      WORKSHOP_REPOSITORY.findOpenRegistrationEventIds()
+    ])
+    return [...new Set([...participantEventIds, ...openRegistrationEventIds].map(getIdString).filter(Boolean))]
+  }
+
+  const nonDraftEventIds = await WORKSHOP_REPOSITORY.findNonDraftEventIds()
+  return nonDraftEventIds.map(getIdString).filter(Boolean)
+}
+
+const applyEventVisibilityScope = async (filter = {}, actor = {}) => {
+  const visibleEventIds = await findVisibleEventIdsForActor(actor)
+  if (!visibleEventIds) return filter
+
+  if (filter.eventId) {
+    return visibleEventIds.includes(getIdString(filter.eventId))
+      ? filter
+      : { ...filter, eventId: { $in: [] } }
+  }
+
+  return { ...filter, eventId: { $in: visibleEventIds } }
+}
+
+const ensureCanViewWorkshop = async (workshop, actor = {}) => {
+  if (isPrivilegedEventActor(actor)) return
+
+  const event = workshop?.eventId
+  const eventId = getIdString(event)
+  if (!eventId) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Workshop not found'])
+
+  if (event?.status === 'DRAFT') {
+    throw new ApiError(ERROR_CODES.NOT_FOUND, ['Workshop not found'])
+  }
+
+  if (isParticipantOnly(actor)) {
+    const visibleEventIds = await findVisibleEventIdsForActor(actor)
+    if (!visibleEventIds.includes(eventId)) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Workshop not found'])
+    }
+  }
+}
+
+const ensureActorJoinedWorkshopEvent = async (workshop, actor = {}) => {
+  const actorId = getActorId(actor)
+  if (!actorId) throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authentication is required'])
+
+  const eventId = getIdString(workshop?.eventId)
+  const participant = await WORKSHOP_REPOSITORY.findJoinedParticipant({ eventId, userId: actorId })
+  if (!participant) {
+    throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only joined participants of this event can interact with the workshop'])
+  }
+}
+
+const listWorkshops = async (query = {}, actor = {}) => {
   const { page, limit } = normalizePaginationQuery(query)
-  const filter = buildWorkshopFilter(query)
+  const filter = await applyEventVisibilityScope(buildWorkshopFilter(query), actor)
   const skip = (page - 1) * limit
 
   const [workshops, totalItems] = await Promise.all([
@@ -275,8 +356,10 @@ const listWorkshops = async (query = {}) => {
   }
 }
 
-const getWorkshopById = async (id) => {
-  return normalizeWorkshop(await ensureWorkshopExists(id))
+const getWorkshopById = async (id, actor = {}) => {
+  const workshop = await ensureWorkshopExists(id)
+  await ensureCanViewWorkshop(workshop, actor)
+  return normalizeWorkshop(workshop)
 }
 
 const createWorkshop = async (payload = {}) => {
@@ -360,6 +443,7 @@ const createGoogleMeet = async (workshopId, payload = {}, actor = {}) => {
 
 const createQuestion = async (workshopId, payload = {}, actor = {}) => {
   const workshop = await ensureWorkshopExists(workshopId)
+  await ensureActorJoinedWorkshopEvent(workshop, actor)
 
   if (!canSubmitQuestion(workshop)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Questions can only be submitted before or during the workshop'])
@@ -408,7 +492,11 @@ const voteQuestion = async (questionId, actor = {}) => {
     throw new ApiError(ERROR_CODES.NOT_FOUND, ['Workshop question not found'])
   }
 
-  await ensureWorkshopExists(question.workshopId)
+  const workshop = await ensureWorkshopExists(question.workshopId)
+  await ensureActorJoinedWorkshopEvent(workshop, actor)
+  if (!canSubmitQuestion(workshop)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Questions can only be voted before or during the workshop'])
+  }
 
   const votedQuestion = await WORKSHOP_REPOSITORY.voteQuestion({ questionId, voterId: actor.id })
   if (!votedQuestion) {
@@ -420,6 +508,7 @@ const voteQuestion = async (questionId, actor = {}) => {
 
 const createRating = async (workshopId, payload = {}, actor = {}) => {
   const workshop = await ensureWorkshopExists(workshopId)
+  await ensureActorJoinedWorkshopEvent(workshop, actor)
 
   if (!canSubmitPostWorkshopInteraction(workshop)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Workshop can only be rated after it ends'])
@@ -481,6 +570,7 @@ const listRatings = async (workshopId, query = {}, actor = {}) => {
 
 const createFeedback = async (workshopId, payload = {}, actor = {}) => {
   const workshop = await ensureWorkshopExists(workshopId)
+  await ensureActorJoinedWorkshopEvent(workshop, actor)
 
   if (!canSubmitPostWorkshopInteraction(workshop)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Workshop feedback can only be submitted after it ends'])

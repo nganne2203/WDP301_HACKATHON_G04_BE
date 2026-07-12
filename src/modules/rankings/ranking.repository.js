@@ -1,4 +1,5 @@
 import Ranking from '#models/ranking.model.js'
+import RoundTeamPlacement from '#models/roundTeamPlacement.model.js'
 import ScoreSheet from '#models/scoreSheet.model.js'
 
 const rankingPopulate = [
@@ -52,6 +53,10 @@ const findScoreSheetsForRanking = async ({ eventId, roundId }) => {
   ])
 }
 
+const findRoundTeamPlacements = async ({ eventId, roundId }) => {
+  return await RoundTeamPlacement.find({ eventId, roundId })
+}
+
 export const RANKING_REPOSITORY = {
   findRankings,
   countRankings,
@@ -59,5 +64,6 @@ export const RANKING_REPOSITORY = {
   createManyRankings,
   updateRankingById,
   updateManyRankings,
-  findScoreSheetsForRanking
+  findScoreSheetsForRanking,
+  findRoundTeamPlacements
 }

@@ -5,7 +5,7 @@ import { responseSuccess } from '#utils/responseUtil.js'
 
 const listSubmissions = async (req, res, next) => {
   try {
-    const { submissions, pagination } = await SUBMISSION_SERVICE.listSubmissions(req.validated?.query || req.query)
+    const { submissions, pagination } = await SUBMISSION_SERVICE.listSubmissions(req.validated?.query || req.query, req.user)
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get submissions successfully',
       data: submissions,
@@ -18,7 +18,7 @@ const listSubmissions = async (req, res, next) => {
 
 const createSubmission = async (req, res, next) => {
   try {
-    const submission = await SUBMISSION_SERVICE.createSubmission(req.body)
+    const submission = await SUBMISSION_SERVICE.createSubmission(req.body, req.user)
     res.status(StatusCodes.CREATED).json(responseSuccess({
       message: 'Create submission successfully',
       data: submission
@@ -30,7 +30,7 @@ const createSubmission = async (req, res, next) => {
 
 const getSubmissionById = async (req, res, next) => {
   try {
-    const submission = await SUBMISSION_SERVICE.getSubmissionById(req.params.id)
+    const submission = await SUBMISSION_SERVICE.getSubmissionById(req.params.id, req.user)
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get submission successfully',
       data: submission
@@ -42,7 +42,7 @@ const getSubmissionById = async (req, res, next) => {
 
 const updateSubmission = async (req, res, next) => {
   try {
-    const submission = await SUBMISSION_SERVICE.updateSubmission(req.params.id, req.body)
+    const submission = await SUBMISSION_SERVICE.updateSubmission(req.params.id, req.body, req.user)
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Update submission successfully',
       data: submission
@@ -54,7 +54,7 @@ const updateSubmission = async (req, res, next) => {
 
 const submitSubmission = async (req, res, next) => {
   try {
-    const submission = await SUBMISSION_SERVICE.submitSubmission(req.params.id)
+    const submission = await SUBMISSION_SERVICE.submitSubmission(req.params.id, req.user)
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Submit submission successfully',
       data: submission
@@ -66,7 +66,7 @@ const submitSubmission = async (req, res, next) => {
 
 const updateSubmissionStatus = async (req, res, next) => {
   try {
-    const submission = await SUBMISSION_SERVICE.updateSubmissionStatus(req.params.id, req.body.status)
+    const submission = await SUBMISSION_SERVICE.updateSubmissionStatus(req.params.id, req.body.status, req.user)
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Update submission status successfully',
       data: submission

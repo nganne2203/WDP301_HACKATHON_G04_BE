@@ -5,6 +5,7 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
+import { escapeRegex } from '#utils/sanitizeUtil.js'
 import Event from '#models/event.model.js'
 import Round from '#models/round.model.js'
 import Team from '#models/team.model.js'
@@ -137,7 +138,7 @@ const buildBoardFilter = (query = {}) => {
   }
   if (query.status) filter.status = query.status
   if (query.search) {
-    const pattern = new RegExp(query.search, 'i')
+    const pattern = new RegExp(escapeRegex(query.search), 'i')
     filter.$or = [{ name: pattern }]
   }
   return filter
@@ -189,9 +190,21 @@ const ensureTeamsBelongToBoardContext = async ({ eventId, trackId, teamIds = [] 
 
 const ensureUsersExist = async (userIds = []) => {
   for (const userId of userIds) ensureObjectId(userId, 'judge id')
-  const users = await User.find({ _id: { $in: userIds } })
+  const query = User.find({ _id: { $in: userIds } })
+  const users = query && typeof query.populate === 'function'
+    ? await query.populate({ path: 'roles', select: 'name code' })
+    : await query
   if (users.length !== userIds.length) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more judges do not exist'])
+  }
+  for (const user of users) {
+    if (user.status && user.status !== 'ACTIVE') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Judges must have ACTIVE accounts'])
+    }
+    const roles = (user.roles || []).map(role => String(role?.name || role?.code || role).toUpperCase())
+    if (roles.length > 0 && !roles.includes('JUDGE')) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned judges must have the JUDGE role'])
+    }
   }
 }
 
@@ -223,6 +236,14 @@ const shuffleItems = (items, randomFn = Math.random) => {
     ;[copied[index], copied[swapIndex]] = [copied[swapIndex], copied[index]]
   }
   return copied
+}
+
+const distributeTeamsAcrossBoards = ({ teams = [], boardCount }) => {
+  const boards = Array.from({ length: boardCount }, () => [])
+  teams.forEach((team, index) => {
+    boards[index % boardCount].push(team)
+  })
+  return boards
 }
 
 export const createJudgingBoardService = ({
@@ -374,12 +395,14 @@ export const createJudgingBoardService = ({
       }))
     } else {
       const shuffledTeams = randomize ? shuffleItems(context.eligibleTeams, randomFn) : [...context.eligibleTeams]
+      const distributedTeams = distributeTeamsAcrossBoards({
+        teams: shuffledTeams,
+        boardCount: context.boardCount
+      })
       boardPlans = Array.from({ length: context.boardCount }, (_, index) => {
         const boardNumber = index + 1
         const boardLabel = buildBoardLabel(boardNumber)
-        const start = index * context.maxTeamsPerBoard
-        const end = start + context.maxTeamsPerBoard
-        const boardTeams = shuffledTeams.slice(start, end)
+        const boardTeams = distributedTeams[index]
         const existingBoard = normalizedExistingBoards.find(item => item.boardNumber === boardNumber)
 
         return {
@@ -422,7 +445,25 @@ export const createJudgingBoardService = ({
     const result = await buildBoardPlan({ eventId, roundId, randomize: false, predefinedBoards: boards })
     const eligibleIds = new Set(result.eligibleTeams.map(team => team._id.toString()))
     const submittedIds = result.boards.flatMap(board => board.teamIds)
+    const expectedBoardNumbers = new Set(Array.from({ length: result.boardCount }, (_, index) => index + 1))
+    const submittedBoardNumbers = result.boards.map(board => Number(board.boardNumber))
 
+    if (result.boards.length !== result.boardCount) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Randomized board confirmation must include exactly the configured number of boards'])
+    }
+    if (new Set(submittedBoardNumbers).size !== submittedBoardNumbers.length) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Randomized board confirmation contains duplicate board numbers'])
+    }
+    for (const boardNumber of submittedBoardNumbers) {
+      if (!expectedBoardNumbers.has(boardNumber)) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Randomized board confirmation contains an unexpected board number'])
+      }
+    }
+    for (const board of result.boards) {
+      if (result.maxTeamsPerBoard && board.teamIds.length > result.maxTeamsPerBoard) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Randomized board confirmation exceeds maxTeamsPerBoard'])
+      }
+    }
     if (new Set(submittedIds).size !== submittedIds.length) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Randomized board confirmation contains duplicate team assignments'])
     }
@@ -450,6 +491,7 @@ export const createJudgingBoardService = ({
     }
 
     const confirmedBoards = []
+    const boardIdsByNumber = new Map()
     for (const board of result.boards) {
       const existingBoard = await repository.findByRoundAndBoardNumber({
         roundId,
@@ -472,6 +514,7 @@ export const createJudgingBoardService = ({
         ? await repository.updateById(existingBoard._id.toString(), payload)
         : await repository.create(payload)
 
+      boardIdsByNumber.set(board.boardNumber, savedBoard._id)
       confirmedBoards.push(normalizeBoard(await repository.findById(savedBoard._id)))
     }
 
@@ -479,6 +522,21 @@ export const createJudgingBoardService = ({
       roundId,
       boardNumbers: result.boards.map(board => board.boardNumber)
     })
+
+    if (repository.replaceRoundTeamPlacements) {
+      await repository.replaceRoundTeamPlacements({
+        eventId,
+        roundId,
+        placements: result.boards.flatMap(board => board.teamIds.map((teamId, index) => ({
+          eventId,
+          roundId,
+          teamId,
+          boardId: boardIdsByNumber.get(board.boardNumber),
+          boardNumber: board.boardNumber,
+          placementSlot: index + 1
+        })))
+      })
+    }
 
     return {
       event: normalizeEvent(result.event),

@@ -5,7 +5,7 @@ import { responseSuccess } from '#utils/responseUtil.js'
 
 const listTracks = async (req, res, next) => {
   try {
-    const { tracks, pagination } = await TRACK_SERVICE.listTracks(req.validated?.query || req.query)
+    const { tracks, pagination } = await TRACK_SERVICE.listTracks(req.validated?.query || req.query, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get tracks successfully',
@@ -19,7 +19,7 @@ const listTracks = async (req, res, next) => {
 
 const getTrackById = async (req, res, next) => {
   try {
-    const track = await TRACK_SERVICE.getTrackById(req.params.id)
+    const track = await TRACK_SERVICE.getTrackById(req.params.id, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get track successfully',

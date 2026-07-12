@@ -5,6 +5,7 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
+import { escapeRegex } from '#utils/sanitizeUtil.js'
 import Event from '#models/event.model.js'
 import Rubric from '#models/rubric.model.js'
 import Team from '#models/team.model.js'
@@ -175,7 +176,7 @@ const buildRoundFilter = (query = {}) => {
   if (query.roundType) filter.roundType = query.roundType
   if (query.status) filter.status = query.status
   if (query.search) {
-    const pattern = new RegExp(query.search, 'i')
+    const pattern = new RegExp(escapeRegex(query.search), 'i')
     filter.$or = [{ name: pattern }, { promotionRule: pattern }, { tieBreakRule: pattern }]
   }
   return filter

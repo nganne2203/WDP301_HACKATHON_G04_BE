@@ -13,6 +13,7 @@ import { EMAIL_TEMPLATE_KEYS } from '#modules/notifications/email-templates.js'
 import { AUDIT_LOG_SERVICE } from '#modules/audit-logs/audit-log.service.js'
 import { MEDIA_SERVICE } from '#modules/media/media.service.js'
 import { env } from '#configs/environment.js'
+import { escapeRegex } from '#utils/sanitizeUtil.js'
 import {
   REGISTRATION_SOURCES,
   getRegistrationSource
@@ -62,7 +63,7 @@ const buildUserFilter = (query = {}) => {
   }
 
   if (query.search) {
-    const pattern = new RegExp(query.search, 'i')
+    const pattern = new RegExp(escapeRegex(query.search), 'i')
     filter.$or = [
       { email: pattern },
       { fullName: pattern }

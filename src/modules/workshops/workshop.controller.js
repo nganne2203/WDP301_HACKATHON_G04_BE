@@ -5,7 +5,7 @@ import { responseSuccess } from '#utils/responseUtil.js'
 
 const listWorkshops = async (req, res, next) => {
   try {
-    const { workshops, pagination } = await WORKSHOP_SERVICE.listWorkshops(req.validated?.query || req.query)
+    const { workshops, pagination } = await WORKSHOP_SERVICE.listWorkshops(req.validated?.query || req.query, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get workshops successfully',
@@ -19,7 +19,7 @@ const listWorkshops = async (req, res, next) => {
 
 const getWorkshopById = async (req, res, next) => {
   try {
-    const workshop = await WORKSHOP_SERVICE.getWorkshopById(req.params.id)
+    const workshop = await WORKSHOP_SERVICE.getWorkshopById(req.params.id, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get workshop successfully',

@@ -2,7 +2,17 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import ApiError from '../src/utils/ApiError.js'
-import { createTimelineService } from '../src/modules/timelines/timeline.service.js'
+import { createTrackService } from '../src/modules/tracks/track.service.js'
+
+const getId = (value) => value?._id?.toString?.() || value?.toString?.()
+
+const matchesFilter = (item, filter = {}) => Object.entries(filter).every(([key, value]) => {
+  const itemValue = item[key]
+  if (value && typeof value === 'object' && Array.isArray(value.$in)) {
+    return value.$in.map(getId).includes(getId(itemValue))
+  }
+  return getId(itemValue) === getId(value)
+})
 
 const createRepository = () => {
   const records = new Map()
@@ -11,19 +21,12 @@ const createRepository = () => {
   const openRegistrationEventIds = new Set()
   const nonDraftEventIds = new Set()
 
-  const getId = (value) => value?._id?.toString?.() || value?.toString?.()
-  const matchesFilter = (item, filter = {}) => Object.entries(filter).every(([key, value]) => {
-    const itemValue = item[key]
-    if (value && typeof value === 'object' && Array.isArray(value.$in)) {
-      return value.$in.map(getId).includes(getId(itemValue))
-    }
-    return getId(itemValue) === getId(value)
-  })
-
   return {
     count: async (filter = {}) => [...records.values()].filter(record => matchesFilter(record, filter)).length,
     findAll: async ({ filter = {} } = {}) => [...records.values()].filter(record => matchesFilter(record, filter)),
     findById: async (id) => records.get(id) || null,
+    findByEventAndName: async (eventId, name) => [...records.values()]
+      .find(record => getId(record.eventId) === getId(eventId) && record.name === name) || null,
     create: async (data) => {
       const id = String(sequence).padStart(24, '0')
       const record = { ...data, _id: id }
@@ -56,85 +59,46 @@ const eventService = {
   getRawEventById: async (id) => ({ _id: id, title: 'SEAL Event' })
 }
 
-test('createTimeline stores timeline for an existing event', async () => {
-  const service = createTimelineService({
-    repository: createRepository(),
-    eventService
-  })
-
-  const timeline = await service.createTimeline({
-    eventId: '000000000000000000000101',
-    title: 'Registration Window',
-    eventType: 'CHECK_IN',
-    startTime: '2026-06-01T00:00:00.000Z',
-    endTime: '2026-06-02T00:00:00.000Z'
-  })
-
-  assert.equal(timeline.title, 'Registration Window')
-  assert.equal(timeline.eventId, '000000000000000000000101')
-  assert.equal(timeline.eventType, 'CHECK_IN')
-})
-
-test('updateTimeline rejects invalid date range', async () => {
-  const repository = createRepository()
-  const service = createTimelineService({ repository, eventService })
-
-  const created = await service.createTimeline({
-    eventId: '000000000000000000000101',
-    title: 'Opening Ceremony'
-  })
-
-  await assert.rejects(
-    service.updateTimeline(created.id, {
-      startTime: '2026-06-03T10:00:00.000Z',
-      endTime: '2026-06-03T09:00:00.000Z'
-    }),
-    (error) => error instanceof ApiError &&
-      error.code === 'BAD_REQUEST' &&
-      error.errors.includes('startTime must be before or equal to endTime')
-  )
-})
-
-test('listTimelines scopes participant to joined or open-registration events', async () => {
+test('listTracks scopes participant to joined or open-registration events', async () => {
   const repository = createRepository()
   repository.seedVisibility({
     participantEvents: ['000000000000000000000101'],
     openRegistrationEvents: ['000000000000000000000102']
   })
-  const service = createTimelineService({ repository, eventService })
+  const service = createTrackService({ repository, eventService })
 
-  await service.createTimeline({
+  await service.createTrack({
     eventId: '000000000000000000000101',
-    title: 'Joined Event Timeline'
+    name: 'Joined Event Track'
   })
-  await service.createTimeline({
+  await service.createTrack({
     eventId: '000000000000000000000103',
-    title: 'Draft Event Timeline'
+    name: 'Draft Event Track'
   })
 
-  const result = await service.listTimelines({}, {
+  const result = await service.listTracks({}, {
     id: '000000000000000000000201',
     roles: ['PARTICIPANT']
   })
 
-  assert.equal(result.timelines.length, 1)
-  assert.equal(result.timelines[0].eventId, '000000000000000000000101')
+  assert.equal(result.tracks.length, 1)
+  assert.equal(result.tracks[0].event.id, '000000000000000000000101')
 })
 
-test('getTimelineById hides event children outside actor scope', async () => {
+test('getTrackById hides event children outside actor scope', async () => {
   const repository = createRepository()
   repository.seedVisibility({
     participantEvents: ['000000000000000000000101']
   })
-  const service = createTimelineService({ repository, eventService })
+  const service = createTrackService({ repository, eventService })
 
-  const created = await service.createTimeline({
+  const created = await service.createTrack({
     eventId: '000000000000000000000103',
-    title: 'Unrelated Timeline'
+    name: 'Unrelated Track'
   })
 
   await assert.rejects(
-    () => service.getTimelineById(created.id, {
+    () => service.getTrackById(created.id, {
       id: '000000000000000000000201',
       roles: ['PARTICIPANT']
     }),

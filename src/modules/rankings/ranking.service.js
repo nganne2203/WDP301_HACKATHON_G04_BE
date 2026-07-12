@@ -225,14 +225,23 @@ export const createRankingService = ({
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['No submitted score sheets found for ranking generation'])
     }
 
+    const roundPlacements = repository.findRoundTeamPlacements
+      ? await repository.findRoundTeamPlacements({ eventId, roundId })
+      : []
+    const placementsByTeamId = new Map((roundPlacements || []).map(placement => [
+      getId(placement.teamId),
+      placement
+    ]))
+
     const teamGroups = new Map()
     for (const scoreSheet of scoreSheets) {
       const teamId = scoreSheet.teamId?._id?.toString?.() || scoreSheet.teamId?.toString?.()
+      const placement = placementsByTeamId.get(teamId)
       const current = teamGroups.get(teamId) || {
         teamId,
         teamName: scoreSheet.teamId?.name || 'Unknown Team',
         chapterName: scoreSheet.teamId?.chapterName || null,
-        boardNumber: scoreSheet.teamId?.boardNumber || scoreSheet.boardId?.boardNumber || null,
+        boardNumber: placement?.boardNumber || scoreSheet.teamId?.boardNumber || scoreSheet.boardId?.boardNumber || null,
         trackId: scoreSheet.teamId?.trackId || null,
         scores: [],
         judgeIds: []
@@ -270,7 +279,8 @@ export const createRankingService = ({
       calculationSummary: {
         judgeCount: team.judgeIds.filter(Boolean).length,
         source: 'LOCKED_SCORE_SHEETS_ONLY',
-        aiReviewUsed: false
+        aiReviewUsed: false,
+        boardNumber: team.boardNumber || null
       },
       calculatedAt,
       isSelectedForFinal: false,
@@ -326,7 +336,7 @@ export const createRankingService = ({
       ranking: item,
       teamId: item.teamId?._id?.toString?.() || item.teamId?.toString?.(),
       teamName: item.teamId?.name || 'Unknown Team',
-      boardNumber: item.teamId?.boardNumber || 0,
+      boardNumber: item.calculationSummary?.boardNumber || item.teamId?.boardNumber || 0,
       score: item.score
     }))
 

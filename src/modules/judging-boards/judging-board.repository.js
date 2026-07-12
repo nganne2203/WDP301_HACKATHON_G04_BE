@@ -1,4 +1,5 @@
 import JudgingBoard from '#models/judgingBoard.model.js'
+import RoundTeamPlacement from '#models/roundTeamPlacement.model.js'
 
 const boardPopulate = [
   { path: 'eventId', select: 'title semester season year status competitionConfig' },
@@ -56,6 +57,12 @@ const deleteManyByRoundExcludingBoardNumbers = async ({ roundId, boardNumbers = 
   })
 }
 
+const replaceRoundTeamPlacements = async ({ eventId, roundId, placements = [] }) => {
+  await RoundTeamPlacement.deleteMany({ eventId, roundId })
+  if (placements.length === 0) return []
+  return await RoundTeamPlacement.insertMany(placements)
+}
+
 export const JUDGING_BOARD_REPOSITORY = {
   count,
   create,
@@ -65,5 +72,6 @@ export const JUDGING_BOARD_REPOSITORY = {
   deleteById,
   findByRoundAndBoardNumber,
   findByRoundId,
-  deleteManyByRoundExcludingBoardNumbers
+  deleteManyByRoundExcludingBoardNumbers,
+  replaceRoundTeamPlacements
 }

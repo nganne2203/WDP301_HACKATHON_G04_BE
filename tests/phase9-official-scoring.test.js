@@ -24,6 +24,26 @@ const ids = {
   member1: 'aaaaaaaaaaaaaaaaaaaaaa02'
 }
 
+const judgeActor = { id: ids.judge1, roles: ['JUDGE'] }
+const participantActor = { id: ids.leader1, roles: ['PARTICIPANT'] }
+
+const getId = (value) => value?._id?.toString?.() || value?.toString?.()
+
+const matchesFilter = (item, filter = {}) => {
+  return Object.entries(filter).every(([key, value]) => {
+    const itemValue = item[key]
+    if (value && typeof value === 'object' && Array.isArray(value.$in)) {
+      const allowedIds = value.$in.map(getId)
+      return Array.isArray(itemValue)
+        ? itemValue.some(entry => allowedIds.includes(getId(entry)))
+        : allowedIds.includes(getId(itemValue))
+    }
+    return Array.isArray(itemValue)
+      ? itemValue.some(entry => getId(entry) === getId(value))
+      : getId(itemValue) === getId(value)
+  })
+}
+
 const createModel = (items) => ({
   async findById(id) {
     return items.get(id) || null
@@ -37,7 +57,14 @@ const createModel = (items) => ({
   }
 })
 
-const createScoreSheetFixture = ({ allowTeam = true } = {}) => {
+const createScoreSheetFixture = ({
+  allowTeam = true,
+  roundStatus = 'SCORING',
+  boardStatus = 'SCORING',
+  teamStatus = 'CONFIRMED',
+  submissionStatus = 'SUBMITTED',
+  judgeStatus = 'ACTIVE'
+} = {}) => {
   const events = new Map()
   const rounds = new Map()
   const boards = new Map()
@@ -61,38 +88,58 @@ const createScoreSheetFixture = ({ allowTeam = true } = {}) => {
     _id: ids.round,
     eventId: ids.event,
     rubricId: ids.rubric,
-    tieBreakRule: '10-minute mini test'
+    tieBreakRule: '10-minute mini test',
+    status: roundStatus
   })
-  teams.set(ids.team1, { _id: ids.team1, eventId: ids.event, name: 'Team One', boardNumber: 1, chapterName: 'A' })
+  teams.set(ids.team1, {
+    _id: ids.team1,
+    eventId: ids.event,
+    name: 'Team One',
+    boardNumber: 1,
+    chapterName: 'A',
+    status: teamStatus
+  })
   teams.set(ids.team2, { _id: ids.team2, eventId: ids.event, name: 'Team Two', boardNumber: 1, chapterName: 'B' })
-  users.set(ids.judge1, { _id: ids.judge1, fullName: 'Judge One', status: 'APPROVED' })
+  users.set(ids.judge1, { _id: ids.judge1, fullName: 'Judge One', status: judgeStatus })
   boards.set(ids.board1, {
     _id: ids.board1,
     eventId: ids.event,
     roundId: ids.round,
     boardNumber: 1,
     teamIds: allowTeam ? [ids.team1] : [ids.team2],
-    judgeIds: [ids.judge1]
+    judgeIds: [ids.judge1],
+    status: boardStatus
   })
   submissions.set(ids.submission1, {
     _id: ids.submission1,
     eventId: ids.event,
     roundId: ids.round,
-    teamId: ids.team1
+    teamId: ids.team1,
+    status: submissionStatus
   })
 
   const repository = {
+    hydrateScoreSheet(scoreSheet) {
+      if (!scoreSheet) return null
+      return {
+        ...scoreSheet,
+        scoreIds: (scoreSheet.scoreIds || []).map(score => {
+          const scoreId = getId(score)
+          return scores.get(scoreId) || score
+        })
+      }
+    },
     async findScoreSheetById(id) {
-      return scoreSheets.get(id) || null
+      return this.hydrateScoreSheet(scoreSheets.get(id) || null)
     },
     async findScoreSheetByRoundTeamJudge({ roundId, teamId, judgeId }) {
-      return [...scoreSheets.values()].find(item => item.roundId === roundId && item.teamId === teamId && item.judgeId === judgeId) || null
+      return this.hydrateScoreSheet([...scoreSheets.values()].find(item => item.roundId === roundId && item.teamId === teamId && item.judgeId === judgeId) || null)
     },
-    async countScoreSheets() {
-      return scoreSheets.size
+    async countScoreSheets(filter = {}) {
+      return [...scoreSheets.values()].filter(item => matchesFilter(item, filter)).length
     },
-    async findScoreSheets() {
-      return [...scoreSheets.values()]
+    async findScoreSheets({ filter = {} } = {}) {
+      return [...scoreSheets.values()].filter(item => matchesFilter(item, filter)).map(item => this.hydrateScoreSheet(item))
     },
     async createScoreSheet(data) {
       const created = {
@@ -106,7 +153,7 @@ const createScoreSheetFixture = ({ allowTeam = true } = {}) => {
     async updateScoreSheetById(id, data) {
       const updated = { ...scoreSheets.get(id), ...data, _id: id }
       scoreSheets.set(id, updated)
-      return updated
+      return this.hydrateScoreSheet(updated)
     },
     async deleteScoresByScoreSheetId(scoreSheetId) {
       for (const [scoreId, score] of scores.entries()) {
@@ -156,7 +203,7 @@ const createScoreSheetFixture = ({ allowTeam = true } = {}) => {
   }
 }
 
-const createRankingFixture = ({ notificationService = null } = {}) => {
+const createRankingFixture = ({ notificationService = null, placements = [] } = {}) => {
   const events = new Map()
   const rounds = new Map()
   const teams = new Map()
@@ -245,6 +292,9 @@ const createRankingFixture = ({ notificationService = null } = {}) => {
           rankings.set(id, { ...ranking, ...data })
         }
       }
+    },
+    async findRoundTeamPlacements() {
+      return placements
     }
   }
 
@@ -313,6 +363,95 @@ test('scoreValue cannot exceed criterion maxScore', async () => {
   )
 })
 
+test('judge cannot create score sheet until round and board are in SCORING', async () => {
+  const { service } = createScoreSheetFixture({ roundStatus: 'OPEN' })
+
+  await assert.rejects(
+    () => service.createScoreSheet({
+      eventId: ids.event,
+      roundId: ids.round,
+      boardId: ids.board1,
+      teamId: ids.team1,
+      submissionId: ids.submission1,
+      scores: [{ criterionId: ids.criterion1, scoreValue: 8 }]
+    }, judgeActor),
+    (error) => error instanceof ApiError && error.errors.includes('Round must be in SCORING status before judges can score')
+  )
+})
+
+test('judge cannot create score sheet for draft submission or inactive judge account', async () => {
+  const draftSubmission = createScoreSheetFixture({ submissionStatus: 'DRAFT' })
+
+  await assert.rejects(
+    () => draftSubmission.service.createScoreSheet({
+      eventId: ids.event,
+      roundId: ids.round,
+      boardId: ids.board1,
+      teamId: ids.team1,
+      submissionId: ids.submission1,
+      scores: [{ criterionId: ids.criterion1, scoreValue: 8 }]
+    }, judgeActor),
+    (error) => error instanceof ApiError && error.errors.includes('Only submitted or accepted submissions can be scored')
+  )
+
+  const suspendedJudge = createScoreSheetFixture({ judgeStatus: 'SUSPENDED' })
+  await assert.rejects(
+    () => suspendedJudge.service.createScoreSheet({
+      eventId: ids.event,
+      roundId: ids.round,
+      boardId: ids.board1,
+      teamId: ids.team1,
+      submissionId: ids.submission1,
+      scores: [{ criterionId: ids.criterion1, scoreValue: 8 }]
+    }, judgeActor),
+    (error) => error instanceof ApiError && error.code === 'FORBIDDEN'
+  )
+})
+
+test('raw score sheet reads are scoped to owning judge and hidden from participants', async () => {
+  const { service, stores } = createScoreSheetFixture()
+
+  const created = await service.createScoreSheet({
+    eventId: ids.event,
+    roundId: ids.round,
+    boardId: ids.board1,
+    teamId: ids.team1,
+    submissionId: ids.submission1,
+    scores: [{ criterionId: ids.criterion1, scoreValue: 8 }]
+  }, judgeActor)
+
+  stores.scoreSheets.set('aaaaaaaaaaaaaaaaaaaaaa99', {
+    _id: 'aaaaaaaaaaaaaaaaaaaaaa99',
+    eventId: ids.event,
+    roundId: ids.round,
+    boardId: ids.board1,
+    teamId: ids.team1,
+    submissionId: ids.submission1,
+    judgeId: ids.judge2,
+    scoreIds: [],
+    status: 'DRAFT'
+  })
+
+  const judgeResult = await service.listScoreSheets({ eventId: ids.event }, judgeActor)
+  assert.equal(judgeResult.scoreSheets.length, 1)
+  assert.equal(judgeResult.scoreSheets[0].judgeId, ids.judge1)
+
+  await assert.rejects(
+    () => service.listScoreSheets({ eventId: ids.event }, participantActor),
+    (error) => error instanceof ApiError && error.code === 'FORBIDDEN'
+  )
+
+  await assert.rejects(
+    () => service.getScoreSheetById('aaaaaaaaaaaaaaaaaaaaaa99', judgeActor),
+    (error) => error instanceof ApiError && error.code === 'FORBIDDEN'
+  )
+
+  await assert.rejects(
+    () => service.getScoreSheetById(created.id, participantActor),
+    (error) => error instanceof ApiError && error.code === 'FORBIDDEN'
+  )
+})
+
 test('submitted score sheet is locked', async () => {
   const { service, stores } = createScoreSheetFixture()
 
@@ -339,6 +478,26 @@ test('submitted score sheet is locked', async () => {
       scores: [{ criterionId: ids.criterion1, scoreValue: 7 }]
     }, { id: ids.judge1 }),
     (error) => error instanceof ApiError && error.errors.includes('Submitted score sheet is locked and cannot be changed')
+  )
+})
+
+test('submitScoreSheet requires exactly one score for every rubric criterion', async () => {
+  const { service } = createScoreSheetFixture()
+
+  const created = await service.createScoreSheet({
+    eventId: ids.event,
+    roundId: ids.round,
+    boardId: ids.board1,
+    teamId: ids.team1,
+    submissionId: ids.submission1,
+    scores: [
+      { criterionId: ids.criterion1, scoreValue: 9 }
+    ]
+  }, judgeActor)
+
+  await assert.rejects(
+    () => service.submitScoreSheet(created.id, judgeActor),
+    (error) => error instanceof ApiError && error.errors.includes('Score sheet must contain exactly one score for each rubric criterion')
   )
 })
 
@@ -377,6 +536,30 @@ test('finalist selection respects event competitionConfig FIXED_PER_BOARD', asyn
   assert.equal(result.finalists.length, 2)
   assert.deepEqual(result.finalists.map(item => item.teamId), [ids.team1, ids.team3])
   assert.equal(result.summary.finalistSelectionMode, 'FIXED_PER_BOARD')
+})
+
+test('ranking uses round-scoped placement before legacy team board fields', async () => {
+  const { service } = createRankingFixture({
+    placements: [
+      { teamId: ids.team1, boardNumber: 2 },
+      { teamId: ids.team2, boardNumber: 2 },
+      { teamId: ids.team3, boardNumber: 1 },
+      { teamId: ids.team4, boardNumber: 1 }
+    ]
+  })
+  await service.generateRankings({
+    eventId: ids.event,
+    roundId: ids.round,
+    rankingType: 'TEAM'
+  }, { id: ids.judge1 })
+
+  const result = await service.selectFinalists({
+    eventId: ids.event,
+    roundId: ids.round
+  }, { id: ids.judge1 })
+
+  assert.deepEqual(result.finalists.map(item => item.teamId), [ids.team1, ids.team3])
+  assert.deepEqual(result.finalists.map(item => item.calculationSummary.boardNumber), [2, 1])
 })
 
 test('tie-break manual resolution is traceable', async () => {

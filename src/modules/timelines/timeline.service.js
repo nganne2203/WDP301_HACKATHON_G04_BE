@@ -6,6 +6,11 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
+import { escapeRegex } from '#utils/sanitizeUtil.js'
+import {
+  applyEventVisibilityScope,
+  ensureCanViewEventChild
+} from '#utils/eventVisibilityUtil.js'
 
 const TIMELINE_FIELDS = ['eventId', 'title', 'description', 'startTime', 'endTime', 'eventType', 'status']
 
@@ -35,7 +40,7 @@ const buildTimelineFilter = (query = {}) => {
   if (query.status) filter.status = query.status
 
   if (query.search) {
-    const pattern = new RegExp(query.search, 'i')
+    const pattern = new RegExp(escapeRegex(query.search), 'i')
     filter.$or = [
       { title: pattern },
       { description: pattern }
@@ -92,9 +97,13 @@ export const createTimelineService = ({
     return timeline
   }
 
-  const listTimelines = async (query = {}) => {
+  const listTimelines = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
-    const filter = buildTimelineFilter(query)
+    const filter = await applyEventVisibilityScope({
+      filter: buildTimelineFilter(query),
+      actor,
+      repository
+    })
     const skip = (page - 1) * limit
 
     const [timelines, totalItems] = await Promise.all([
@@ -113,8 +122,14 @@ export const createTimelineService = ({
     }
   }
 
-  const getTimelineById = async (id) => {
+  const getTimelineById = async (id, actor = {}) => {
     const timeline = await ensureTimelineExists(id)
+    await ensureCanViewEventChild({
+      resource: timeline,
+      actor,
+      repository,
+      notFoundMessage: 'Timeline not found'
+    })
     return normalizeTimeline(timeline)
   }
 

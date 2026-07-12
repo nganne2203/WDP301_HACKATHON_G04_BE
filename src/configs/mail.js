@@ -152,11 +152,12 @@ export const verifyMailConnection = async ({
   logger = LOGGER,
   gmailUser = env.email.gmailUser
 } = {}) => {
+  const usingDefaultTransporter = transporter === smtpTransporter
   const missing = getGmailApiConfigurationIssues({
     gmailUser,
-    clientId: env.email.gmailClientId,
-    clientSecret: env.email.gmailClientSecret,
-    refreshToken: env.email.gmailRefreshToken,
+    clientId: usingDefaultTransporter ? env.email.gmailClientId : 'injected-transporter',
+    clientSecret: usingDefaultTransporter ? env.email.gmailClientSecret : 'injected-transporter',
+    refreshToken: usingDefaultTransporter ? env.email.gmailRefreshToken : 'injected-transporter',
     mailFrom: config.from
   })
 

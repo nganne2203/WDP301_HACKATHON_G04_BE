@@ -7,9 +7,19 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import Event from '#models/event.model.js'
+import JudgingBoard from '#models/judgingBoard.model.js'
 import Repository from '#models/repository.model.js'
 import Round from '#models/round.model.js'
 import Team from '#models/team.model.js'
+import Participant from '#models/participant.model.js'
+import {
+  actorHasRole,
+  getActorId,
+  getIdString,
+  idListIncludes,
+  idsEqual,
+  isPrivilegedEventActor
+} from '#utils/domainAccessUtil.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 
 const SUBMISSION_FIELDS = [
@@ -32,6 +42,8 @@ const SUBMISSION_CREATE_FIELDS = [
 
 const SUBMISSION_EDITABLE_STATUSES = new Set(['DRAFT'])
 const SUBMISSION_REVIEWABLE_STATUSES = new Set(['ACCEPTED', 'REJECTED'])
+const SUBMISSION_TEAM_STATUSES = new Set(['CONFIRMED'])
+const ACTIVE_TEAM_STATUSES = ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED']
 const IN_APP_ONLY = ['IN_APP']
 
 const ensureObjectId = (id, fieldName = 'id') => {
@@ -99,6 +111,34 @@ const getId = (value) => {
   return value?._id?.toString?.() || value?.id || value?.toString?.()
 }
 
+const isActorTeamMember = (team, actor = {}) => {
+  const actorId = getActorId(actor)
+  if (!actorId || !team) return false
+  return idsEqual(team.leaderId, actorId) || idListIncludes(team.memberIds, actorId)
+}
+
+const isActorTeamMentor = (team, actor = {}) => {
+  const actorId = getActorId(actor)
+  if (!actorId || !team) return false
+  return idListIncludes(team.mentorIds, actorId)
+}
+
+const mergeTeamScope = (filter = {}, teamIds = []) => {
+  const allowedTeamIds = [...new Set(teamIds.map(getIdString).filter(Boolean))]
+  if (allowedTeamIds.length === 0) return { ...filter, teamId: { $in: [] } }
+
+  if (filter.teamId) {
+    return allowedTeamIds.includes(getIdString(filter.teamId))
+      ? filter
+      : { ...filter, teamId: { $in: [] } }
+  }
+
+  return {
+    ...filter,
+    teamId: { $in: allowedTeamIds }
+  }
+}
+
 const uniqueUsersFromTeam = (team = {}) => {
   const users = []
   const seen = new Set()
@@ -131,7 +171,9 @@ export const createSubmissionService = ({
   eventModel = Event,
   roundModel = Round,
   teamModel = Team,
+  participantModel = Participant,
   repositoryModel = Repository,
+  boardModel = JudgingBoard,
   notificationService = null
 } = {}) => {
   const ensureSubmissionExists = async (id) => {
@@ -168,7 +210,10 @@ export const createSubmissionService = ({
     }
 
     const assignedTeamIds = (round.assignedTeamIds || []).map(value => value.toString())
-    if (assignedTeamIds.length > 0 && !assignedTeamIds.includes(teamId.toString())) {
+    if (assignedTeamIds.length === 0) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round has no assigned teams'])
+    }
+    if (!assignedTeamIds.includes(teamId.toString())) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team is not assigned to the specified round'])
     }
 
@@ -192,6 +237,120 @@ export const createSubmissionService = ({
     }
   }
 
+  const findScopedTeamIds = async ({ actor = {}, filter = {} }) => {
+    if (isPrivilegedEventActor(actor)) return null
+
+    const actorId = getActorId(actor)
+    if (!actorId) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated actor is required'])
+    }
+
+    const teamIds = new Set()
+    const eventScopedFilter = filter.eventId ? { eventId: filter.eventId } : {}
+
+    if (teamModel?.find) {
+      const teamFilters = [{
+        ...eventScopedFilter,
+        status: { $in: ACTIVE_TEAM_STATUSES },
+        $or: [
+          { leaderId: actorId },
+          { memberIds: actorId }
+        ]
+      }]
+
+      if (actorHasRole(actor, 'MENTOR')) {
+        teamFilters.push({
+          ...eventScopedFilter,
+          status: { $in: ACTIVE_TEAM_STATUSES },
+          mentorIds: actorId
+        })
+      }
+
+      for (const teamFilter of teamFilters) {
+        const teams = await teamModel.find(teamFilter)
+        for (const team of teams || []) teamIds.add(getIdString(team._id || team.id))
+      }
+    }
+
+    if (actorHasRole(actor, 'JUDGE') && boardModel?.find) {
+      const boardFilter = {
+        judgeIds: actorId,
+        status: 'SCORING'
+      }
+      if (filter.eventId) boardFilter.eventId = filter.eventId
+      if (filter.roundId) boardFilter.roundId = filter.roundId
+
+      const boards = await boardModel.find(boardFilter)
+      for (const board of boards || []) {
+        for (const teamId of board.teamIds || []) teamIds.add(getIdString(teamId))
+      }
+    }
+
+    return [...teamIds]
+  }
+
+  const ensureCanReadSubmission = async ({ submission, actor = {} }) => {
+    if (isPrivilegedEventActor(actor)) return
+
+    const actorId = getActorId(actor)
+    if (!actorId) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated actor is required'])
+    }
+
+    const eventId = getIdString(submission.eventId)
+    const roundId = getIdString(submission.roundId)
+    const teamId = getIdString(submission.teamId)
+
+    const team = teamModel?.findById ? await teamModel.findById(teamId) : null
+    if (isActorTeamMember(team, actor) || isActorTeamMentor(team, actor)) return
+
+    if (actorHasRole(actor, 'JUDGE') && boardModel?.findOne) {
+      const round = submission.roundId && typeof submission.roundId === 'object'
+        ? submission.roundId
+        : await roundModel.findById(roundId)
+      if (round?.status !== 'SCORING') {
+        throw new ApiError(ERROR_CODES.FORBIDDEN, ['Judge can only access assigned submissions while the round is scoring'])
+      }
+      const board = await boardModel.findOne({
+        eventId,
+        roundId,
+        judgeIds: actorId,
+        teamIds: teamId,
+        status: 'SCORING'
+      })
+      if (board) return
+    }
+
+    throw new ApiError(ERROR_CODES.FORBIDDEN, ['You cannot access another team submission'])
+  }
+
+  const ensureCanWriteSubmission = async ({ team, actor = {} }) => {
+    const actorId = getActorId(actor)
+    if (!actorId) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated actor is required'])
+    }
+
+    if (!isActorTeamMember(team, actor)) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only joined members of the submission team can modify it'])
+    }
+
+    if (team.status && !SUBMISSION_TEAM_STATUSES.has(team.status)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only confirmed teams can submit artifacts'])
+    }
+
+    if (participantModel?.findOne) {
+      const participant = await participantModel.findOne({
+        eventId: getIdString(team.eventId),
+        teamId: getIdString(team._id || team.id),
+        userId: actorId,
+        status: 'JOINED'
+      })
+      if (!participant) {
+        throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only joined members of the submission team can modify it'])
+      }
+    }
+  }
+
   const resolveRepositoryLink = async ({ eventId, teamId, repositoryId = null, linkedRepository = null }) => {
     if (linkedRepository) return linkedRepository
     if (repositoryId) return linkedRepository
@@ -202,12 +361,10 @@ export const createSubmissionService = ({
     })
   }
 
-  const ensureSubmissionWindow = ({ round, allowDraft = true }) => {
+  const ensureSubmissionWindow = ({ round }) => {
     const now = new Date()
 
-    if (allowDraft && round.status === 'DRAFT') return
-
-    if (!['OPEN', 'SCORING'].includes(round.status)) {
+    if (round.status !== 'OPEN') {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round is not accepting submissions at this time'])
     }
 
@@ -283,10 +440,12 @@ export const createSubmissionService = ({
     })))
   }
 
-  const listSubmissions = async (query = {}) => {
+  const listSubmissions = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
     const skip = (page - 1) * limit
-    const filter = buildSubmissionFilter(query)
+    const baseFilter = buildSubmissionFilter(query)
+    const scopedTeamIds = await findScopedTeamIds({ actor, filter: baseFilter })
+    const filter = scopedTeamIds ? mergeTeamScope(baseFilter, scopedTeamIds) : baseFilter
 
     const [submissions, totalItems] = await Promise.all([
       repository.findAll({ filter, skip, limit }),
@@ -304,11 +463,13 @@ export const createSubmissionService = ({
     }
   }
 
-  const getSubmissionById = async (id) => {
-    return normalizeSubmission(await ensureSubmissionExists(id))
+  const getSubmissionById = async (id, actor = {}) => {
+    const submission = await ensureSubmissionExists(id)
+    await ensureCanReadSubmission({ submission, actor })
+    return normalizeSubmission(submission)
   }
 
-  const createSubmission = async (payload = {}) => {
+  const createSubmission = async (payload = {}, actor = {}) => {
     const safePayload = pickSafeFields(payload, SUBMISSION_CREATE_FIELDS)
     if (safePayload.status && SUBMISSION_REVIEWABLE_STATUSES.has(safePayload.status)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Submission cannot be created directly with review-only status'])
@@ -320,6 +481,8 @@ export const createSubmissionService = ({
       teamId: safePayload.teamId,
       repositoryId: safePayload.repositoryId
     })
+    await ensureCanWriteSubmission({ team: context.team, actor })
+    ensureSubmissionWindow({ round: context.round })
     const resolvedRepository = await resolveRepositoryLink({
       eventId: safePayload.eventId,
       teamId: safePayload.teamId,
@@ -337,7 +500,6 @@ export const createSubmissionService = ({
 
     const status = safePayload.status || 'DRAFT'
     if (status === 'SUBMITTED') {
-      ensureSubmissionWindow({ round: context.round, allowDraft: false })
       ensureSubmissionArtifacts({
         payload: safePayload,
         repositoryId: resolvedRepository?._id || null
@@ -352,6 +514,7 @@ export const createSubmissionService = ({
     })
 
     await createAudit({
+      actorId: getActorId(actor),
       action: status === 'SUBMITTED' ? 'SUBMISSION_CREATED_AND_SUBMITTED' : 'SUBMISSION_CREATED',
       resourceId: submission._id,
       metadata: {
@@ -366,7 +529,7 @@ export const createSubmissionService = ({
     return normalizeSubmission(await repository.findById(submission._id))
   }
 
-  const updateSubmission = async (id, payload = {}) => {
+  const updateSubmission = async (id, payload = {}, actor = {}) => {
     const submission = await ensureSubmissionExists(id)
     if (!SUBMISSION_EDITABLE_STATUSES.has(submission.status)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only draft submissions can be edited'])
@@ -384,6 +547,8 @@ export const createSubmissionService = ({
       teamId,
       repositoryId
     })
+    await ensureCanWriteSubmission({ team: context.team, actor })
+    ensureSubmissionWindow({ round: context.round })
 
     const resolvedRepository = await resolveRepositoryLink({
       eventId,
@@ -398,6 +563,7 @@ export const createSubmissionService = ({
     })
 
     await createAudit({
+      actorId: getActorId(actor),
       action: 'SUBMISSION_UPDATED',
       resourceId: updatedSubmission._id,
       metadata: {
@@ -411,7 +577,7 @@ export const createSubmissionService = ({
     return normalizeSubmission(updatedSubmission)
   }
 
-  const submitSubmission = async (id) => {
+  const submitSubmission = async (id, actor = {}) => {
     const submission = await ensureSubmissionExists(id)
     const eventId = submission.eventId?._id?.toString?.() || submission.eventId?.toString?.()
     const roundId = submission.roundId?._id?.toString?.() || submission.roundId?.toString?.()
@@ -432,8 +598,9 @@ export const createSubmissionService = ({
       teamId,
       repositoryId
     })
+    await ensureCanWriteSubmission({ team: context.team, actor })
 
-    ensureSubmissionWindow({ round: context.round, allowDraft: false })
+    ensureSubmissionWindow({ round: context.round })
     ensureSubmissionArtifacts({
       payload: submission,
       repositoryId
@@ -445,6 +612,7 @@ export const createSubmissionService = ({
     })
 
     await createAudit({
+      actorId: getActorId(actor),
       action: 'SUBMISSION_SUBMITTED',
       resourceId: updatedSubmission._id,
       metadata: {
@@ -458,10 +626,10 @@ export const createSubmissionService = ({
     return normalizeSubmission(updatedSubmission)
   }
 
-  const updateSubmissionStatus = async (id, status) => {
+  const updateSubmissionStatus = async (id, status, actor = {}) => {
     const submission = await ensureSubmissionExists(id)
     if (status === 'SUBMITTED') {
-      return await submitSubmission(id)
+      return await submitSubmission(id, actor)
     }
 
     if (status === 'DRAFT') {
@@ -484,6 +652,7 @@ export const createSubmissionService = ({
     })
 
     await createAudit({
+      actorId: getActorId(actor),
       action: `SUBMISSION_${status}`,
       resourceId: updatedSubmission._id,
       metadata: {
