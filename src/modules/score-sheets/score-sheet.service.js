@@ -5,6 +5,14 @@ import { AUDIT_LOG_REPOSITORY } from '#modules/audit-logs/audit-log.repository.j
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
+import {
+  actorHasRole,
+  getActorId,
+  getIdString,
+  idsEqual,
+  isActiveJudge,
+  isPrivilegedEventActor
+} from '#utils/domainAccessUtil.js'
 import Event from '#models/event.model.js'
 import JudgingBoard from '#models/judgingBoard.model.js'
 import Round from '#models/round.model.js'
@@ -12,6 +20,7 @@ import Submission from '#models/submission.model.js'
 import Team from '#models/team.model.js'
 import User from '#models/user.model.js'
 import { RUBRIC_REPOSITORY } from '#modules/rubrics/rubric.repository.js'
+import { env } from '#configs/environment.js'
 
 const normalizeScore = (score) => {
   if (!score) return null
@@ -113,10 +122,36 @@ const buildScoreSheetFilter = (query = {}) => {
   return filter
 }
 
+const getScoreCriterionId = (score = {}) => {
+  return getIdString(score.criterionId)
+}
+
+const mergeJudgeScope = (filter = {}, actor = {}) => {
+  if (isPrivilegedEventActor(actor)) return filter
+
+  const actorId = getActorId(actor)
+  if (!actorId) {
+    throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated actor is required'])
+  }
+
+  if (!actorHasRole(actor, 'JUDGE')) {
+    throw new ApiError(ERROR_CODES.FORBIDDEN, ['Raw score sheets are only available to coordinators, admins, and assigned judges'])
+  }
+
+  if (filter.judgeId && getIdString(filter.judgeId) !== actorId) {
+    return { ...filter, judgeId: { $in: [] } }
+  }
+
+  return {
+    ...filter,
+    judgeId: actorId
+  }
+}
+
 const buildScoreSheetTotals = ({ scores = [], criteriaById = new Map() }) => {
   const totalScore = scores.reduce((sum, score) => sum + Number(score.scoreValue || 0), 0)
   const weightedScore = scores.reduce((sum, score) => {
-    const criterion = criteriaById.get(score.criterionId.toString())
+    const criterion = criteriaById.get(getScoreCriterionId(score))
     const weight = Number(criterion?.weight || 1)
     return sum + (Number(score.scoreValue || 0) * weight)
   }, 0)
@@ -137,13 +172,21 @@ export const createScoreSheetService = ({
   teamModel = Team,
   submissionModel = Submission,
   userModel = User,
-  rubricRepository = RUBRIC_REPOSITORY
+  rubricRepository = RUBRIC_REPOSITORY,
+  relaxedWorkflow = false
 } = {}) => {
   const ensureScoreSheetExists = async (id) => {
     ensureObjectId(id, 'score sheet id')
     const scoreSheet = await repository.findScoreSheetById(id)
     if (!scoreSheet) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Score sheet not found'])
     return scoreSheet
+  }
+
+  const findJudgeById = async (judgeId) => {
+    const query = userModel.findById(judgeId)
+    return query && typeof query.populate === 'function'
+      ? await query.populate({ path: 'roles', select: 'name code' })
+      : await query
   }
 
   const ensureJudgeContext = async ({
@@ -161,7 +204,7 @@ export const createScoreSheetService = ({
       boardModel.findById(boardId),
       teamModel.findById(teamId),
       submissionModel.findById(submissionId),
-      userModel.findById(judgeId)
+      findJudgeById(judgeId)
     ])
 
     if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
@@ -170,6 +213,24 @@ export const createScoreSheetService = ({
     if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
     if (!submission) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Submission not found'])
     if (!judge) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Judge not found'])
+
+    const scoreableRoundStatuses = relaxedWorkflow ? ['OPEN', 'SCORING'] : ['SCORING']
+    const scoreableBoardStatuses = relaxedWorkflow ? ['ASSIGNED', 'SCORING'] : ['SCORING']
+    if (!scoreableRoundStatuses.includes(round.status)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round must be in SCORING status before judges can score'])
+    }
+    if (!scoreableBoardStatuses.includes(board.status)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Judging board must be in SCORING status before judges can score'])
+    }
+    if (team.status !== 'CONFIRMED') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only confirmed teams can be scored'])
+    }
+    if (!['SUBMITTED', 'ACCEPTED'].includes(submission.status)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only submitted or accepted submissions can be scored'])
+    }
+    if (!isActiveJudge(judge)) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['Judge account must be ACTIVE and have the JUDGE role to score'])
+    }
 
     if (round.eventId?.toString() !== eventId.toString()) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round does not belong to the specified event'])
@@ -223,7 +284,7 @@ export const createScoreSheetService = ({
 
     const criteriaById = new Map(criteria.map(criterion => [criterion._id.toString(), criterion]))
     for (const score of scores) {
-      const criterion = criteriaById.get(score.criterionId.toString())
+      const criterion = criteriaById.get(getScoreCriterionId(score))
       if (!criterion) {
         throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Score criterion does not belong to the selected rubric'])
       }
@@ -236,6 +297,44 @@ export const createScoreSheetService = ({
     }
 
     return { criteria, criteriaById }
+  }
+
+  const validateCompleteScores = async ({ rubricId, scores = [] }) => {
+    const { criteria } = await validateScores({ rubricId, scores })
+    const requiredCriterionIds = criteria.map(criterion => criterion._id.toString())
+    const submittedCriterionIds = scores.map(getScoreCriterionId).filter(Boolean)
+    const uniqueSubmittedCriterionIds = new Set(submittedCriterionIds)
+
+    if (submittedCriterionIds.length !== scores.length || uniqueSubmittedCriterionIds.size !== submittedCriterionIds.length) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Score sheet must contain exactly one score for each rubric criterion'])
+    }
+
+    const missingCriterionIds = requiredCriterionIds.filter(criterionId => !uniqueSubmittedCriterionIds.has(criterionId))
+    const unexpectedCriterionIds = submittedCriterionIds.filter(criterionId => !requiredCriterionIds.includes(criterionId))
+
+    if (missingCriterionIds.length > 0 || unexpectedCriterionIds.length > 0) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Score sheet must contain exactly one score for each rubric criterion'])
+    }
+  }
+
+  const ensureExistingScoreSheetCanBeChanged = async (scoreSheet) => {
+    const eventId = getIdString(scoreSheet.eventId)
+    const roundId = getIdString(scoreSheet.roundId)
+    const boardId = getIdString(scoreSheet.boardId)
+    const teamId = getIdString(scoreSheet.teamId)
+    const submissionId = getIdString(scoreSheet.submissionId)
+    const judgeId = getIdString(scoreSheet.judgeId)
+    const rubricId = getIdString(scoreSheet.rubricId)
+
+    return await ensureJudgeContext({
+      eventId,
+      roundId,
+      boardId,
+      teamId,
+      submissionId,
+      judgeId,
+      rubricId
+    })
   }
 
   const replaceSheetScores = async ({
@@ -259,10 +358,10 @@ export const createScoreSheetService = ({
     })))
   }
 
-  const listScoreSheets = async (query = {}) => {
+  const listScoreSheets = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
     const skip = (page - 1) * limit
-    const filter = buildScoreSheetFilter(query)
+    const filter = mergeJudgeScope(buildScoreSheetFilter(query), actor)
 
     const [scoreSheets, totalItems] = await Promise.all([
       repository.findScoreSheets({ filter, skip, limit }),
@@ -280,8 +379,12 @@ export const createScoreSheetService = ({
     }
   }
 
-  const getScoreSheetById = async (id) => {
-    return normalizeScoreSheet(await ensureScoreSheetExists(id))
+  const getScoreSheetById = async (id, actor = {}) => {
+    const scoreSheet = await ensureScoreSheetExists(id)
+    if (!isPrivilegedEventActor(actor) && (!actorHasRole(actor, 'JUDGE') || !idsEqual(scoreSheet.judgeId, getActorId(actor)))) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['You cannot access another judge score sheet'])
+    }
+    return normalizeScoreSheet(scoreSheet)
   }
 
   const createScoreSheet = async (payload = {}, actor = {}) => {
@@ -356,6 +459,8 @@ export const createScoreSheetService = ({
       throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only the assigned judge can update this score sheet'])
     }
 
+    await ensureExistingScoreSheetCanBeChanged(existingScoreSheet)
+
     const rubricId = existingScoreSheet.rubricId?._id?.toString?.() || existingScoreSheet.rubricId?.toString?.()
     const scoreInput = payload.scores || []
     const { criteriaById } = await validateScores({ rubricId, scores: scoreInput })
@@ -395,6 +500,12 @@ export const createScoreSheetService = ({
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Score sheet must contain at least one score before submission'])
     }
 
+    const context = await ensureExistingScoreSheetCanBeChanged(scoreSheet)
+    await validateCompleteScores({
+      rubricId: context.rubric._id.toString(),
+      scores: scoreSheet.scoreIds || []
+    })
+
     const submittedAt = new Date()
     const updatedScoreSheet = await repository.updateScoreSheetById(id, {
       status: 'LOCKED',
@@ -430,6 +541,6 @@ export const createScoreSheetService = ({
 }
 
 export const SCORE_SHEET_SERVICE = {
-  ...createScoreSheetService(),
+  ...createScoreSheetService({ relaxedWorkflow: env.workflow.relaxedDemoRules }),
   normalizeScoreSheet
 }

@@ -5,7 +5,7 @@ import { responseSuccess } from '#utils/responseUtil.js'
 
 const listScoreSheets = async (req, res, next) => {
   try {
-    const { scoreSheets, pagination } = await SCORE_SHEET_SERVICE.listScoreSheets(req.validated?.query || req.query)
+    const { scoreSheets, pagination } = await SCORE_SHEET_SERVICE.listScoreSheets(req.validated?.query || req.query, req.user)
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get score sheets successfully',
       data: scoreSheets,
@@ -30,7 +30,7 @@ const createScoreSheet = async (req, res, next) => {
 
 const getScoreSheetById = async (req, res, next) => {
   try {
-    const scoreSheet = await SCORE_SHEET_SERVICE.getScoreSheetById(req.params.id)
+    const scoreSheet = await SCORE_SHEET_SERVICE.getScoreSheetById(req.params.id, req.user)
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get score sheet successfully',
       data: scoreSheet

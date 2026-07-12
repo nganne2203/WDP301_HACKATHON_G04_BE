@@ -3,6 +3,7 @@ import Workshop from '#models/workshop.model.js'
 import WorkshopQuestion from '#models/workshopQuestion.model.js'
 import WorkshopFeedback from '#models/workshopFeedback.model.js'
 import WorkshopRating from '#models/workshopRating.model.js'
+import Participant from '#models/participant.model.js'
 
 const workshopPopulate = [
   { path: 'eventId', select: 'title seriesName season year status' },
@@ -73,6 +74,28 @@ const deleteWorkshopInteractions = async (workshopId) => {
 
 const findEventById = async (id) => {
   return await Event.findById(id)
+}
+
+const findEventIdsForParticipant = async (userId) => {
+  return await Participant.find({ userId, status: 'JOINED' }).distinct('eventId')
+}
+
+const findOpenRegistrationEventIds = async (now = new Date()) => {
+  return await Event.find({
+    status: 'OPEN_REGISTRATION',
+    $and: [
+      { $or: [{ registrationStart: { $exists: false } }, { registrationStart: null }, { registrationStart: { $lte: now } }] },
+      { $or: [{ registrationEnd: { $exists: false } }, { registrationEnd: null }, { registrationEnd: { $gte: now } }] }
+    ]
+  }).distinct('_id')
+}
+
+const findNonDraftEventIds = async () => {
+  return await Event.find({ status: { $ne: 'DRAFT' } }).distinct('_id')
+}
+
+const findJoinedParticipant = async ({ eventId, userId }) => {
+  return await Participant.findOne({ eventId, userId, status: 'JOINED' })
 }
 
 const createQuestion = async (data) => {
@@ -177,6 +200,10 @@ export const WORKSHOP_REPOSITORY = {
   deleteWorkshopById,
   deleteWorkshopInteractions,
   findEventById,
+  findEventIdsForParticipant,
+  findOpenRegistrationEventIds,
+  findNonDraftEventIds,
+  findJoinedParticipant,
   createQuestion,
   findQuestions,
   countQuestions,

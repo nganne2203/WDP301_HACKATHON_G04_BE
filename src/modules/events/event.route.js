@@ -295,6 +295,48 @@ router.patch(
   EVENT_CONTROLLER.updateEventStatus
 )
 
+router.post(
+  '/:id/open-registration',
+  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
+  EVENT_CONTROLLER.openRegistration
+)
+
+router.post(
+  '/:id/close-registration',
+  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
+  EVENT_CONTROLLER.closeRegistration
+)
+
+router.post(
+  '/:id/start',
+  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
+  EVENT_CONTROLLER.startEvent
+)
+
+router.post(
+  '/:id/start-scoring',
+  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
+  EVENT_CONTROLLER.startScoring
+)
+
+router.post(
+  '/:id/complete',
+  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
+  EVENT_CONTROLLER.completeEvent
+)
+
+router.post(
+  '/:id/archive',
+  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
+  EVENT_CONTROLLER.archiveEvent
+)
+
 /**
  * @swagger
  * /api/events/{id}:

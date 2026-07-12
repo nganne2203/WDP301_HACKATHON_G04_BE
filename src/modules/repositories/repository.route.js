@@ -30,6 +30,13 @@ router.post(
 )
 
 router.get(
+  '/missing-confirmed-teams',
+  permissionMiddleware(PERMISSIONS.GITHUB_REPOSITORY_CREATE),
+  validationHandlingMiddleware(REPOSITORY_VALIDATION.missingConfirmedTeams),
+  REPOSITORY_CONTROLLER.listConfirmedTeamsMissingRepositories
+)
+
+router.get(
   '/:id',
   permissionMiddleware(PERMISSIONS.EVENT_VIEW),
   validationHandlingMiddleware(REPOSITORY_VALIDATION.getRepositoryById),

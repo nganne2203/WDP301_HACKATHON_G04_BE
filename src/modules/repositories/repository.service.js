@@ -9,6 +9,8 @@ import Team from '#models/team.model.js'
 import Commit from '#models/commit.model.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { GITHUB_SERVICE } from '#modules/github/github.service.js'
+import { actorHasRole } from '#utils/domainAccessUtil.js'
+import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
 
 const ensureObjectId = (id, fieldName = 'repository id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -79,7 +81,9 @@ const normalizeRepository = (repository) => {
     status: plain.status,
     accessState: plain.accessState,
     accessGrantedAt: plain.accessGrantedAt || null,
+    accessRevokeRequestedAt: plain.accessRevokeRequestedAt || null,
     accessRevokedAt: plain.accessRevokedAt || null,
+    lastAccessRevokeError: plain.lastAccessRevokeError || null,
     webhookRegisteredAt: plain.webhookRegisteredAt || null,
     webhookStatus: plain.webhookStatus || 'NOT_CONFIGURED',
     lastWebhookRegistrationError: plain.lastWebhookRegistrationError || null,
@@ -131,13 +135,15 @@ const buildFilter = (query = {}) => {
   if (query.status) filter.status = query.status
   if (query.accessState) filter.accessState = query.accessState
   if (query.search) {
-    const pattern = new RegExp(query.search, 'i')
-    filter.$or = [
-      { repositoryFullName: pattern },
-      { githubOwner: pattern },
-      { githubRepo: pattern },
-      { repoName: pattern }
-    ]
+    const pattern = buildSafeSearchRegex(query.search)
+    if (pattern) {
+      filter.$or = [
+        { repositoryFullName: pattern },
+        { githubOwner: pattern },
+        { githubRepo: pattern },
+        { repoName: pattern }
+      ]
+    }
   }
 
   return filter
@@ -158,6 +164,13 @@ const ensureTeamBelongsToEvent = async ({ eventId, teamId }) => {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified event'])
   }
   return team
+}
+
+const ensureRepositoryEligibleTeam = ({ team, overrideReason, actor = {} }) => {
+  if (!team.status || team.status === 'CONFIRMED') return
+  if (actorHasRole(actor, 'ADMIN') && overrideReason?.trim()) return
+
+  throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Repository linking is only allowed for CONFIRMED teams unless an admin override reason is provided'])
 }
 
 const ensureRoundBelongsToEvent = async ({ eventId, roundId }) => {
@@ -204,6 +217,31 @@ export const createRepositoryService = ({
   }
 
   const getRepositoryById = async (id) => normalizeRepository(await ensureRepositoryExists(id))
+
+  const listConfirmedTeamsMissingRepositories = async ({ eventId }) => {
+    const event = await ensureEventExists(eventId)
+    const [confirmedTeams, repositories] = await Promise.all([
+      Team.find({ eventId: event._id, status: 'CONFIRMED' }).sort({ name: 1, createdAt: 1 }),
+      repository.findAll({ filter: { eventId: event._id }, skip: 0, limit: 10000 })
+    ])
+    const teamIdsWithRepositories = new Set(repositories
+      .map(item => item.teamId?._id?.toString?.() || item.teamId?.toString?.())
+      .filter(Boolean))
+    const teams = confirmedTeams
+      .filter(team => !teamIdsWithRepositories.has(team._id.toString()))
+      .map(normalizeTeam)
+
+    return {
+      event: normalizeEvent(event),
+      teams,
+      summary: {
+        confirmedTeamCount: confirmedTeams.length,
+        repositoryLinkedTeamCount: teamIdsWithRepositories.size,
+        missingRepositoryCount: teams.length,
+        provisioningMode: 'BULK_OR_MANUAL_REQUIRED'
+      }
+    }
+  }
 
   const listRepositoryCommits = async ({ repositoryId, query = {} }) => {
     const existingRepository = await ensureRepositoryExists(repositoryId)
@@ -361,9 +399,14 @@ export const createRepositoryService = ({
     }
   }
 
-  const createRepository = async (payload = {}) => {
+  const createRepository = async (payload = {}, actor = {}) => {
     const event = await ensureEventExists(payload.eventId)
-    await ensureTeamBelongsToEvent({ eventId: event._id, teamId: payload.teamId })
+    const team = await ensureTeamBelongsToEvent({ eventId: event._id, teamId: payload.teamId })
+    ensureRepositoryEligibleTeam({
+      team,
+      overrideReason: payload.overrideReason,
+      actor
+    })
     await ensureRoundBelongsToEvent({ eventId: event._id, roundId: payload.roundId })
 
     const existingRepository = await repository.findByTeamId(payload.teamId)
@@ -489,6 +532,7 @@ export const createRepositoryService = ({
   return {
     listRepositories,
     getRepositoryById,
+    listConfirmedTeamsMissingRepositories,
     listRepositoryCommits,
     listStaticAnalysis,
     listCommitDiffs,

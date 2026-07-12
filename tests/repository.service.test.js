@@ -76,6 +76,64 @@ test('createRepository stores a linked repository and listRepositories filters b
   }
 })
 
+test('listRepositories treats search text as plain text', async () => {
+  let receivedFilter = null
+  const repository = {
+    findAll: async ({ filter }) => {
+      receivedFilter = filter
+      return []
+    },
+    count: async () => 0
+  }
+  const service = createRepositoryService({ repository })
+
+  await service.listRepositories({ search: '[team]+repo' })
+
+  assert.equal(receivedFilter.$or.length, 4)
+  assert.equal(receivedFilter.$or[0].repositoryFullName.source, '\\[team\\]\\+repo')
+})
+
+test('listConfirmedTeamsMissingRepositories reports confirmed teams without a repo', async () => {
+  const eventModule = await import('../src/models/event.model.js')
+  const teamModule = await import('../src/models/team.model.js')
+
+  const EventModel = eventModule.default
+  const TeamModel = teamModule.default
+
+  const originalEventFindById = EventModel.findById
+  const originalTeamFind = TeamModel.find
+
+  EventModel.findById = async () => ({ _id: '000000000000000000000101', title: 'SEAL' })
+  TeamModel.find = () => ({
+    sort: async () => [
+      { _id: '000000000000000000000201', eventId: '000000000000000000000101', name: 'Team Alpha', status: 'CONFIRMED' },
+      { _id: '000000000000000000000202', eventId: '000000000000000000000101', name: 'Team Beta', status: 'CONFIRMED' }
+    ]
+  })
+
+  const repository = {
+    findAll: async () => [
+      { _id: 'repo-1', eventId: '000000000000000000000101', teamId: '000000000000000000000201' }
+    ],
+    count: async () => 1
+  }
+  const service = createRepositoryService({ repository })
+
+  try {
+    const result = await service.listConfirmedTeamsMissingRepositories({
+      eventId: '000000000000000000000101'
+    })
+
+    assert.equal(result.summary.confirmedTeamCount, 2)
+    assert.equal(result.summary.missingRepositoryCount, 1)
+    assert.equal(result.teams[0].id, '000000000000000000000202')
+    assert.equal(result.summary.provisioningMode, 'BULK_OR_MANUAL_REQUIRED')
+  } finally {
+    EventModel.findById = originalEventFindById
+    TeamModel.find = originalTeamFind
+  }
+})
+
 test('createRepository rejects linking the same team twice', async () => {
   const eventModule = await import('../src/models/event.model.js')
   const teamModule = await import('../src/models/team.model.js')
@@ -115,6 +173,69 @@ test('createRepository rejects linking the same team twice', async () => {
         error.code === 'CONFLICT' &&
         error.errors.includes('A repository is already linked to this team')
     )
+  } finally {
+    EventModel.findById = originalEventFindById
+    TeamModel.findById = originalTeamFindById
+  }
+})
+
+test('createRepository requires confirmed teams unless admin override is provided', async () => {
+  const eventModule = await import('../src/models/event.model.js')
+  const teamModule = await import('../src/models/team.model.js')
+
+  const EventModel = eventModule.default
+  const TeamModel = teamModule.default
+
+  const originalEventFindById = EventModel.findById
+  const originalTeamFindById = TeamModel.findById
+
+  let createdRecord = null
+  const repository = {
+    count: async () => 0,
+    findAll: async () => [],
+    findById: async (id) => createdRecord || ({ _id: id, eventId: '000000000000000000000101', teamId: '000000000000000000000201' }),
+    findByTeamId: async () => null,
+    listCommitsByRepository: async () => [],
+    countCommitsByRepository: async () => 0,
+    create: async (data) => {
+      createdRecord = { _id: '000000000000000000000901', ...data }
+      return createdRecord
+    },
+    updateById: async () => null
+  }
+
+  EventModel.findById = async () => ({ _id: '000000000000000000000101' })
+  TeamModel.findById = async () => ({
+    _id: '000000000000000000000201',
+    eventId: '000000000000000000000101',
+    status: 'WAITLISTED'
+  })
+
+  const service = createRepositoryService({ repository })
+
+  try {
+    await assert.rejects(
+      service.createRepository({
+        eventId: '000000000000000000000101',
+        teamId: '000000000000000000000201',
+        githubOwner: 'seal-org',
+        githubRepo: 'team-alpha',
+        repositoryUrl: 'https://github.com/seal-org/team-alpha'
+      }, { id: 'coordinator-1', roles: ['COORDINATOR'] }),
+      error => error instanceof ApiError &&
+        error.errors.includes('Repository linking is only allowed for CONFIRMED teams unless an admin override reason is provided')
+    )
+
+    const created = await service.createRepository({
+      eventId: '000000000000000000000101',
+      teamId: '000000000000000000000201',
+      githubOwner: 'seal-org',
+      githubRepo: 'team-alpha',
+      repositoryUrl: 'https://github.com/seal-org/team-alpha',
+      overrideReason: 'Manual recovery link'
+    }, { id: 'admin-1', roles: ['ADMIN'] })
+
+    assert.equal(created.repositoryFullName, 'seal-org/team-alpha')
   } finally {
     EventModel.findById = originalEventFindById
     TeamModel.findById = originalTeamFindById

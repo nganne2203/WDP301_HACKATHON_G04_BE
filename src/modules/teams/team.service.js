@@ -39,9 +39,16 @@ const ACTIVE_TEAM_STATUSES = [TEAM_STATUSES.WAITING_FOR_MEMBERS, TEAM_STATUSES.W
 const ACTIVE_PARTICIPANT_STATUSES = ['INVITED', 'JOINED']
 const COORDINATOR_ROLES = ['ADMIN', 'COORDINATOR', 'EVENT_COORDINATOR']
 const MENTOR_SCOPED_ROLES = ['MENTOR', 'SPEAKER']
+const IN_APP_ONLY = ['IN_APP']
 const EVENT_STATUSES = {
   OPEN_REGISTRATION: 'OPEN_REGISTRATION',
   REGISTRATION_CLOSED: 'REGISTRATION_CLOSED'
+}
+
+const ensureConfirmedTeamForMentorAssignment = (team) => {
+  if (team?.status !== TEAM_STATUSES.CONFIRMED) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Mentors can only be assigned to confirmed teams'])
+  }
 }
 const REGISTRATION_CLOSE_REASONS = {
   CAPACITY_REACHED: 'CAPACITY_REACHED',
@@ -557,6 +564,84 @@ const buildMentorDiff = ({ previousMentorIds = [], nextMentorIds = [] }) => {
   }
 }
 
+const getJoinedParticipantUsers = (team = {}) => {
+  const participants = Array.isArray(team.participants) ? team.participants : []
+  const users = participants
+    .filter(participant => participant?.status === 'JOINED')
+    .map(participant => participant.user)
+    .filter(Boolean)
+
+  return Array.from(new Map(users.map(user => [getId(user), user])).values())
+}
+
+const buildBoardMentorAssignmentJobs = ({ result, mentorUsers = [] } = {}) => {
+  const jobs = []
+  const addedMentorIds = uniqueIds(
+    (result?.audit?.teamDiffs || []).flatMap(diff => diff.addedMentorIds || [])
+  )
+  if (addedMentorIds.length === 0) return jobs
+
+  const addedMentors = mentorUsers.filter(mentor => addedMentorIds.includes(getId(mentor)))
+  const eventTitle = result?.eventTitle || 'the event'
+  const boardNumber = result?.boardNumber
+
+  for (const mentor of addedMentors) {
+    jobs.push({
+      kind: 'notification',
+      payload: {
+        user: mentor,
+        title: 'Mentor board assignment',
+        message: `You were assigned to board ${boardNumber} for ${eventTitle}.`,
+        type: 'SYSTEM',
+        dedupeKey: `mentor-board-assigned:${result.eventId}:${boardNumber}:${getId(mentor)}`,
+        metadata: {
+          action: 'MENTOR_BOARD_ASSIGNED',
+          eventId: result.eventId,
+          boardNumber,
+          teamIds: result.teamIds,
+          targetPath: '/mentor/teams'
+        },
+        channels: IN_APP_ONLY
+      }
+    })
+  }
+
+  for (const team of result?.teams || []) {
+    const users = getJoinedParticipantUsers(team)
+    const mentorNames = mentorUsers
+      .map(mentor => mentor.fullName || mentor.email)
+      .filter(Boolean)
+      .join(', ')
+    const message = mentorNames
+      ? `${mentorNames} ${mentorUsers.length === 1 ? 'has' : 'have'} been assigned to ${team.name}.`
+      : `Mentors have been assigned to ${team.name}.`
+
+    for (const user of users) {
+      jobs.push({
+        kind: 'notification',
+        payload: {
+          user,
+          title: 'Team mentors assigned',
+          message,
+          type: 'SYSTEM',
+          dedupeKey: `team-mentors-assigned:${result.eventId}:${boardNumber}:${team.id}:${getId(user)}`,
+          metadata: {
+            action: 'TEAM_MENTORS_ASSIGNED',
+            eventId: result.eventId,
+            boardNumber,
+            teamId: team.id,
+            mentorIds: result.mentorIds,
+            targetPath: '/participant/team'
+          },
+          channels: IN_APP_ONLY
+        }
+      })
+    }
+  }
+
+  return jobs
+}
+
 const ensureConfirmedSlotsNotFull = async ({ event, repository, session }) => {
   const confirmedCount = await repository.countTeams({
     eventId: getId(event),
@@ -970,10 +1055,10 @@ const runWithOptionalTransaction = async ({ repository, logger, work }) => {
     const unsupportedTransaction = /Transaction numbers|replica set member|mongos/i.test(error.message)
     if (!unsupportedTransaction) throw error
 
-    logger.warn('MongoDB transaction is not available; running team flow without transaction', {
+    logger.error('MongoDB transaction is not available for a critical team flow', {
       error: error.message
     })
-    return await work(null)
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['MongoDB transactions are required for this team operation; configure MongoDB as a replica set'])
   } finally {
     await session.endSession()
   }
@@ -1286,6 +1371,7 @@ export const createTeamService = ({
   chatRepository = CHAT_REPOSITORY,
   emailService = EMAIL_SERVICE,
   notificationService = NOTIFICATION_SERVICE,
+  assignmentNotificationsEnabled = false,
   logger = LOGGER
 } = {}) => {
   const listTeams = async (query = {}, actor = {}) => {
@@ -1622,7 +1708,7 @@ export const createTeamService = ({
               }, { session })
             })
 
-            // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
+            // Repository provisioning is bulk/manual; use the missing-confirmed-teams report to reconcile.
           }
 
           const createdTeam = await repository.findTeamById(getId(team), { session })
@@ -1882,7 +1968,7 @@ export const createTeamService = ({
               allowUnassignedPlacement: true
             })
 
-            // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
+            // Repository provisioning is bulk/manual; use the missing-confirmed-teams report to reconcile.
 
             if (CONFIRMED_TEAM_STATUSES.includes(updatedTeam.status) && confirmedCountBeforeUpdate + 1 >= getMaxTeams(event)) {
               await rejectOpenTeams({
@@ -2263,7 +2349,7 @@ export const createTeamService = ({
             confirmedCount
           })
 
-          // TODO Phase 5: trigger repository provisioning hook after the team has a confirmed placement.
+          // Repository provisioning is bulk/manual; use the missing-confirmed-teams report to reconcile.
         } else if (nextStatus === TEAM_STATUSES.REJECTED) {
           updatedTeam = await repository.updateTeamById(getId(team), {
             status: TEAM_STATUSES.REJECTED,
@@ -2331,6 +2417,7 @@ export const createTeamService = ({
       work: async (session) => {
         const team = await repository.findTeamById(teamId, { session })
         if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
+        ensureConfirmedTeamForMentorAssignment(team)
 
         const previousMentorIds = uniqueIds(team.mentorIds || [])
         const { mentorIds } = await validateMentorAssignments({
@@ -2360,7 +2447,7 @@ export const createTeamService = ({
     ensureTeamManagementPermission(actor)
     ensureObjectId(payload.eventId, 'event id')
 
-    return await runWithOptionalTransaction({
+    const result = await runWithOptionalTransaction({
       repository,
       logger,
       work: async (session) => {
@@ -2376,7 +2463,8 @@ export const createTeamService = ({
         const teams = await repository.findTeams({
           filter: {
             eventId: payload.eventId,
-            boardNumber: Number(payload.boardNumber)
+            boardNumber: Number(payload.boardNumber),
+            status: TEAM_STATUSES.CONFIRMED
           },
           limit: 1000,
           sort: { boardNumber: 1, placementSlot: 1, createdAt: 1 },
@@ -2408,6 +2496,7 @@ export const createTeamService = ({
 
         return {
           eventId: getId(event),
+          eventTitle: event.title,
           boardNumber: Number(payload.boardNumber),
           mentorIds,
           updatedCount: updatedTeams.length,
@@ -2419,6 +2508,19 @@ export const createTeamService = ({
         }
       }
     })
+
+    if (assignmentNotificationsEnabled && notificationService?.notifyUser) {
+      const addedMentorIds = uniqueIds(
+        (result.audit?.teamDiffs || []).flatMap(diff => diff.addedMentorIds || [])
+      )
+      const mentorUsers = addedMentorIds.length > 0
+        ? await repository.findUsersByIds(result.mentorIds)
+        : []
+      const jobs = buildBoardMentorAssignmentJobs({ result, mentorUsers })
+      await sendJobs({ jobs, emailService, notificationService, logger })
+    }
+
+    return result
   }
 
   const getEventTeamCapacity = async (eventId, actor = {}) => {
@@ -2454,4 +2556,4 @@ export const createTeamService = ({
   }
 }
 
-export const TEAM_SERVICE = createTeamService()
+export const TEAM_SERVICE = createTeamService({ assignmentNotificationsEnabled: true })
