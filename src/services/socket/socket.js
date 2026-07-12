@@ -6,6 +6,7 @@ import { USER_SERVICE } from '#modules/users/user.service.js'
 import { canAccessAuthenticatedRoutes } from '#utils/userAccountUtil.js'
 import { registerChatSocketHandlers } from '#modules/chat/chat.socket.js'
 import { LOGGER } from '#utils/logger.js'
+import { getUserRoom, setSocketServer } from './socket-emitter.js'
 
 const getTokenFromSocket = (socket) => {
   const authToken = socket.handshake.auth?.token
@@ -58,6 +59,7 @@ export const initializeSocketServer = (httpServer, app) => {
 
   io.on('connection', (socket) => {
     LOGGER.info('Socket connected', { socketId: socket.id, userId: socket.user.id })
+    socket.join(getUserRoom(socket.user.id))
     registerChatSocketHandlers(io, socket)
 
     socket.on('disconnect', (reason) => {
@@ -66,5 +68,6 @@ export const initializeSocketServer = (httpServer, app) => {
   })
 
   app?.set('io', io)
+  setSocketServer(io)
   return io
 }

@@ -103,6 +103,10 @@ const listRatings = {
   })
 }
 
+const getRatingStats = {
+  params: idParam
+}
+
 const createFeedback = {
   params: idParam,
   body: Joi.object({
@@ -139,6 +143,7 @@ export const WORKSHOP_VALIDATION = {
   voteQuestion,
   createRating,
   listRatings,
+  getRatingStats,
   createFeedback,
   listFeedback,
   createGoogleMeet

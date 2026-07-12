@@ -87,6 +87,12 @@ const findTeamById = async (id) => {
   return await Team.findById(id)
 }
 
+const findConfirmedTeamIds = async ({ eventId } = {}) => {
+  const filter = { status: 'CONFIRMED' }
+  if (eventId) filter.eventId = eventId
+  return await Team.find(filter).distinct('_id')
+}
+
 export const PARTICIPANT_REPOSITORY = {
   count,
   create,
@@ -100,5 +106,6 @@ export const PARTICIPANT_REPOSITORY = {
   deleteById,
   findEventById,
   findUserById,
-  findTeamById
+  findTeamById,
+  findConfirmedTeamIds
 }

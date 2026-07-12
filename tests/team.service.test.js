@@ -206,7 +206,7 @@ test('createTeam sends only invitation email for unknown invitees', async () => 
     _id: 'event-1',
     title: 'SEAL Hackathon',
     status: 'OPEN_REGISTRATION',
-    minTeamMembers: 3,
+    minTeamMembers: 2,
     maxTeamMembers: 5,
     maxTeams: 30
   }
@@ -297,7 +297,7 @@ test('acceptInvitation creates account and sends temporary account email for unk
     _id: 'event-1',
     title: 'SEAL Hackathon',
     status: 'OPEN_REGISTRATION',
-    minTeamMembers: 3,
+    minTeamMembers: 2,
     maxTeamMembers: 5,
     maxTeams: 30
   }
@@ -346,6 +346,7 @@ test('acceptInvitation creates account and sends temporary account email for unk
     },
     findParticipantByEventAndUser: async () => null,
     findBlockingInvitation: async () => null,
+    findTracksByEvent: async () => [],
     upsertParticipant: async () => ({}),
     updateTeamById: async (id, data) => {
       if (data.$addToSet?.memberIds) {
@@ -407,6 +408,10 @@ test('acceptInvitation creates account and sends temporary account email for unk
   assert.equal(createdUsers[0].status, 'ACTIVE')
   assert.equal(createdUsers[0].mustChangePassword, true)
   assert.equal(invitation.invitedUserId, 'member-1')
+  assert.equal(team.status, 'CONFIRMED')
+  assert.equal(team.trackId, null)
+  assert.equal(team.boardNumber, null)
+  assert.equal(team.placementSlot, null)
   assert.equal(sentEmails.length, 1)
   assert.equal(sentEmails[0].template, EMAIL_TEMPLATE_KEYS.TEMPORARY_ACCOUNT)
   assert.equal(sentEmails[0].to, 'member@example.com')
@@ -856,6 +861,36 @@ test('assignMentorsByBoard updates every team in the selected board', async () =
   const boardNumber = 2
   const mentorA = { _id: '000000000000000000000901', email: 'mentor.a@example.com', fullName: 'Mentor A', status: 'ACTIVE', roles: [{ name: 'MENTOR' }] }
   const mentorB = { _id: '000000000000000000000902', email: 'mentor.b@example.com', fullName: 'Mentor B', status: 'ACTIVE', roles: [{ name: 'MENTOR' }] }
+  const participantsByTeam = {
+    '000000000000000000000111': [
+      {
+        _id: '000000000000000000001111',
+        eventId,
+        teamId: '000000000000000000000111',
+        userId: { _id: '000000000000000000000301', email: 'leader1@example.com', fullName: 'Leader One', status: 'ACTIVE' },
+        teamRole: 'LEADER',
+        status: 'JOINED'
+      },
+      {
+        _id: '000000000000000000001112',
+        eventId,
+        teamId: '000000000000000000000111',
+        userId: { _id: '000000000000000000000302', email: 'member1@example.com', fullName: 'Member One', status: 'ACTIVE' },
+        teamRole: 'MEMBER',
+        status: 'JOINED'
+      }
+    ],
+    '000000000000000000000112': [
+      {
+        _id: '000000000000000000001113',
+        eventId,
+        teamId: '000000000000000000000112',
+        userId: { _id: '000000000000000000000303', email: 'leader2@example.com', fullName: 'Leader Two', status: 'ACTIVE' },
+        teamRole: 'LEADER',
+        status: 'JOINED'
+      }
+    ]
+  }
   const teams = [
     {
       _id: '000000000000000000000111',
@@ -886,10 +921,26 @@ test('assignMentorsByBoard updates every team in the selected board', async () =
       status: 'CONFIRMED',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
+    },
+    {
+      _id: '000000000000000000000113',
+      eventId: { _id: eventId, title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' },
+      trackId: null,
+      leaderId: { _id: 'leader-3', email: 'leader3@example.com', fullName: 'Leader Three', status: 'ACTIVE' },
+      memberIds: [],
+      mentorIds: [],
+      name: 'Cancelled Board Team',
+      boardNumber,
+      participants: [],
+      invitations: [],
+      status: 'CANCELLED',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     }
   ]
 
   const updatedTeamsById = new Map()
+  const notifications = []
   const repository = {
     createSession,
     findEventById: async (id) => id === eventId ? { _id: eventId, title: 'SEAL Runtime Sandbox', status: 'OPEN_REGISTRATION' } : null,
@@ -897,7 +948,8 @@ test('assignMentorsByBoard updates every team in the selected board', async () =
     findTeams: async ({ filter }) => {
       assert.equal(filter.eventId, eventId)
       assert.equal(filter.boardNumber, boardNumber)
-      return teams
+      assert.equal(filter.status, 'CONFIRMED')
+      return teams.filter((team) => team.status === filter.status)
     },
     updateTeamById: async (id, data) => {
       const source = teams.find((team) => team._id === id)
@@ -909,11 +961,22 @@ test('assignMentorsByBoard updates every team in the selected board', async () =
       updatedTeamsById.set(id, updated)
       return updated
     },
-    findParticipantsByTeam: async () => [],
+    findParticipantsByTeam: async (teamId) => participantsByTeam[teamId] || [],
     findInvitationsByTeam: async () => []
   }
+  const notificationService = {
+    notifyUser: async (payload) => {
+      notifications.push(payload)
+      return payload
+    }
+  }
 
-  const service = createTeamService({ repository, logger: createLogger() })
+  const service = createTeamService({
+    repository,
+    notificationService,
+    assignmentNotificationsEnabled: true,
+    logger: createLogger()
+  })
   const result = await service.assignMentorsByBoard({
     eventId,
     boardNumber,
@@ -930,6 +993,29 @@ test('assignMentorsByBoard updates every team in the selected board', async () =
   assert.deepEqual(result.teams[0].mentorIds, [mentorA._id, mentorB._id])
   assert.deepEqual(result.teams[1].mentorIds, [mentorA._id, mentorB._id])
   assert.deepEqual(updatedTeamsById.get('000000000000000000000111').mentorIds.map((mentor) => mentor._id), [mentorA._id, mentorB._id])
+  assert.equal(notifications.length, 5)
+  assert.equal(notifications.filter(notification => notification.metadata.action === 'MENTOR_BOARD_ASSIGNED').length, 2)
+  assert.equal(notifications.filter(notification => notification.metadata.action === 'TEAM_MENTORS_ASSIGNED').length, 3)
+  assert.equal(new Set(notifications.map(notification => notification.dedupeKey)).size, notifications.length)
+})
+
+test('updateTeamMentors rejects teams that are not confirmed', async () => {
+  const teamId = '000000000000000000000113'
+  const repository = {
+    createSession,
+    findTeamById: async () => ({ _id: teamId, status: 'CANCELLED', mentorIds: [] })
+  }
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.updateTeamMentors(teamId, { mentorIds: [] }, {
+      id: 'coord-1',
+      permissions: ['TEAM_UPDATE']
+    }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Mentors can only be assigned to confirmed teams')
+  )
 })
 
 test('assignMentorsByBoard accepts active mentor accounts and rejects inaccessible statuses', async () => {

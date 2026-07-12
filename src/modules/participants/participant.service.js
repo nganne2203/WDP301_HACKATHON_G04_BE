@@ -195,6 +195,18 @@ export const createParticipantService = ({
     return participant
   }
 
+  const ensureParticipantHasConfirmedTeam = async (participant) => {
+    const teamId = participant.teamId?._id || participant.teamId
+    if (!teamId) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only members of confirmed teams can check in'])
+    }
+
+    const team = participant.teamId?.status ? participant.teamId : await repository.findTeamById(teamId)
+    if (!team || team.status !== 'CONFIRMED') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only members of confirmed teams can check in'])
+    }
+  }
+
   const ensureEventExists = async (eventId) => {
     ensureObjectId(eventId, 'event id')
     const event = await repository.findEventById(eventId)
@@ -233,6 +245,10 @@ export const createParticipantService = ({
   const listParticipants = async (query = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
     const filter = buildParticipantFilter(query)
+    if (query.confirmedTeamsOnly) {
+      const confirmedTeamIds = await repository.findConfirmedTeamIds({ eventId: query.eventId })
+      filter.teamId = { $in: confirmedTeamIds }
+    }
     const skip = (page - 1) * limit
 
     const [participants, totalItems] = await Promise.all([
@@ -321,7 +337,8 @@ export const createParticipantService = ({
   }
 
   const updateCheckInStatus = async (id, checkInStatus) => {
-    await ensureParticipantExists(id)
+    const existingParticipant = await ensureParticipantExists(id)
+    await ensureParticipantHasConfirmedTeam(existingParticipant)
     const participant = await repository.updateById(id, {
       checkInStatus
     })
@@ -379,6 +396,15 @@ export const createParticipantService = ({
     }
 
     const eventId = session.eventId?._id?.toString?.() || session.eventId?.toString?.() || session.eventId
+    const existingParticipant = await repository.findByEventAndUser({ eventId, userId: actor.id })
+    if (!existingParticipant) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['You are not registered as a participant for this event'])
+    }
+    await ensureParticipantHasConfirmedTeam(existingParticipant)
+    if (existingParticipant.checkInStatus === 'CHECKED_IN') {
+      throw new ApiError(ERROR_CODES.PARTICIPANT_ALREADY_CHECKED_IN, ['You have already checked in for this event'])
+    }
+
     const participant = await repository.checkInParticipantByEventAndUser({
       eventId,
       userId: actor.id,
@@ -386,14 +412,6 @@ export const createParticipantService = ({
     })
 
     if (participant) return normalizeParticipant(participant)
-
-    const existingParticipant = await repository.findByEventAndUser({ eventId, userId: actor.id })
-    if (!existingParticipant) {
-      throw new ApiError(ERROR_CODES.NOT_FOUND, ['You are not registered as a participant for this event'])
-    }
-    if (existingParticipant.checkInStatus === 'CHECKED_IN') {
-      throw new ApiError(ERROR_CODES.PARTICIPANT_ALREADY_CHECKED_IN, ['You have already checked in for this event'])
-    }
 
     throw new ApiError(ERROR_CODES.CONFLICT, ['Participant could not be checked in'])
   }
