@@ -53,6 +53,7 @@ const TRACK_DEFINITIONS = [
     code: 'A',
     name: 'Requirement & Architecture',
     description: 'Domain analysis, requirements, RAG architecture, and solution design.',
+    examDriveUrl: 'https://drive.google.com/drive/folders/1SEALSpring2026TrackA',
     judges: ['Demo Judge A1', 'Demo Judge A2'],
     teams: [
       ['Đẹp trai có gì sai', 79.75, 3], ['Epoch 0', 68.25, 5], ['food enjoyer', 0, 8],
@@ -64,6 +65,7 @@ const TRACK_DEFINITIONS = [
     code: 'B',
     name: 'Coding, Testing & Deployment',
     description: 'Implementation, testing, execution, reporting, and deployment of the RAG solution.',
+    examDriveUrl: 'https://drive.google.com/drive/folders/1SEALSpring2026TrackB',
     judges: ['Demo Judge B1', 'Demo Judge B2'],
     teams: [
       ['5 anh em siêu nhân', 73, 5], ['APX', 74.5, 4], ['Aqua team', 78, 1],
@@ -75,6 +77,7 @@ const TRACK_DEFINITIONS = [
     code: 'C',
     name: 'AI RAG Product & Experience',
     description: 'Domain-specific RAG product quality, interaction experience, and practical impact.',
+    examDriveUrl: 'https://drive.google.com/drive/folders/1SEALSpring2026TrackC',
     judges: ['Demo Judge C1', 'Demo Judge C2'],
     teams: [
       ['404NotFound', 74.25, 3], ['BitMindz', 58.5, 8], ['KQL', 74, 4],
@@ -529,6 +532,7 @@ export const seedCompletedCycleShowcase = async ({
       name: `Preliminary Board ${TRACK_DEFINITIONS[trackIndex].code}`,
       roundType: 'PRELIMINARY',
       problemStatement: track.description,
+      examDriveUrl: TRACK_DEFINITIONS[trackIndex].examDriveUrl,
       assignedTeamIds: boardTeams.map(record => record.team._id),
       promotedTeamIds: promotedTeams.map(record => record.team._id),
       maxPromotedTeams: 2,

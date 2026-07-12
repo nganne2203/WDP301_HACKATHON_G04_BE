@@ -341,6 +341,11 @@ export const createJudgingBoardService = ({
     const eventId = safePayload.eventId || existingBoard.eventId?._id || existingBoard.eventId
     const roundId = safePayload.roundId || existingBoard.roundId?._id || existingBoard.roundId
     const round = await ensureRoundBelongsToEvent({ eventId, roundId })
+    const eventForUpdate = await ensureEventExists(eventId)
+    if (!relaxedWorkflow && safePayload.judgeIds !== undefined &&
+      (existingBoard.status === 'COMPLETED' || round.status === 'COMPLETED' || eventForUpdate.status === 'COMPLETED')) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Judge assignments cannot be changed after the event or judging round is completed'])
+    }
     const trackId = safePayload.trackId !== undefined ? safePayload.trackId : (existingBoard.trackId?._id || existingBoard.trackId || round.trackId)
 
     await ensureTrackBelongsToEvent({ eventId, trackId })
