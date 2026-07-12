@@ -20,6 +20,7 @@ import Submission from '#models/submission.model.js'
 import Team from '#models/team.model.js'
 import User from '#models/user.model.js'
 import { RUBRIC_REPOSITORY } from '#modules/rubrics/rubric.repository.js'
+import { env } from '#configs/environment.js'
 
 const normalizeScore = (score) => {
   if (!score) return null
@@ -171,7 +172,8 @@ export const createScoreSheetService = ({
   teamModel = Team,
   submissionModel = Submission,
   userModel = User,
-  rubricRepository = RUBRIC_REPOSITORY
+  rubricRepository = RUBRIC_REPOSITORY,
+  relaxedWorkflow = false
 } = {}) => {
   const ensureScoreSheetExists = async (id) => {
     ensureObjectId(id, 'score sheet id')
@@ -212,10 +214,12 @@ export const createScoreSheetService = ({
     if (!submission) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Submission not found'])
     if (!judge) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Judge not found'])
 
-    if (round.status !== 'SCORING') {
+    const scoreableRoundStatuses = relaxedWorkflow ? ['OPEN', 'SCORING'] : ['SCORING']
+    const scoreableBoardStatuses = relaxedWorkflow ? ['ASSIGNED', 'SCORING'] : ['SCORING']
+    if (!scoreableRoundStatuses.includes(round.status)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round must be in SCORING status before judges can score'])
     }
-    if (board.status !== 'SCORING') {
+    if (!scoreableBoardStatuses.includes(board.status)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Judging board must be in SCORING status before judges can score'])
     }
     if (team.status !== 'CONFIRMED') {
@@ -537,6 +541,6 @@ export const createScoreSheetService = ({
 }
 
 export const SCORE_SHEET_SERVICE = {
-  ...createScoreSheetService(),
+  ...createScoreSheetService({ relaxedWorkflow: env.workflow.relaxedDemoRules }),
   normalizeScoreSheet
 }

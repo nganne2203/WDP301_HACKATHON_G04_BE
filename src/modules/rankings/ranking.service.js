@@ -13,6 +13,7 @@ import Repository from '#models/repository.model.js'
 import Round from '#models/round.model.js'
 import Team from '#models/team.model.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
+import { env } from '#configs/environment.js'
 
 const IN_APP_ONLY = ['IN_APP']
 
@@ -294,7 +295,8 @@ export const createRankingService = ({
   roundModel = Round,
   teamModel = Team,
   notificationService = null,
-  repositoryModel = Repository
+  repositoryModel = Repository,
+  relaxedWorkflow = false
 } = {}) => {
   const ensureEventRoundContext = async ({ eventId, roundId }) => {
     ensureObjectId(eventId, 'event id')
@@ -345,12 +347,14 @@ export const createRankingService = ({
     if (scoreSheets.length === 0) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['No submitted score sheets found for ranking generation'])
     }
-    await validateRankingCompleteness({
-      repository,
-      eventId,
-      roundId,
-      scoreSheets
-    })
+    if (!relaxedWorkflow) {
+      await validateRankingCompleteness({
+        repository,
+        eventId,
+        roundId,
+        scoreSheets
+      })
+    }
 
     const roundPlacements = repository.findRoundTeamPlacements
       ? await repository.findRoundTeamPlacements({ eventId, roundId })
@@ -1044,6 +1048,9 @@ export const createRankingService = ({
 }
 
 export const RANKING_SERVICE = {
-  ...createRankingService({ notificationService: NOTIFICATION_SERVICE }),
+  ...createRankingService({
+    notificationService: NOTIFICATION_SERVICE,
+    relaxedWorkflow: env.workflow.relaxedDemoRules
+  }),
   normalizeRanking
 }

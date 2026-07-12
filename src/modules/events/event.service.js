@@ -6,6 +6,7 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
+import { env } from '#configs/environment.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 import { TEAM_REJECTION_REASONS, TEAM_SERVICE } from '#modules/teams/team.service.js'
 import { AUDIT_LOG_REPOSITORY } from '#modules/audit-logs/audit-log.repository.js'
@@ -600,9 +601,11 @@ const createEventService = ({
 
     ensureObjectId(id)
     const existingEvent = await ensureEventExists(id)
-    ensureValidEventTransition(existingEvent, status)
-    ensureManualTransitionWindow(existingEvent, status)
-    if (status === 'SCORING') {
+    if (!env.workflow.relaxedDemoRules) {
+      ensureValidEventTransition(existingEvent, status)
+      ensureManualTransitionWindow(existingEvent, status)
+    }
+    if (status === 'SCORING' && !env.workflow.relaxedDemoRules) {
       await ensureScoringReady(id)
     }
 

@@ -21,6 +21,7 @@ import {
   isPrivilegedEventActor
 } from '#utils/domainAccessUtil.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
+import { env } from '#configs/environment.js'
 
 const SUBMISSION_FIELDS = [
   'repositoryId',
@@ -174,7 +175,8 @@ export const createSubmissionService = ({
   participantModel = Participant,
   repositoryModel = Repository,
   boardModel = JudgingBoard,
-  notificationService = null
+  notificationService = null,
+  relaxedWorkflow = false
 } = {}) => {
   const ensureSubmissionExists = async (id) => {
     ensureObjectId(id, 'submission id')
@@ -366,19 +368,20 @@ export const createSubmissionService = ({
     const submissionOpenAt = round.submissionOpenAt || round.startTime
     const submissionCloseAt = round.submissionCloseAt || round.submissionDeadline
 
-    if (round.status !== 'OPEN') {
+    const acceptedStatuses = relaxedWorkflow ? ['DRAFT', 'OPEN'] : ['OPEN']
+    if (!acceptedStatuses.includes(round.status)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round is not accepting submissions at this time'])
     }
 
-    if (submissionOpenAt && now < new Date(submissionOpenAt)) {
+    if (!relaxedWorkflow && submissionOpenAt && now < new Date(submissionOpenAt)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Submission window has not opened'])
     }
 
-    if (submissionCloseAt && now > new Date(submissionCloseAt)) {
+    if (!relaxedWorkflow && submissionCloseAt && now > new Date(submissionCloseAt)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Submission window has closed'])
     }
 
-    if (round.endTime && now > new Date(round.endTime)) {
+    if (!relaxedWorkflow && round.endTime && now > new Date(round.endTime)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round has already ended'])
     }
   }
@@ -687,6 +690,9 @@ export const createSubmissionService = ({
 }
 
 export const SUBMISSION_SERVICE = {
-  ...createSubmissionService({ notificationService: NOTIFICATION_SERVICE }),
+  ...createSubmissionService({
+    notificationService: NOTIFICATION_SERVICE,
+    relaxedWorkflow: env.workflow.relaxedDemoRules
+  }),
   normalizeSubmission
 }

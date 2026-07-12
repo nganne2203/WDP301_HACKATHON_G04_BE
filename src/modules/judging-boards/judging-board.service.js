@@ -14,6 +14,7 @@ import User from '#models/user.model.js'
 import ScoreSheet from '#models/scoreSheet.model.js'
 import Ranking from '#models/ranking.model.js'
 import { isActiveJudge } from '#utils/domainAccessUtil.js'
+import { env } from '#configs/environment.js'
 
 const BOARD_FIELDS = [
   'eventId',
@@ -252,7 +253,8 @@ const distributeTeamsAcrossBoards = ({ teams = [], boardCount }) => {
 
 export const createJudgingBoardService = ({
   repository = JUDGING_BOARD_REPOSITORY,
-  randomFn = Math.random
+  randomFn = Math.random,
+  relaxedWorkflow = false
 } = {}) => {
   const ensureBoardExists = async (id) => {
     ensureObjectId(id)
@@ -470,7 +472,7 @@ export const createJudgingBoardService = ({
     const expectedBoardNumbers = new Set(Array.from({ length: result.boardCount }, (_, index) => index + 1))
     const submittedBoardNumbers = result.boards.map(board => Number(board.boardNumber))
 
-    if (result.boards.length !== result.boardCount) {
+    if (!relaxedWorkflow && result.boards.length !== result.boardCount) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Randomized board confirmation must include exactly the configured number of boards'])
     }
     if (new Set(submittedBoardNumbers).size !== submittedBoardNumbers.length) {
@@ -600,6 +602,6 @@ export const createJudgingBoardService = ({
 }
 
 export const JUDGING_BOARD_SERVICE = {
-  ...createJudgingBoardService(),
+  ...createJudgingBoardService({ relaxedWorkflow: env.workflow.relaxedDemoRules }),
   normalizeBoard
 }
