@@ -20,7 +20,7 @@ Các luồng team, lời mời, giới hạn thành viên, check-in của team `
 2. Danh sách submission và score sheet chưa giới hạn dữ liệu theo người dùng; participant có `SCORE_VIEW` nên có khả năng xem phiếu điểm của đội khác.
 3. Event, round, workshop và một số tài nguyên cho đổi trạng thái tự do, chưa có state machine.
 4. Ngày giờ event không tự đổi trạng thái; ban tổ chức phải thao tác thủ công nhưng UI/tài liệu có thể khiến người dùng kỳ vọng tự động.
-5. QR/manual check-in chưa bị giới hạn bởi thời gian hoặc timeline check-in.
+5. QR/manual check-in được giới hạn theo trạng thái event `ONGOING`; timeline check-in chỉ là lịch hiển thị.
 6. Cấu hình nhiều vòng có nguy cơ ghi đè `boardNumber`/`placementSlot` trên Team vì hai trường này không gắn với round.
 7. Xếp hạng chưa thực hiện tie-break thật và có thể tính khi chưa đủ phiếu của tất cả judge.
 
@@ -65,12 +65,13 @@ Các luồng team, lời mời, giới hạn thành viên, check-in của team `
   2. Thủ công có kiểm soát: dashboard hiển thị việc cần làm, cảnh báo quá hạn và nút xác nhận.
 - **Lưu ý:** tài liệu vận hành hiện tại giả định phương án 2 vì đó là hành vi mã nguồn hiện có.
 
-### BE-06 — Check-in không bị giới hạn bởi cửa sổ check-in
+### BE-06 — Check-in được quyết định theo trạng thái ONGOING
 
 - **Mức độ:** P1.
-- **Hiện trạng:** QR và manual check-in đã yêu cầu participant thuộc team `CONFIRMED`, nhưng không kiểm tra event đang `ONGOING`, ngày sự kiện, hoặc timeline `CHECK_IN` đang mở. Coordinator có thể phát QR ở DRAFT/COMPLETED.
-- **Hậu quả:** ghi nhận tham dự quá sớm, quá muộn hoặc sai sự kiện.
-- **Đề xuất:** bổ sung `checkInStartAt/checkInEndAt` hoặc timeline loại CHECK_IN; chỉ phát/scan/manual trong cửa sổ hợp lệ. Cho phép admin override với lý do và audit log.
+- **Hướng xử lý đã chọn:** không dùng timeline `CHECK_IN` làm điều kiện bắt buộc. QR, scan QR và manual check-in được phép khi event đang `ONGOING` và participant thuộc team `CONFIRMED`.
+- **Hành vi hiện tại:** coordinator có thể phát QR khi event `ONGOING`; participant trong team `CONFIRMED` có thể scan cùng QR nhiều người; manual check-in cũng dùng rule `ONGOING`. Event `DRAFT`, `OPEN_REGISTRATION`, `REGISTRATION_CLOSED`, `SCORING`, `COMPLETED`, `ARCHIVED` bị chặn.
+- **Override:** admin có thể check-in ngoài `ONGOING` nếu truyền `overrideReason`; hệ thống ghi audit log `CHECK_IN_WINDOW_OVERRIDE`.
+- **Ghi chú:** timeline `CHECK_IN` nếu có chỉ phục vụ lịch/hiển thị vận hành, không khóa nghiệp vụ check-in.
 
 ### BE-07 — Đường tạo participant trực tiếp bỏ qua nghiệp vụ đăng ký
 

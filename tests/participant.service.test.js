@@ -6,8 +6,7 @@ import ApiError from '../src/utils/ApiError.js'
 import { createParticipantService } from '../src/modules/participants/participant.service.js'
 
 const createRepository = ({
-  eventOverrides = {},
-  checkInTimelineOpen = false
+  eventOverrides = {}
 } = {}) => {
   const records = new Map()
   let checkInQrSession = null
@@ -94,17 +93,6 @@ const createRepository = ({
     },
     findTeamById: async (id) => id === team._id ? team : null,
     findConfirmedTeamIds: async ({ eventId } = {}) => eventId === event._id ? [team._id] : [],
-    findOpenCheckInTimeline: async ({ eventId }) => {
-      if (eventId !== event._id || !checkInTimelineOpen) return null
-      return {
-        _id: '000000000000000000000501',
-        eventId,
-        eventType: 'CHECK_IN',
-        status: 'ONGOING',
-        startTime: new Date('2026-06-22T07:30:00.000Z'),
-        endTime: new Date('2026-06-22T09:00:00.000Z')
-      }
-    },
     createAuditLog: async (entry) => {
       auditLogs.push(entry)
       return entry
@@ -221,8 +209,7 @@ test('updateAttendance and updateGithubAccessStatus persist participant lifecycl
 
 const createQrTestService = ({ currentTime = new Date('2026-06-22T08:00:00.000Z') } = {}) => {
   const repository = createRepository({
-    eventOverrides: { status: 'ONGOING' },
-    checkInTimelineOpen: true
+    eventOverrides: { status: 'ONGOING' }
   })
   let nowValue = currentTime
   const auditLogs = []
@@ -360,31 +347,26 @@ test('QR and manual check-in reject participants outside confirmed teams', async
   )
 })
 
-test('check-in QR cannot be generated outside an open check-in window', async () => {
+test('check-in QR can be generated while event is ONGOING without a CHECK_IN timeline', async () => {
   const repository = createRepository({
-    eventOverrides: { status: 'ONGOING' },
-    checkInTimelineOpen: false
+    eventOverrides: { status: 'ONGOING' }
   })
   const service = createParticipantService({
     repository,
     now: () => new Date('2026-06-22T08:00:00.000Z')
   })
 
-  await assert.rejects(
-    service.generateCheckInQr('000000000000000000000201', {
-      id: '000000000000000000000999',
-      permissions: ['PARTICIPANT_APPROVE']
-    }),
-    error => error instanceof ApiError &&
-      error.code === 'BAD_REQUEST' &&
-      error.errors.includes('Check-in timeline is not open')
-  )
+  const qr = await service.generateCheckInQr('000000000000000000000201', {
+    id: '000000000000000000000999',
+    permissions: ['PARTICIPANT_APPROVE']
+  })
+
+  assert.equal(qr.eventId, '000000000000000000000201')
 })
 
 test('manual admin check-in override requires a reason and writes audit log', async () => {
   const repository = createRepository({
-    eventOverrides: { status: 'COMPLETED' },
-    checkInTimelineOpen: false
+    eventOverrides: { status: 'COMPLETED' }
   })
   const auditLogs = []
   const service = createParticipantService({

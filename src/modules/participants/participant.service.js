@@ -257,16 +257,9 @@ export const createParticipantService = ({
 
   const ensureCheckInWindowOpen = async (eventId, { allowOverride = false, overrideReason = null, actor = null } = {}) => {
     const event = await ensureEventExists(eventId)
-    const currentTime = now()
-    const timeline = repository.findOpenCheckInTimeline
-      ? await repository.findOpenCheckInTimeline({ eventId, now: currentTime })
-      : null
+    const checkInOpen = event.status === 'ONGOING'
 
-    const eventTimeOpen = event.status === 'ONGOING' &&
-      (!event.startDate || currentTime >= new Date(event.startDate)) &&
-      (!event.endDate || currentTime <= new Date(event.endDate))
-
-    if (eventTimeOpen && timeline) return { event, timeline, overridden: false }
+    if (checkInOpen) return { event, overridden: false }
 
     if (allowOverride) {
       const reason = String(overrideReason || '').trim()
@@ -280,21 +273,15 @@ export const createParticipantService = ({
         resourceId: eventId,
         metadata: {
           reason,
-          eventStatus: event.status,
-          eventTimeOpen,
-          timelineOpen: Boolean(timeline)
+          eventStatus: event.status
         }
       })
-      return { event, timeline, overridden: true }
+      return { event, overridden: true }
     }
 
     if (event.status !== 'ONGOING') {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Check-in is only available while the event is ONGOING'])
     }
-    if (!eventTimeOpen) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Check-in is outside the event time window'])
-    }
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Check-in timeline is not open'])
   }
 
   const ensureUserCanRegisterForEvent = async ({ event, user, actor = {}, overrideReason = null }) => {

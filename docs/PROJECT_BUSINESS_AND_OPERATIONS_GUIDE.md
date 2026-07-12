@@ -397,7 +397,7 @@ Dùng khi repo đã được tạo ngoài hệ thống. Chọn team, nhập owne
 
 - Participant thuộc event.
 - Participant thuộc Team `CONFIRMED`.
-- Check-in đúng event và trong cửa sổ check-in.
+- Event đang ở trạng thái `ONGOING`.
 - Một participant chỉ có một trạng thái check-in hợp lệ; scan lặp phải idempotent hoặc báo đã check-in.
 
 ### QR check-in
@@ -412,9 +412,9 @@ Dùng khi repo đã được tạo ngoài hệ thống. Chọn team, nhập owne
 
 Dùng khi camera/mạng/tài khoản gặp sự cố. Coordinator tìm participant trong danh sách confirmed team, xác nhận danh tính rồi check-in thủ công. Nên lưu operator, thời gian và lý do.
 
-### Giới hạn hiện tại
+### Rule hiện tại
 
-Backend đã kiểm tra Team `CONFIRMED`, nhưng chưa cưỡng chế cửa sổ thời gian/timeline check-in. Coordinator phải chỉ mở QR đúng giờ cho tới khi rule này được bổ sung.
+Backend cho phép QR/manual check-in khi event `ONGOING` và participant thuộc Team `CONFIRMED`. Timeline `CHECK_IN` nếu có chỉ dùng để hiển thị lịch vận hành, không phải điều kiện bắt buộc.
 
 ## 12. Giai đoạn 7 — Vận hành ongoing
 
@@ -642,7 +642,7 @@ Ma trận trên mô tả nghiệp vụ mong muốn. Một số endpoint hiện r
 ## 21. Giới hạn hiện tại cần người vận hành biết
 
 - Event không tự đổi trạng thái theo ngày.
-- Check-in chưa tự giới hạn bằng timeline/cửa sổ.
+- Check-in dùng trạng thái event `ONGOING`; timeline check-in chỉ mang tính lịch hiển thị.
 - Submission ownership và data scope còn cần siết ở BE.
 - Tài nguyên con như workshop/track/timeline chưa dùng chung event visibility ở mọi nơi.
 - Placement board trên Team chưa round-scoped hoàn chỉnh.
@@ -770,4 +770,4 @@ Kiểm tra assigned teams, accepted submissions, score sheet LOCKED, đủ judge
 
 ## 26. Kết luận
 
-SEAL Hackathon đã bao phủ gần trọn chu trình một hackathon, nhưng chất lượng vận hành phụ thuộc vào việc coordinator dùng đúng thứ tự trạng thái và thực hiện các bước đối soát. Cho tới khi các vấn đề P0/P1 trong báo cáo kỹ thuật được sửa, ban tổ chức cần coi checklist trong tài liệu này là bắt buộc, đặc biệt ở submission ownership, score visibility, check-in window, đủ phiếu judge, tie-break và đồng bộ GitHub.
+SEAL Hackathon đã bao phủ gần trọn chu trình một hackathon, nhưng chất lượng vận hành phụ thuộc vào việc coordinator dùng đúng thứ tự trạng thái và thực hiện các bước đối soát. Cho tới khi các vấn đề P0/P1 trong báo cáo kỹ thuật được sửa, ban tổ chức cần coi checklist trong tài liệu này là bắt buộc, đặc biệt ở submission ownership, score visibility, event ONGOING cho check-in, đủ phiếu judge, tie-break và đồng bộ GitHub.

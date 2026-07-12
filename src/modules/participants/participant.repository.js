@@ -2,7 +2,6 @@ import Event from '#models/event.model.js'
 import CheckInQrSession from '#models/checkInQrSession.model.js'
 import Participant from '#models/participant.model.js'
 import Team from '#models/team.model.js'
-import TimelineEvent from '#models/timelineEvent.model.js'
 import User from '#models/user.model.js'
 
 const participantPopulate = [
@@ -94,16 +93,6 @@ const findConfirmedTeamIds = async ({ eventId } = {}) => {
   return await Team.find(filter).distinct('_id')
 }
 
-const findOpenCheckInTimeline = async ({ eventId, now }) => {
-  return await TimelineEvent.findOne({
-    eventId,
-    eventType: 'CHECK_IN',
-    status: { $in: ['SCHEDULED', 'ONGOING'] },
-    startTime: { $lte: now },
-    endTime: { $gte: now }
-  })
-}
-
 export const PARTICIPANT_REPOSITORY = {
   count,
   create,
@@ -118,6 +107,5 @@ export const PARTICIPANT_REPOSITORY = {
   findEventById,
   findUserById,
   findTeamById,
-  findConfirmedTeamIds,
-  findOpenCheckInTimeline
+  findConfirmedTeamIds
 }
