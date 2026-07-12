@@ -578,6 +578,7 @@ export const seedCompletedCycleShowcase = async ({
     name: 'SEAL Spring 2026 Final',
     roundType: 'FINAL',
     problemStatement: 'Present a production-ready solution and defend its measurable impact.',
+    examDriveUrl: 'https://drive.google.com/drive/folders/1SEALSpring2026Final',
     assignedTeamIds: finalists.map(record => record.team._id),
     promotedTeamIds: [],
     startTime: at('2026-04-12T16:30:00+07:00'),
