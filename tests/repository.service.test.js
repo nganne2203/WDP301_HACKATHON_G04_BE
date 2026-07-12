@@ -179,6 +179,69 @@ test('createRepository rejects linking the same team twice', async () => {
   }
 })
 
+test('createRepository requires confirmed teams unless admin override is provided', async () => {
+  const eventModule = await import('../src/models/event.model.js')
+  const teamModule = await import('../src/models/team.model.js')
+
+  const EventModel = eventModule.default
+  const TeamModel = teamModule.default
+
+  const originalEventFindById = EventModel.findById
+  const originalTeamFindById = TeamModel.findById
+
+  let createdRecord = null
+  const repository = {
+    count: async () => 0,
+    findAll: async () => [],
+    findById: async (id) => createdRecord || ({ _id: id, eventId: '000000000000000000000101', teamId: '000000000000000000000201' }),
+    findByTeamId: async () => null,
+    listCommitsByRepository: async () => [],
+    countCommitsByRepository: async () => 0,
+    create: async (data) => {
+      createdRecord = { _id: '000000000000000000000901', ...data }
+      return createdRecord
+    },
+    updateById: async () => null
+  }
+
+  EventModel.findById = async () => ({ _id: '000000000000000000000101' })
+  TeamModel.findById = async () => ({
+    _id: '000000000000000000000201',
+    eventId: '000000000000000000000101',
+    status: 'WAITLISTED'
+  })
+
+  const service = createRepositoryService({ repository })
+
+  try {
+    await assert.rejects(
+      service.createRepository({
+        eventId: '000000000000000000000101',
+        teamId: '000000000000000000000201',
+        githubOwner: 'seal-org',
+        githubRepo: 'team-alpha',
+        repositoryUrl: 'https://github.com/seal-org/team-alpha'
+      }, { id: 'coordinator-1', roles: ['COORDINATOR'] }),
+      error => error instanceof ApiError &&
+        error.errors.includes('Repository linking is only allowed for CONFIRMED teams unless an admin override reason is provided')
+    )
+
+    const created = await service.createRepository({
+      eventId: '000000000000000000000101',
+      teamId: '000000000000000000000201',
+      githubOwner: 'seal-org',
+      githubRepo: 'team-alpha',
+      repositoryUrl: 'https://github.com/seal-org/team-alpha',
+      overrideReason: 'Manual recovery link'
+    }, { id: 'admin-1', roles: ['ADMIN'] })
+
+    assert.equal(created.repositoryFullName, 'seal-org/team-alpha')
+  } finally {
+    EventModel.findById = originalEventFindById
+    TeamModel.findById = originalTeamFindById
+  }
+})
+
 test('listRepositoryCommits returns stored commit history for a repository', async () => {
   const repository = {
     count: async () => 1,

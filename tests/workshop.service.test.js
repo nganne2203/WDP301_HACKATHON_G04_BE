@@ -141,6 +141,77 @@ test('voteQuestion rejects votes after question window closes', async () => {
   }
 })
 
+test('createWorkshop rejects schedules outside the event window and non-scheduled initial status', async () => {
+  const restore = patchRepository({
+    findEventById: async () => ({
+      _id: EVENT_ID,
+      startDate: new Date('2026-07-01T00:00:00.000Z'),
+      endDate: new Date('2026-07-02T00:00:00.000Z')
+    }),
+    createWorkshop: async () => {
+      throw new Error('should not create invalid workshop')
+    }
+  })
+
+  try {
+    await assert.rejects(
+      () => WORKSHOP_SERVICE.createWorkshop({
+        eventId: EVENT_ID,
+        title: 'Too early',
+        startTime: '2026-06-30T23:00:00.000Z',
+        endTime: '2026-07-01T01:00:00.000Z'
+      }),
+      error => error instanceof ApiError &&
+        error.errors.includes('Workshop startTime must be within the event date window')
+    )
+
+    await assert.rejects(
+      () => WORKSHOP_SERVICE.createWorkshop({
+        eventId: EVENT_ID,
+        title: 'Already complete',
+        startTime: '2026-07-01T08:00:00.000Z',
+        endTime: '2026-07-01T09:00:00.000Z',
+        status: 'COMPLETED'
+      }),
+      error => error instanceof ApiError &&
+        error.errors.includes('Workshops must be created in SCHEDULED status')
+    )
+  } finally {
+    restore()
+  }
+})
+
+test('updateWorkshop enforces status transition order', async () => {
+  const restore = patchRepository({
+    findWorkshopById: async () => ({
+      _id: WORKSHOP_ID,
+      eventId: EVENT_ID,
+      title: 'Scheduled Workshop',
+      status: 'SCHEDULED',
+      startTime: new Date('2026-07-01T08:00:00.000Z'),
+      endTime: new Date('2026-07-01T10:00:00.000Z')
+    }),
+    findEventById: async () => ({
+      _id: EVENT_ID,
+      startDate: new Date('2026-07-01T00:00:00.000Z'),
+      endDate: new Date('2026-07-02T00:00:00.000Z')
+    }),
+    updateWorkshopById: async () => {
+      throw new Error('should not update invalid transition')
+    }
+  })
+
+  try {
+    await assert.rejects(
+      () => WORKSHOP_SERVICE.updateWorkshop(WORKSHOP_ID, { status: 'COMPLETED' }),
+      error => error instanceof ApiError &&
+        error.errors.includes('Invalid workshop status transition from SCHEDULED to COMPLETED')
+    )
+  } finally {
+    restore()
+  }
+})
+
 test('listRatings with mine=true returns only the actor rating without insight permission', async () => {
   let capturedFilter = null
   const restore = patchRepository({

@@ -53,7 +53,12 @@ const createRepository = () => {
 }
 
 const eventService = {
-  getRawEventById: async (id) => ({ _id: id, title: 'SEAL Event' })
+  getRawEventById: async (id) => ({
+    _id: id,
+    title: 'SEAL Event',
+    startDate: new Date('2026-06-01T00:00:00.000Z'),
+    endDate: new Date('2026-06-30T23:59:59.000Z')
+  })
 }
 
 test('createTimeline stores timeline for an existing event', async () => {
@@ -139,5 +144,44 @@ test('getTimelineById hides event children outside actor scope', async () => {
       roles: ['PARTICIPANT']
     }),
     (error) => error instanceof ApiError && error.code === 'NOT_FOUND'
+  )
+})
+
+test('timeline validates event window and status transitions', async () => {
+  const repository = createRepository()
+  const service = createTimelineService({ repository, eventService })
+
+  await assert.rejects(
+    service.createTimeline({
+      eventId: '000000000000000000000101',
+      title: 'Too Late',
+      startTime: '2026-07-01T00:00:00.000Z',
+      endTime: '2026-07-01T01:00:00.000Z'
+    }),
+    error => error instanceof ApiError &&
+      error.errors.includes('Timeline endTime must be within the event date window')
+  )
+
+  await assert.rejects(
+    service.createTimeline({
+      eventId: '000000000000000000000101',
+      title: 'Already Done',
+      status: 'COMPLETED'
+    }),
+    error => error instanceof ApiError &&
+      error.errors.includes('Timeline events must be created in SCHEDULED status')
+  )
+
+  const created = await service.createTimeline({
+    eventId: '000000000000000000000101',
+    title: 'Opening Ceremony',
+    startTime: '2026-06-03T09:00:00.000Z',
+    endTime: '2026-06-03T10:00:00.000Z'
+  })
+
+  await assert.rejects(
+    service.updateTimeline(created.id, { status: 'COMPLETED' }),
+    error => error instanceof ApiError &&
+      error.errors.includes('Invalid timeline status transition from SCHEDULED to COMPLETED')
   )
 })

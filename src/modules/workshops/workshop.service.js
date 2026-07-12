@@ -14,6 +14,12 @@ import {
 } from '#utils/domainAccessUtil.js'
 
 const WORKSHOP_STATUSES = ['SCHEDULED', 'LIVE', 'COMPLETED', 'CANCELLED']
+const WORKSHOP_STATUS_TRANSITIONS = {
+  SCHEDULED: ['LIVE', 'CANCELLED'],
+  LIVE: ['COMPLETED', 'CANCELLED'],
+  COMPLETED: [],
+  CANCELLED: []
+}
 const WORKSHOP_FIELDS = [
   'eventId',
   'timelineEventId',
@@ -42,6 +48,34 @@ const ensureWorkshopTimeRange = (payload = {}) => {
 
   if (endTime <= startTime) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['endTime must be after startTime'])
+  }
+}
+
+const ensureWorkshopWithinEventWindow = ({ event, startTime, endTime }) => {
+  if (!event || !startTime || !endTime) return
+  const workshopStart = new Date(startTime)
+  const workshopEnd = new Date(endTime)
+
+  if (event.startDate && workshopStart < new Date(event.startDate)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Workshop startTime must be within the event date window'])
+  }
+  if (event.endDate && workshopEnd > new Date(event.endDate)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Workshop endTime must be within the event date window'])
+  }
+}
+
+const ensureWorkshopStatusTransition = ({ fromStatus, toStatus, isCreate = false }) => {
+  if (!toStatus || fromStatus === toStatus) return
+  if (isCreate) {
+    if (toStatus !== 'SCHEDULED') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Workshops must be created in SCHEDULED status'])
+    }
+    return
+  }
+
+  const allowedStatuses = WORKSHOP_STATUS_TRANSITIONS[fromStatus] || []
+  if (!allowedStatuses.includes(toStatus)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Invalid workshop status transition from ${fromStatus} to ${toStatus}`])
   }
 }
 
@@ -363,8 +397,17 @@ const getWorkshopById = async (id, actor = {}) => {
 }
 
 const createWorkshop = async (payload = {}) => {
-  await ensureEventExists(payload.eventId)
+  const event = await ensureEventExists(payload.eventId)
   ensureWorkshopTimeRange(payload)
+  ensureWorkshopWithinEventWindow({
+    event,
+    startTime: payload.startTime,
+    endTime: payload.endTime
+  })
+  ensureWorkshopStatusTransition({
+    toStatus: payload.status || 'SCHEDULED',
+    isCreate: true
+  })
 
   const workshop = await WORKSHOP_REPOSITORY.createWorkshop(pickSafeFields(payload, WORKSHOP_FIELDS))
 
@@ -378,15 +421,23 @@ const updateWorkshop = async (id, payload = {}) => {
   if (safePayload.eventId) {
     await ensureEventExists(safePayload.eventId)
   }
+  const eventId = safePayload.eventId || getIdString(existingWorkshop.eventId)
+  const event = await ensureEventExists(eventId)
 
-  ensureWorkshopTimeRange({
+  const nextSchedule = {
     startTime: safePayload.startTime ?? existingWorkshop.startTime,
     endTime: safePayload.endTime ?? existingWorkshop.endTime
-  })
+  }
+  ensureWorkshopTimeRange(nextSchedule)
+  ensureWorkshopWithinEventWindow({ event, ...nextSchedule })
 
   if (safePayload.status && !WORKSHOP_STATUSES.includes(safePayload.status)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Invalid workshop status'])
   }
+  ensureWorkshopStatusTransition({
+    fromStatus: existingWorkshop.status,
+    toStatus: safePayload.status
+  })
 
   return normalizeWorkshop(await WORKSHOP_REPOSITORY.updateWorkshopById(id, safePayload))
 }

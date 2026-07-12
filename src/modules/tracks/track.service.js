@@ -13,6 +13,12 @@ import {
 } from '#utils/eventVisibilityUtil.js'
 
 const TRACK_FIELDS = ['eventId', 'code', 'name', 'description', 'topic', 'problemStatement', 'type', 'teamIds', 'maxTeams', 'status']
+const TRACK_STATUS_TRANSITIONS = {
+  DRAFT: ['OPEN'],
+  OPEN: ['LOCKED'],
+  LOCKED: ['COMPLETED'],
+  COMPLETED: []
+}
 
 const ensureObjectId = (id, fieldName = 'track id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -27,6 +33,7 @@ const buildTrackFilter = (query = {}) => {
     ensureObjectId(query.eventId, 'event id')
     filter.eventId = query.eventId
   }
+  if (query.status) filter.status = query.status
 
   if (query.search) {
     const pattern = new RegExp(escapeRegex(query.search), 'i')
@@ -38,6 +45,21 @@ const buildTrackFilter = (query = {}) => {
   }
 
   return filter
+}
+
+const ensureTrackStatusTransition = ({ fromStatus, toStatus, isCreate = false }) => {
+  if (!toStatus || fromStatus === toStatus) return
+  if (isCreate) {
+    if (toStatus !== 'DRAFT') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Tracks must be created in DRAFT status'])
+    }
+    return
+  }
+
+  const allowedStatuses = TRACK_STATUS_TRANSITIONS[fromStatus] || []
+  if (!allowedStatuses.includes(toStatus)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Invalid track status transition from ${fromStatus} to ${toStatus}`])
+  }
 }
 
 const normalizeEvent = (event) => {
@@ -144,6 +166,10 @@ export const createTrackService = ({
 
   const createTrack = async (payload = {}) => {
     await eventService.getRawEventById(payload.eventId)
+    ensureTrackStatusTransition({
+      toStatus: payload.status || 'DRAFT',
+      isCreate: true
+    })
     await ensureUniqueTrackNameWithRepository(payload)
 
     const track = await repository.create(pickSafeFields(payload, TRACK_FIELDS))
@@ -157,6 +183,10 @@ export const createTrackService = ({
     if (safePayload.eventId) {
       await eventService.getRawEventById(safePayload.eventId)
     }
+    ensureTrackStatusTransition({
+      fromStatus: existingTrack.status || 'DRAFT',
+      toStatus: safePayload.status
+    })
 
     await ensureUniqueTrackNameWithRepository({
       eventId: safePayload.eventId || getEventIdValue(existingTrack.eventId),

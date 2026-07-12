@@ -13,6 +13,12 @@ import {
 } from '#utils/eventVisibilityUtil.js'
 
 const TIMELINE_FIELDS = ['eventId', 'title', 'description', 'startTime', 'endTime', 'eventType', 'status']
+const TIMELINE_STATUS_TRANSITIONS = {
+  SCHEDULED: ['ONGOING', 'CANCELLED'],
+  ONGOING: ['COMPLETED', 'CANCELLED'],
+  COMPLETED: [],
+  CANCELLED: []
+}
 
 const ensureObjectId = (id, fieldName = 'timeline id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -25,6 +31,34 @@ const ensureDateRange = (payload = {}) => {
 
   if (new Date(payload.startTime) > new Date(payload.endTime)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['startTime must be before or equal to endTime'])
+  }
+}
+
+const ensureTimelineWithinEventWindow = ({ event, startTime, endTime }) => {
+  if (!event || !startTime || !endTime) return
+  const timelineStart = new Date(startTime)
+  const timelineEnd = new Date(endTime)
+
+  if (event.startDate && timelineStart < new Date(event.startDate)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Timeline startTime must be within the event date window'])
+  }
+  if (event.endDate && timelineEnd > new Date(event.endDate)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Timeline endTime must be within the event date window'])
+  }
+}
+
+const ensureTimelineStatusTransition = ({ fromStatus, toStatus, isCreate = false }) => {
+  if (!toStatus || fromStatus === toStatus) return
+  if (isCreate) {
+    if (toStatus !== 'SCHEDULED') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Timeline events must be created in SCHEDULED status'])
+    }
+    return
+  }
+
+  const allowedStatuses = TIMELINE_STATUS_TRANSITIONS[fromStatus] || []
+  if (!allowedStatuses.includes(toStatus)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Invalid timeline status transition from ${fromStatus} to ${toStatus}`])
   }
 }
 
@@ -135,7 +169,16 @@ export const createTimelineService = ({
 
   const createTimeline = async (payload = {}) => {
     ensureDateRange(payload)
-    await eventService.getRawEventById(payload.eventId)
+    const event = await eventService.getRawEventById(payload.eventId)
+    ensureTimelineWithinEventWindow({
+      event,
+      startTime: payload.startTime,
+      endTime: payload.endTime
+    })
+    ensureTimelineStatusTransition({
+      toStatus: payload.status || 'SCHEDULED',
+      isCreate: true
+    })
 
     const timeline = await repository.create(pickSafeFields(payload, TIMELINE_FIELDS))
     return normalizeTimeline(await repository.findById(timeline._id))
@@ -148,10 +191,18 @@ export const createTimelineService = ({
     if (safePayload.eventId) {
       await eventService.getRawEventById(safePayload.eventId)
     }
+    const eventId = safePayload.eventId || existingTimeline.eventId?._id?.toString?.() || existingTimeline.eventId?.toString?.()
+    const event = await eventService.getRawEventById(eventId)
 
-    ensureDateRange({
+    const nextSchedule = {
       startTime: safePayload.startTime ?? existingTimeline.startTime,
       endTime: safePayload.endTime ?? existingTimeline.endTime
+    }
+    ensureDateRange(nextSchedule)
+    ensureTimelineWithinEventWindow({ event, ...nextSchedule })
+    ensureTimelineStatusTransition({
+      fromStatus: existingTimeline.status || 'SCHEDULED',
+      toStatus: safePayload.status
     })
 
     const timeline = await repository.updateById(id, safePayload)

@@ -9,6 +9,7 @@ import Team from '#models/team.model.js'
 import Commit from '#models/commit.model.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { GITHUB_SERVICE } from '#modules/github/github.service.js'
+import { actorHasRole } from '#utils/domainAccessUtil.js'
 
 const ensureObjectId = (id, fieldName = 'repository id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -162,6 +163,13 @@ const ensureTeamBelongsToEvent = async ({ eventId, teamId }) => {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified event'])
   }
   return team
+}
+
+const ensureRepositoryEligibleTeam = ({ team, overrideReason, actor = {} }) => {
+  if (!team.status || team.status === 'CONFIRMED') return
+  if (actorHasRole(actor, 'ADMIN') && overrideReason?.trim()) return
+
+  throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Repository linking is only allowed for CONFIRMED teams unless an admin override reason is provided'])
 }
 
 const ensureRoundBelongsToEvent = async ({ eventId, roundId }) => {
@@ -390,9 +398,14 @@ export const createRepositoryService = ({
     }
   }
 
-  const createRepository = async (payload = {}) => {
+  const createRepository = async (payload = {}, actor = {}) => {
     const event = await ensureEventExists(payload.eventId)
-    await ensureTeamBelongsToEvent({ eventId: event._id, teamId: payload.teamId })
+    const team = await ensureTeamBelongsToEvent({ eventId: event._id, teamId: payload.teamId })
+    ensureRepositoryEligibleTeam({
+      team,
+      overrideReason: payload.overrideReason,
+      actor
+    })
     await ensureRoundBelongsToEvent({ eventId: event._id, roundId: payload.roundId })
 
     const existingRepository = await repository.findByTeamId(payload.teamId)

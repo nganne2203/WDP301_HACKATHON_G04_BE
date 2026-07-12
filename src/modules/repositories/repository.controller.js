@@ -42,7 +42,7 @@ const listConfirmedTeamsMissingRepositories = async (req, res, next) => {
 
 const createRepository = async (req, res, next) => {
   try {
-    const repository = await REPOSITORY_SERVICE.createRepository(req.body)
+    const repository = await REPOSITORY_SERVICE.createRepository(req.body, req.user)
     res.status(StatusCodes.CREATED).json(responseSuccess({
       message: 'Create repository successfully',
       data: repository
@@ -85,7 +85,7 @@ const listRepositoryCommits = async (req, res, next) => {
 
 const listStaticAnalysis = async (req, res, next) => {
   try {
-    const { repository, analysisResults, pagination } = await REPOSITORY_SERVICE.listStaticAnalysis({
+    const { analysisResults, pagination } = await REPOSITORY_SERVICE.listStaticAnalysis({
       repositoryId: req.params.id,
       query: req.validated?.query || req.query
     })

@@ -105,3 +105,32 @@ test('getTrackById hides event children outside actor scope', async () => {
     (error) => error instanceof ApiError && error.code === 'NOT_FOUND'
   )
 })
+
+test('track status follows the configured workflow', async () => {
+  const repository = createRepository()
+  const service = createTrackService({ repository, eventService })
+
+  await assert.rejects(
+    service.createTrack({
+      eventId: '000000000000000000000101',
+      name: 'Already Open Track',
+      status: 'OPEN'
+    }),
+    error => error instanceof ApiError &&
+      error.errors.includes('Tracks must be created in DRAFT status')
+  )
+
+  const created = await service.createTrack({
+    eventId: '000000000000000000000101',
+    name: 'Workflow Track'
+  })
+
+  await assert.rejects(
+    service.updateTrack(created.id, { status: 'COMPLETED' }),
+    error => error instanceof ApiError &&
+      error.errors.includes('Invalid track status transition from DRAFT to COMPLETED')
+  )
+
+  const opened = await service.updateTrack(created.id, { status: 'OPEN' })
+  assert.equal(opened.status, 'OPEN')
+})

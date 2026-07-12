@@ -93,8 +93,12 @@ const findConfirmedTeamsByEvent = async (eventId) => {
   })
 }
 
+const findTeamById = async (teamId) => {
+  return await Team.findById(teamId)
+}
+
 const findRepositoriesByEvent = async (eventId) => {
-  return await Repository.find({ eventId })
+  return await Repository.find({ eventId }).populate({ path: 'teamId', select: 'status name eventId' })
 }
 
 const findTeamMembersGithubUsernames = async (teamId) => {
@@ -116,6 +120,7 @@ export const GITHUB_REPOSITORY = {
   updateRepositoryById,
   createAuditLog,
   findConfirmedTeamsByEvent,
+  findTeamById,
   findRepositoriesByEvent,
   findTeamMembersGithubUsernames
 }

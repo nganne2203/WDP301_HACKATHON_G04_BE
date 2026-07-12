@@ -45,6 +45,7 @@ const createRepository = () => {
     findConfirmedTeamsByEvent: async (eventId) => {
       return teams.filter(t => t.eventId === eventId)
     },
+    findTeamById: async (teamId) => teams.find(team => team._id === teamId) || null,
     findRepositoriesByEvent: async (eventId) => {
       return [...repositories.values()].filter(r => r.eventId === eventId)
     },
@@ -221,6 +222,7 @@ test('bulkCreateRepositories aggregates errors and continues loop when one team 
 
 test('createRepository automatically assigns collaborators from team members', async () => {
   const repository = createRepository()
+  repository.teams.push({ _id: 'team-123', name: 'Team Repo', eventId: EVENT_ID, status: 'CONFIRMED' })
   await repository.upsertConfig({
     key: eventConfigKey,
     value: {
@@ -266,4 +268,98 @@ test('createRepository automatically assigns collaborators from team members', a
   assert.equal(collaboratorCalls.length, 2)
   assert.ok(collaboratorCalls.some(call => call.path.endsWith('/user-alpha')))
   assert.ok(collaboratorCalls.some(call => call.path.endsWith('/user-beta')))
+})
+
+test('createRepository rejects non-confirmed teams unless admin override is provided', async () => {
+  const repository = createRepository()
+  repository.teams.push({ _id: 'team-waiting', name: 'Team Waiting', eventId: EVENT_ID, status: 'WAITING_FOR_MEMBERS' })
+  await repository.upsertConfig({
+    key: eventConfigKey,
+    value: {
+      eventId: EVENT_ID,
+      organizationName: 'seal-org',
+      ownerUsername: 'owner-user',
+      enabled: true,
+      tokenEncrypted: 'encrypted:token'
+    },
+    isEncrypted: true
+  })
+
+  const calls = []
+  const service = createGithubService({
+    repository,
+    encryption: createEncryption(),
+    githubClient: async (payload) => {
+      calls.push(payload)
+      return {
+        status: 201,
+        data: {
+          name: payload.body?.name || 'repo',
+          html_url: 'https://github.com/seal-org/repo'
+        }
+      }
+    },
+    logger: createLogger()
+  })
+
+  await assert.rejects(
+    service.createRepository({
+      eventId: EVENT_ID,
+      teamId: 'team-waiting',
+      repoName: 'team-waiting'
+    }, { id: 'coordinator-1', roles: ['COORDINATOR'] }),
+    error => error.errors.includes('Repository creation is only allowed for CONFIRMED teams unless an admin override reason is provided')
+  )
+
+  await service.createRepository({
+    eventId: EVENT_ID,
+    teamId: 'team-waiting',
+    repoName: 'team-waiting',
+    overrideReason: 'Exceptional sponsor demo repository'
+  }, { id: 'admin-1', roles: ['ADMIN'] })
+
+  assert.equal(calls.some(call => call.path === '/orgs/seal-org/repos'), true)
+})
+
+test('bulkGrantAccess skips repositories whose teams are not confirmed', async () => {
+  const repository = createRepository()
+  await repository.upsertConfig({
+    key: eventConfigKey,
+    value: {
+      eventId: EVENT_ID,
+      organizationName: 'seal-org',
+      ownerUsername: 'owner-user',
+      enabled: true,
+      tokenEncrypted: 'encrypted:token'
+    },
+    isEncrypted: true
+  })
+  await repository.createRepositoryRecord({
+    eventId: EVENT_ID,
+    teamId: { _id: 'team-waiting', status: 'WAITLISTED' },
+    githubOwner: 'seal-org',
+    githubRepo: 'team-waiting',
+    repoName: 'team-waiting',
+    repoUrl: 'https://github.com/seal-org/team-waiting'
+  })
+
+  const calls = []
+  const service = createGithubService({
+    repository,
+    encryption: createEncryption(),
+    githubClient: async (payload) => {
+      calls.push(payload)
+      return { status: 204, data: {} }
+    },
+    logger: createLogger()
+  })
+
+  const result = await service.bulkGrantAccess({
+    eventId: EVENT_ID
+  }, { id: 'coordinator-1' })
+
+  assert.equal(result.success.length, 0)
+  assert.equal(result.failed.length, 1)
+  assert.equal(result.failed[0].error, 'Repository access can only be granted to CONFIRMED teams')
+  assert.equal(calls.some(call => call.method === 'PUT' && call.path.includes('/collaborators/')), false)
 })
