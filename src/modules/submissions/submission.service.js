@@ -277,7 +277,7 @@ export const createSubmissionService = ({
     if (actorHasRole(actor, 'JUDGE') && boardModel?.find) {
       const boardFilter = {
         judgeIds: actorId,
-        status: 'SCORING'
+      status: { $in: ['SCORING', 'COMPLETED'] }
       }
       if (filter.eventId) boardFilter.eventId = filter.eventId
       if (filter.roundId) boardFilter.roundId = filter.roundId
@@ -310,15 +310,15 @@ export const createSubmissionService = ({
       const round = submission.roundId && typeof submission.roundId === 'object'
         ? submission.roundId
         : await roundModel.findById(roundId)
-      if (round?.status !== 'SCORING') {
-        throw new ApiError(ERROR_CODES.FORBIDDEN, ['Judge can only access assigned submissions while the round is scoring'])
+      if (!['SCORING', 'COMPLETED'].includes(round?.status)) {
+        throw new ApiError(ERROR_CODES.FORBIDDEN, ['Judge can only access assigned submissions while scoring or after completion'])
       }
       const board = await boardModel.findOne({
         eventId,
         roundId,
         judgeIds: actorId,
         teamIds: teamId,
-        status: 'SCORING'
+        status: { $in: ['SCORING', 'COMPLETED'] }
       })
       if (board) return
     }

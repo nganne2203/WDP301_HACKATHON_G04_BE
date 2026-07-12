@@ -5,7 +5,7 @@ import { responseSuccess } from '#utils/responseUtil.js'
 
 const listBoards = async (req, res, next) => {
   try {
-    const { boards, pagination } = await JUDGING_BOARD_SERVICE.listBoards(req.validated?.query || req.query)
+    const { boards, pagination } = await JUDGING_BOARD_SERVICE.listBoards(req.validated?.query || req.query, req.user)
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get judging boards successfully',
       data: boards,
@@ -18,7 +18,7 @@ const listBoards = async (req, res, next) => {
 
 const getBoardById = async (req, res, next) => {
   try {
-    const board = await JUDGING_BOARD_SERVICE.getBoardById(req.params.id)
+    const board = await JUDGING_BOARD_SERVICE.getBoardById(req.params.id, req.user)
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get judging board successfully',
       data: board

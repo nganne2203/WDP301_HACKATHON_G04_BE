@@ -13,7 +13,7 @@ import Track from '#models/track.model.js'
 import User from '#models/user.model.js'
 import ScoreSheet from '#models/scoreSheet.model.js'
 import Ranking from '#models/ranking.model.js'
-import { isActiveJudge } from '#utils/domainAccessUtil.js'
+import { actorHasRole, getActorId, isActiveJudge, isPrivilegedEventActor } from '#utils/domainAccessUtil.js'
 import { env } from '#configs/environment.js'
 
 const BOARD_FIELDS = [
@@ -271,9 +271,29 @@ export const createJudgingBoardService = ({
     return board
   }
 
-  const listBoards = async (query = {}) => {
+  const applyJudgeBoardScope = (filter = {}, actor = {}) => {
+    if (!actorHasRole(actor, 'JUDGE') || isPrivilegedEventActor(actor)) return filter
+
+    const actorId = getActorId(actor)
+    if (!actorId) throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated judge is required'])
+    return { ...filter, judgeIds: actorId }
+  }
+
+  const ensureJudgeCanReadBoard = (board, actor = {}) => {
+    if (!actorHasRole(actor, 'JUDGE') || isPrivilegedEventActor(actor)) return
+
+    const actorId = getActorId(actor)
+    if (!actorId) throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated judge is required'])
+
+    const judgeIds = (board.judgeIds || []).map(judge => judge?._id?.toString?.() || judge?.id || judge?.toString?.())
+    if (!judgeIds.includes(actorId)) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['You are not assigned to this judging board'])
+    }
+  }
+
+  const listBoards = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
-    const filter = buildBoardFilter(query)
+    const filter = applyJudgeBoardScope(buildBoardFilter(query), actor)
     const skip = (page - 1) * limit
 
     const [boards, totalItems] = await Promise.all([
@@ -292,7 +312,11 @@ export const createJudgingBoardService = ({
     }
   }
 
-  const getBoardById = async (id) => normalizeBoard(await ensureBoardExists(id))
+  const getBoardById = async (id, actor = {}) => {
+    const board = await ensureBoardExists(id)
+    ensureJudgeCanReadBoard(board, actor)
+    return normalizeBoard(board)
+  }
 
   const ensureBoardCanBeDeleted = async (board) => {
     if (!['DRAFT', 'ASSIGNED'].includes(board.status)) {
