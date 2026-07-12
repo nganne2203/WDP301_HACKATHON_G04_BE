@@ -10,14 +10,13 @@ import Commit from '#models/commit.model.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { GITHUB_SERVICE } from '#modules/github/github.service.js'
 import { actorHasRole } from '#utils/domainAccessUtil.js'
+import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
 
 const ensureObjectId = (id, fieldName = 'repository id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Invalid ${fieldName}`])
   }
 }
-
-const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const normalizeEvent = (event) => {
   if (!event) return null
@@ -136,13 +135,15 @@ const buildFilter = (query = {}) => {
   if (query.status) filter.status = query.status
   if (query.accessState) filter.accessState = query.accessState
   if (query.search) {
-    const pattern = new RegExp(escapeRegExp(query.search), 'i')
-    filter.$or = [
-      { repositoryFullName: pattern },
-      { githubOwner: pattern },
-      { githubRepo: pattern },
-      { repoName: pattern }
-    ]
+    const pattern = buildSafeSearchRegex(query.search)
+    if (pattern) {
+      filter.$or = [
+        { repositoryFullName: pattern },
+        { githubOwner: pattern },
+        { githubRepo: pattern },
+        { repoName: pattern }
+      ]
+    }
   }
 
   return filter

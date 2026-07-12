@@ -7,6 +7,7 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
+import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
 import {
   getActorId,
   getIdString,
@@ -138,10 +139,6 @@ const ensureCanCreateGoogleMeet = ({ workshop, actor = {}, organizerUserId }) =>
   throw new ApiError(ERROR_CODES.FORBIDDEN, ['You do not have permission to perform this action'])
 }
 
-const escapeRegex = (value = '') => {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
 const buildWorkshopFilter = (query = {}) => {
   const filter = {}
 
@@ -158,12 +155,14 @@ const buildWorkshopFilter = (query = {}) => {
   }
 
   if (query.search) {
-    const pattern = new RegExp(escapeRegex(query.search), 'i')
-    filter.$or = [
-      { title: pattern },
-      { description: pattern },
-      { 'speakerInfo.name': pattern }
-    ]
+    const pattern = buildSafeSearchRegex(query.search)
+    if (pattern) {
+      filter.$or = [
+        { title: pattern },
+        { description: pattern },
+        { 'speakerInfo.name': pattern }
+      ]
+    }
   }
 
   return filter
@@ -396,6 +395,23 @@ const getWorkshopById = async (id, actor = {}) => {
   return normalizeWorkshop(workshop)
 }
 
+const ensureWorkshopCanBeDeleted = async (workshop) => {
+  if (workshop.status !== 'SCHEDULED') {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only SCHEDULED workshops can be deleted before they receive interactions'])
+  }
+
+  const workshopId = getIdString(workshop._id || workshop.id)
+  const [questionCount, ratingCount, feedbackCount] = await Promise.all([
+    WORKSHOP_REPOSITORY.countQuestions({ workshopId }),
+    WORKSHOP_REPOSITORY.countRatings({ workshopId }),
+    WORKSHOP_REPOSITORY.countFeedback({ workshopId })
+  ])
+
+  if (questionCount || ratingCount || feedbackCount) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Cannot delete workshop after questions, ratings, or feedback have been created'])
+  }
+}
+
 const createWorkshop = async (payload = {}) => {
   const event = await ensureEventExists(payload.eventId)
   ensureWorkshopTimeRange(payload)
@@ -443,8 +459,8 @@ const updateWorkshop = async (id, payload = {}) => {
 }
 
 const deleteWorkshop = async (id) => {
-  await ensureWorkshopExists(id)
-  await WORKSHOP_REPOSITORY.deleteWorkshopInteractions(id)
+  const workshop = await ensureWorkshopExists(id)
+  await ensureWorkshopCanBeDeleted(workshop)
   await WORKSHOP_REPOSITORY.deleteWorkshopById(id)
 }
 

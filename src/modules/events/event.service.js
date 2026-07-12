@@ -5,7 +5,7 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
-import { escapeRegex } from '#utils/sanitizeUtil.js'
+import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 import { TEAM_REJECTION_REASONS, TEAM_SERVICE } from '#modules/teams/team.service.js'
 import { AUDIT_LOG_REPOSITORY } from '#modules/audit-logs/audit-log.repository.js'
@@ -13,6 +13,12 @@ import Round from '#models/round.model.js'
 import Submission from '#models/submission.model.js'
 import JudgingBoard from '#models/judgingBoard.model.js'
 import User from '#models/user.model.js'
+import Team from '#models/team.model.js'
+import Repository from '#models/repository.model.js'
+import Ranking from '#models/ranking.model.js'
+import Workshop from '#models/workshop.model.js'
+import TimelineEvent from '#models/timelineEvent.model.js'
+import Track from '#models/track.model.js'
 import { isActiveJudge } from '#utils/domainAccessUtil.js'
 
 const EVENT_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED']
@@ -25,7 +31,8 @@ const EVENT_TRANSITIONS = {
   COMPLETED: ['ARCHIVED'],
   ARCHIVED: []
 }
-const RANKING_SCOPES = ['TEAM', 'CHAPTER', 'INDIVIDUAL']
+const RANKING_SCOPES = ['TEAM']
+const UNSUPPORTED_RANKING_SCOPES = ['CHAPTER', 'INDIVIDUAL']
 const FINALIST_SELECTION_MODES = ['FIXED_PER_BOARD', 'TOP_PER_BOARD_WITH_WILDCARD', 'OVERALL_SCORE', 'CUSTOM']
 const EVENT_FIELDS = [
   'title',
@@ -129,6 +136,11 @@ const normalizeRankingScopes = (scopes = []) => {
     : []
 
   const uniqueScopes = [...new Set(normalizedScopes)]
+  const unsupportedScope = uniqueScopes.find(scope => UNSUPPORTED_RANKING_SCOPES.includes(scope))
+  if (unsupportedScope) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Ranking scope ${unsupportedScope} is not supported for official generation yet`])
+  }
+
   const invalidScope = uniqueScopes.find(scope => !RANKING_SCOPES.includes(scope))
   if (invalidScope) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Invalid ranking scope: ${invalidScope}`])
@@ -241,12 +253,14 @@ const buildEventFilter = (query = {}) => {
   }
 
   if (query.search) {
-    const pattern = new RegExp(escapeRegex(query.search), 'i')
-    filter.$or = [
-      { title: pattern },
-      { description: pattern },
-      { semester: pattern }
-    ]
+    const pattern = buildSafeSearchRegex(query.search)
+    if (pattern) {
+      filter.$or = [
+        { title: pattern },
+        { description: pattern },
+        { semester: pattern }
+      ]
+    }
   }
 
   return filter
@@ -306,6 +320,12 @@ const createEventService = ({
   roundModel = Round,
   submissionModel = Submission,
   boardModel = JudgingBoard,
+  teamModel = Team,
+  repositoryModel = Repository,
+  rankingModel = Ranking,
+  workshopModel = Workshop,
+  timelineModel = TimelineEvent,
+  trackModel = Track,
   userModel = User,
   nowProvider = () => new Date()
 } = {}) => {
@@ -410,6 +430,36 @@ const createEventService = ({
     }
 
     return users
+  }
+
+  const countDocuments = async (model, filter) => {
+    if (!model?.countDocuments) return 0
+    return await model.countDocuments(filter)
+  }
+
+  const ensureEventCanBeDeleted = async (event) => {
+    if (event.status !== 'DRAFT') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only unused DRAFT events can be deleted; archive the event through the lifecycle workflow instead'])
+    }
+
+    const eventId = event._id || event.id
+    const dependencyChecks = [
+      ['rounds', countDocuments(roundModel, { eventId })],
+      ['judging boards', countDocuments(boardModel, { eventId })],
+      ['tracks', countDocuments(trackModel, { eventId })],
+      ['timelines', countDocuments(timelineModel, { eventId })],
+      ['workshops', countDocuments(workshopModel, { eventId })],
+      ['teams', countDocuments(teamModel, { eventId })],
+      ['submissions', countDocuments(submissionModel, { eventId })],
+      ['rankings', countDocuments(rankingModel, { eventId })],
+      ['repositories', countDocuments(repositoryModel, { eventId })]
+    ]
+
+    const counts = await Promise.all(dependencyChecks.map(async ([name, promise]) => [name, await promise]))
+    const blockingDependencies = counts.filter(([, count]) => count > 0).map(([name]) => name)
+    if (blockingDependencies.length > 0) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Cannot delete event with existing ${blockingDependencies.join(', ')}`])
+    }
   }
 
   const findScoringBoards = async ({ eventId, roundId }) => {
@@ -588,7 +638,8 @@ const createEventService = ({
   }
 
   const deleteEvent = async (id) => {
-    await ensureEventExists(id)
+    const event = await ensureEventExists(id)
+    await ensureEventCanBeDeleted(event)
     await repository.deleteById(id)
   }
 

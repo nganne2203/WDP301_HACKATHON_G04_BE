@@ -1055,10 +1055,10 @@ const runWithOptionalTransaction = async ({ repository, logger, work }) => {
     const unsupportedTransaction = /Transaction numbers|replica set member|mongos/i.test(error.message)
     if (!unsupportedTransaction) throw error
 
-    logger.warn('MongoDB transaction is not available; running team flow without transaction', {
+    logger.error('MongoDB transaction is not available for a critical team flow', {
       error: error.message
     })
-    return await work(null)
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['MongoDB transactions are required for this team operation; configure MongoDB as a replica set'])
   } finally {
     await session.endSession()
   }

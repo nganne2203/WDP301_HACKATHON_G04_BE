@@ -6,7 +6,8 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
-import { escapeRegex } from '#utils/sanitizeUtil.js'
+import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
+import Workshop from '#models/workshop.model.js'
 import {
   applyEventVisibilityScope,
   ensureCanViewEventChild
@@ -74,11 +75,13 @@ const buildTimelineFilter = (query = {}) => {
   if (query.status) filter.status = query.status
 
   if (query.search) {
-    const pattern = new RegExp(escapeRegex(query.search), 'i')
-    filter.$or = [
-      { title: pattern },
-      { description: pattern }
-    ]
+    const pattern = buildSafeSearchRegex(query.search)
+    if (pattern) {
+      filter.$or = [
+        { title: pattern },
+        { description: pattern }
+      ]
+    }
   }
 
   return filter
@@ -96,6 +99,11 @@ const normalizeEvent = (event) => {
     year: event.year,
     status: event.status
   }
+}
+
+const countDocuments = async (model, filter) => {
+  if (!model?.countDocuments) return 0
+  return await model.countDocuments(filter)
 }
 
 const normalizeTimeline = (timeline) => {
@@ -167,6 +175,17 @@ export const createTimelineService = ({
     return normalizeTimeline(timeline)
   }
 
+  const ensureTimelineCanBeDeleted = async (timeline) => {
+    if (timeline.status !== 'SCHEDULED') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only SCHEDULED timeline events can be deleted'])
+    }
+
+    const linkedWorkshopCount = await countDocuments(Workshop, { timelineEventId: timeline._id || timeline.id })
+    if (linkedWorkshopCount > 0) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Cannot delete timeline event while workshops are linked to it'])
+    }
+  }
+
   const createTimeline = async (payload = {}) => {
     ensureDateRange(payload)
     const event = await eventService.getRawEventById(payload.eventId)
@@ -210,7 +229,8 @@ export const createTimelineService = ({
   }
 
   const deleteTimeline = async (id) => {
-    await ensureTimelineExists(id)
+    const timeline = await ensureTimelineExists(id)
+    await ensureTimelineCanBeDeleted(timeline)
     await repository.deleteById(id)
   }
 

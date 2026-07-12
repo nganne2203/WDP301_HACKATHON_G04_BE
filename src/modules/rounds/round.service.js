@@ -5,12 +5,15 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
-import { escapeRegex } from '#utils/sanitizeUtil.js'
+import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
 import Event from '#models/event.model.js'
 import Rubric from '#models/rubric.model.js'
 import Team from '#models/team.model.js'
 import Track from '#models/track.model.js'
 import User from '#models/user.model.js'
+import Submission from '#models/submission.model.js'
+import ScoreSheet from '#models/scoreSheet.model.js'
+import Ranking from '#models/ranking.model.js'
 import { JUDGING_BOARD_REPOSITORY } from '#modules/judging-boards/judging-board.repository.js'
 import { isActiveJudge } from '#utils/domainAccessUtil.js'
 
@@ -196,8 +199,8 @@ const buildRoundFilter = (query = {}) => {
   if (query.roundType) filter.roundType = query.roundType
   if (query.status) filter.status = query.status
   if (query.search) {
-    const pattern = new RegExp(escapeRegex(query.search), 'i')
-    filter.$or = [{ name: pattern }, { promotionRule: pattern }, { tieBreakRule: pattern }]
+    const pattern = buildSafeSearchRegex(query.search)
+    if (pattern) filter.$or = [{ name: pattern }, { promotionRule: pattern }, { tieBreakRule: pattern }]
   }
   return filter
 }
@@ -280,6 +283,11 @@ const ensurePromotionRuleConsistency = ({ promotedTeamIds = [], maxPromotedTeams
 
 const extractIds = (values = []) => values.map(value => value?._id?.toString?.() || value?.toString?.() || value).filter(Boolean)
 
+const countDocuments = async (model, filter) => {
+  if (!model?.countDocuments) return 0
+  return await model.countDocuments(filter)
+}
+
 const syncSingleJudgingBoardForRound = async (round) => {
   if (!round) return
 
@@ -344,6 +352,24 @@ export const createRoundService = ({
   }
 
   const getRoundById = async (id) => normalizeRound(await ensureRoundExists(id))
+
+  const ensureRoundCanBeDeleted = async (round) => {
+    if (round.status !== 'DRAFT') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only unused DRAFT rounds can be deleted'])
+    }
+
+    const roundId = round._id || round.id
+    const [boardCount, submissionCount, scoreSheetCount, rankingCount] = await Promise.all([
+      JUDGING_BOARD_REPOSITORY.count({ roundId }),
+      countDocuments(Submission, { roundId }),
+      countDocuments(ScoreSheet, { roundId }),
+      countDocuments(Ranking, { roundId })
+    ])
+
+    if (boardCount || submissionCount || scoreSheetCount || rankingCount) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Cannot delete round after boards, submissions, score sheets, or rankings have been created'])
+    }
+  }
 
   const createRound = async (payload = {}) => {
     ensureDateOrder(payload)
@@ -410,7 +436,8 @@ export const createRoundService = ({
   }
 
   const deleteRound = async (id) => {
-    await ensureRoundExists(id)
+    const round = await ensureRoundExists(id)
+    await ensureRoundCanBeDeleted(round)
     await repository.deleteById(id)
   }
 

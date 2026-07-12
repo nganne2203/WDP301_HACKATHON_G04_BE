@@ -34,6 +34,12 @@ const createRepository = () => {
   }
 }
 
+const countModel = (value) => ({
+  async countDocuments() {
+    return value
+  }
+})
+
 const testAuditLogRepository = {
   async create(entry) {
     return entry
@@ -62,7 +68,7 @@ test('createEvent stores dynamic competition config and syncs legacy finalist fi
       finalistCount: 6,
       finalistsPerBoard: 2,
       finalistSelectionMode: 'FIXED_PER_BOARD',
-      rankingScopes: ['TEAM', 'CHAPTER'],
+      rankingScopes: ['TEAM'],
       tieBreakRule: '10-minute mini test'
     }
   }, { id: '000000000000000000000099' })
@@ -71,9 +77,25 @@ test('createEvent stores dynamic competition config and syncs legacy finalist fi
   assert.equal(event.competitionConfig.trackCount, 3)
   assert.equal(event.competitionConfig.finalistCount, 6)
   assert.equal(event.competitionConfig.finalistsPerBoard, 2)
-  assert.deepEqual(event.competitionConfig.rankingScopes, ['TEAM', 'CHAPTER'])
+  assert.deepEqual(event.competitionConfig.rankingScopes, ['TEAM'])
   assert.equal(event.finalistSlotsPerTrack, 2)
   assert.equal(event.totalFinalistSlots, 6)
+})
+
+test('createEvent rejects unsupported ranking scopes until official generation exists', async () => {
+  const service = createService()
+
+  await assert.rejects(
+    service.createEvent({
+      title: 'Unsupported Ranking Scope',
+      competitionConfig: {
+        rankingScopes: ['TEAM', 'CHAPTER']
+      }
+    }, { id: '000000000000000000000099' }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Ranking scope CHAPTER is not supported for official generation yet')
+  )
 })
 
 test('createEvent derives competition config from legacy finalist fields for backward compatibility', async () => {
@@ -234,6 +256,46 @@ test('updateEvent rejects direct status changes outside the lifecycle endpoint',
     (error) => error instanceof ApiError &&
       error.code === 'BAD_REQUEST' &&
       error.errors.includes('Use the event status workflow endpoint to change event status')
+  )
+})
+
+test('deleteEvent only allows unused draft events', async () => {
+  const repository = createRepository()
+  const service = createEventService({
+    repository,
+    notificationService: { sendEventInvitations: async () => ({}) },
+    auditLogRepository: testAuditLogRepository,
+    roundModel: countModel(0),
+    submissionModel: {
+      async findOne() { return null },
+      async countDocuments() { return 0 }
+    },
+    boardModel: {
+      async findOne() { return null },
+      async countDocuments() { return 0 }
+    },
+    teamModel: countModel(0),
+    repositoryModel: countModel(0),
+    rankingModel: countModel(0),
+    workshopModel: countModel(0),
+    timelineModel: countModel(0),
+    trackModel: countModel(0)
+  })
+
+  const draft = await service.createEvent({ title: 'Unused Draft' }, { id: '000000000000000000000099' })
+  await service.deleteEvent(draft.id)
+  await assert.rejects(
+    service.getEventById(draft.id, { roles: ['ADMIN'] }),
+    error => error instanceof ApiError && error.code === 'NOT_FOUND'
+  )
+
+  const nonDraft = await service.createEvent({ title: 'Open Event' }, { id: '000000000000000000000099' })
+  await repository.updateById(nonDraft.id, { status: 'OPEN_REGISTRATION' })
+  await assert.rejects(
+    service.deleteEvent(nonDraft.id),
+    error => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Only unused DRAFT events can be deleted; archive the event through the lifecycle workflow instead')
   )
 })
 

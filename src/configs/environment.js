@@ -24,7 +24,8 @@ export const env = {
     hostname: process.env.HOSTNAME,
     nodeEnv,
     publicUrl: process.env.APP_BASE_URL || process.env.SERVER_PUBLIC_URL,
-    readinessRequiresRedis: parseBoolean(process.env.READINESS_REQUIRES_REDIS, true)
+    readinessRequiresRedis: parseBoolean(process.env.READINESS_REQUIRES_REDIS, true),
+    readinessRequiresTransactions: parseBoolean(process.env.READINESS_REQUIRES_TRANSACTIONS, true)
   },
   db: {
     uri: process.env.MONGODB_URI

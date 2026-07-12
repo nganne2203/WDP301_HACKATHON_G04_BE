@@ -8,7 +8,7 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { env } from '#configs/environment.js'
-import { escapeRegex } from '#utils/sanitizeUtil.js'
+import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
 import { AUDIT_LOG_REPOSITORY } from '#modules/audit-logs/audit-log.repository.js'
 import { actorHasRole, getActorId } from '#utils/domainAccessUtil.js'
 import { normalizeLegacyRoleName, PARTICIPANT_ROLE_NAME } from '#utils/userRoleMigrationUtil.js'
@@ -93,10 +93,12 @@ const buildParticipantFilter = (query = {}) => {
   if (query.chapterName) filter.chapterName = query.chapterName
 
   if (query.search) {
-    const pattern = new RegExp(escapeRegex(query.search), 'i')
-    filter.$or = [
-      { chapterName: pattern }
-    ]
+    const pattern = buildSafeSearchRegex(query.search)
+    if (pattern) {
+      filter.$or = [
+        { chapterName: pattern }
+      ]
+    }
   }
 
   return filter

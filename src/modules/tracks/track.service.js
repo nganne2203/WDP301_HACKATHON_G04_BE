@@ -6,7 +6,9 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
-import { escapeRegex } from '#utils/sanitizeUtil.js'
+import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
+import Team from '#models/team.model.js'
+import Round from '#models/round.model.js'
 import {
   applyEventVisibilityScope,
   ensureCanViewEventChild
@@ -36,12 +38,14 @@ const buildTrackFilter = (query = {}) => {
   if (query.status) filter.status = query.status
 
   if (query.search) {
-    const pattern = new RegExp(escapeRegex(query.search), 'i')
-    filter.$or = [
-      { code: pattern },
-      { name: pattern },
-      { description: pattern }
-    ]
+    const pattern = buildSafeSearchRegex(query.search)
+    if (pattern) {
+      filter.$or = [
+        { code: pattern },
+        { name: pattern },
+        { description: pattern }
+      ]
+    }
   }
 
   return filter
@@ -78,6 +82,11 @@ const getEventIdValue = (event) => {
   if (!event) return event
   if (typeof event === 'string' || event instanceof mongoose.Types.ObjectId) return event
   return event._id || event.id
+}
+
+const countDocuments = async (model, filter) => {
+  if (!model?.countDocuments) return 0
+  return await model.countDocuments(filter)
 }
 
 const normalizeTrack = (track) => {
@@ -164,6 +173,22 @@ export const createTrackService = ({
     return normalizeTrack(track)
   }
 
+  const ensureTrackCanBeDeleted = async (track) => {
+    if (track.status !== 'DRAFT') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only unused DRAFT tracks can be deleted'])
+    }
+
+    const trackId = track._id || track.id
+    const [teamCount, roundCount] = await Promise.all([
+      countDocuments(Team, { trackId }),
+      countDocuments(Round, { trackId })
+    ])
+
+    if (teamCount || roundCount || (track.teamIds || []).length > 0) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Cannot delete track after teams or rounds have been assigned'])
+    }
+  }
+
   const createTrack = async (payload = {}) => {
     await eventService.getRawEventById(payload.eventId)
     ensureTrackStatusTransition({
@@ -199,7 +224,8 @@ export const createTrackService = ({
   }
 
   const deleteTrack = async (id) => {
-    await ensureTrackExistsWithRepository(id)
+    const track = await ensureTrackExistsWithRepository(id)
+    await ensureTrackCanBeDeleted(track)
     await repository.deleteById(id)
   }
 

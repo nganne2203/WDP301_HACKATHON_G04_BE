@@ -5,12 +5,14 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
-import { escapeRegex } from '#utils/sanitizeUtil.js'
+import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
 import Event from '#models/event.model.js'
 import Round from '#models/round.model.js'
 import Team from '#models/team.model.js'
 import Track from '#models/track.model.js'
 import User from '#models/user.model.js'
+import ScoreSheet from '#models/scoreSheet.model.js'
+import Ranking from '#models/ranking.model.js'
 import { isActiveJudge } from '#utils/domainAccessUtil.js'
 
 const BOARD_FIELDS = [
@@ -139,8 +141,8 @@ const buildBoardFilter = (query = {}) => {
   }
   if (query.status) filter.status = query.status
   if (query.search) {
-    const pattern = new RegExp(escapeRegex(query.search), 'i')
-    filter.$or = [{ name: pattern }]
+    const pattern = buildSafeSearchRegex(query.search)
+    if (pattern) filter.$or = [{ name: pattern }]
   }
   return filter
 }
@@ -211,6 +213,11 @@ const ensureBoardCapacity = ({ teamIds = [], maxTeams }) => {
   }
 }
 
+const countDocuments = async (model, filter) => {
+  if (!model?.countDocuments) return 0
+  return await model.countDocuments(filter)
+}
+
 const ELIGIBLE_TEAM_STATUSES = new Set(['CONFIRMED'])
 
 const buildBoardLabel = (boardNumber) => {
@@ -277,6 +284,23 @@ export const createJudgingBoardService = ({
 
   const getBoardById = async (id) => normalizeBoard(await ensureBoardExists(id))
 
+  const ensureBoardCanBeDeleted = async (board) => {
+    if (!['DRAFT', 'ASSIGNED'].includes(board.status)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only DRAFT or ASSIGNED judging boards can be deleted before scoring starts'])
+    }
+
+    const boardId = board._id || board.id
+    const roundId = board.roundId?._id || board.roundId
+    const [scoreSheetCount, rankingCount] = await Promise.all([
+      countDocuments(ScoreSheet, { boardId }),
+      countDocuments(Ranking, { roundId })
+    ])
+
+    if (scoreSheetCount || rankingCount) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Cannot delete judging board after score sheets or rankings have been created'])
+    }
+  }
+
   const createBoard = async (payload = {}) => {
     const event = await ensureEventExists(payload.eventId)
     const round = await ensureRoundBelongsToEvent({ eventId: event._id, roundId: payload.roundId })
@@ -329,7 +353,8 @@ export const createJudgingBoardService = ({
   }
 
   const deleteBoard = async (id) => {
-    await ensureBoardExists(id)
+    const board = await ensureBoardExists(id)
+    await ensureBoardCanBeDeleted(board)
     await repository.deleteById(id)
   }
 

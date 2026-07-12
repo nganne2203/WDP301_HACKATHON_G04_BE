@@ -5,6 +5,15 @@ export const escapeRegex = (value = '') => {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+export const normalizeSearchTerm = (value = '', { maxLength = 100 } = {}) => {
+  return String(value || '').trim().slice(0, maxLength)
+}
+
+export const buildSafeSearchRegex = (value = '', options = {}) => {
+  const term = normalizeSearchTerm(value, options)
+  return term ? new RegExp(escapeRegex(term), 'i') : null
+}
+
 const sanitize = (data, seen = new WeakSet()) => {
   if (typeof data === 'string') {
     return data.replace(SENSITIVE_VALUE_PATTERN, '[REDACTED]')
