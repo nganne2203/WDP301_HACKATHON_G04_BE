@@ -8,7 +8,7 @@ const scoreSchema = new Schema(
     scoreSheetId: { type: Schema.Types.ObjectId, ref: 'ScoreSheet' },
     judgeId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     criterionId: { type: Schema.Types.ObjectId, ref: 'Criterion' },
-    scoreValue: { type: Number, required: true },
+    scoreValue: { type: Number, required: true, min: 0 },
     isOverridden: { type: Boolean, default: false },
     overrideReason: { type: String },
     comment: { type: String }

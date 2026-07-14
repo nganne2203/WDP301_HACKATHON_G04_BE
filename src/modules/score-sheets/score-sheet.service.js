@@ -21,6 +21,13 @@ import Team from '#models/team.model.js'
 import User from '#models/user.model.js'
 import { RUBRIC_REPOSITORY } from '#modules/rubrics/rubric.repository.js'
 import { env } from '#configs/environment.js'
+import {
+  ALLOWED_SCORE_SCALES,
+  getRubricScale,
+  hasAtMostTwoDecimals,
+  roundToTwoDecimals,
+  sumCriterionWeights
+} from '#utils/scoringScale.js'
 
 const normalizeScore = (score) => {
   if (!score) return null
@@ -41,7 +48,7 @@ const normalizeScore = (score) => {
       }
       : null,
     judgeId: plainScore.judgeId?._id?.toString?.() || plainScore.judgeId?.toString?.() || plainScore.judgeId,
-    scoreValue: plainScore.scoreValue,
+    scoreValue: roundToTwoDecimals(plainScore.scoreValue),
     comment: plainScore.comment,
     isOverridden: plainScore.isOverridden,
     overrideReason: plainScore.overrideReason
@@ -94,9 +101,9 @@ const normalizeScoreSheet = (scoreSheet) => {
       }
       : null,
     scores: (plainScoreSheet.scoreIds || []).map(normalizeScore),
-    totalScore: plainScoreSheet.totalScore,
-    weightedScore: plainScoreSheet.weightedScore,
-    finalScore: plainScoreSheet.finalScore,
+    totalScore: roundToTwoDecimals(plainScoreSheet.totalScore),
+    weightedScore: roundToTwoDecimals(plainScoreSheet.weightedScore),
+    finalScore: roundToTwoDecimals(plainScoreSheet.finalScore),
     generalComment: plainScoreSheet.generalComment,
     status: plainScoreSheet.status,
     submittedAt: plainScoreSheet.submittedAt,
@@ -152,14 +159,16 @@ const buildScoreSheetTotals = ({ scores = [], criteriaById = new Map() }) => {
   const totalScore = scores.reduce((sum, score) => sum + Number(score.scoreValue || 0), 0)
   const weightedScore = scores.reduce((sum, score) => {
     const criterion = criteriaById.get(getScoreCriterionId(score))
+    const maxScore = Number(criterion?.maxScore || 0)
     const weight = Number(criterion?.weight || 1)
-    return sum + (Number(score.scoreValue || 0) * weight)
+    if (maxScore <= 0) return sum
+    return sum + ((Number(score.scoreValue || 0) / maxScore) * weight)
   }, 0)
 
   return {
-    totalScore,
-    weightedScore,
-    finalScore: weightedScore
+    totalScore: roundToTwoDecimals(totalScore),
+    weightedScore: roundToTwoDecimals(weightedScore),
+    finalScore: roundToTwoDecimals(weightedScore)
   }
 }
 
@@ -276,14 +285,36 @@ export const createScoreSheetService = ({
     }
   }
 
-  const validateScores = async ({ rubricId, scores = [] }) => {
+  const validateRubricScale = ({ rubric, criteria = [] }) => {
+    const scale = getRubricScale(rubric)
+    if (!scale) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Rubric totalScore must be one of ${ALLOWED_SCORE_SCALES.join(', ')}`])
+    }
+
+    const totalWeight = sumCriterionWeights(criteria)
+    if (totalWeight !== scale) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Total criterion weight must equal rubric scale ${scale} before scoring`])
+    }
+  }
+
+  const normalizeScoreInput = (score = {}) => ({
+    ...score,
+    scoreValue: roundToTwoDecimals(score.scoreValue)
+  })
+
+  const validateScores = async ({ rubricId, scores = [], rubric = null }) => {
     const criteria = await rubricRepository.findCriteriaByRubricId(rubricId)
     if (criteria.length === 0) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric must contain at least one criterion before scoring'])
     }
+    const resolvedRubric = rubric || await rubricRepository.findRubricById(rubricId)
+    validateRubricScale({ rubric: resolvedRubric, criteria })
 
     const criteriaById = new Map(criteria.map(criterion => [criterion._id.toString(), criterion]))
     for (const score of scores) {
+      if (!hasAtMostTwoDecimals(score.scoreValue)) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['scoreValue can have at most 2 decimal places'])
+      }
       const criterion = criteriaById.get(getScoreCriterionId(score))
       if (!criterion) {
         throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Score criterion does not belong to the selected rubric'])
@@ -351,7 +382,7 @@ export const createScoreSheetService = ({
       scoreSheetId,
       judgeId,
       criterionId: score.criterionId,
-      scoreValue: Number(score.scoreValue),
+      scoreValue: roundToTwoDecimals(score.scoreValue),
       comment: score.comment,
       isOverridden: false,
       overrideReason: null
@@ -407,10 +438,11 @@ export const createScoreSheetService = ({
       throw new ApiError(ERROR_CODES.CONFLICT, ['Score sheet already exists for this judge, round, and team'])
     }
 
-    const scores = payload.scores || []
+    const scores = (payload.scores || []).map(normalizeScoreInput)
     const { criteriaById } = await validateScores({
       rubricId: context.rubric._id.toString(),
-      scores
+      scores,
+      rubric: context.rubric
     })
 
     const scoreSheet = await repository.createScoreSheet({
@@ -462,7 +494,7 @@ export const createScoreSheetService = ({
     await ensureExistingScoreSheetCanBeChanged(existingScoreSheet)
 
     const rubricId = existingScoreSheet.rubricId?._id?.toString?.() || existingScoreSheet.rubricId?.toString?.()
-    const scoreInput = payload.scores || []
+    const scoreInput = (payload.scores || []).map(normalizeScoreInput)
     const { criteriaById } = await validateScores({ rubricId, scores: scoreInput })
     const createdScores = await replaceSheetScores({
       scoreSheetId: id,

@@ -42,6 +42,7 @@ const ROUND_FIELDS = [
 ]
 
 const ROUND_ASSIGNABLE_TEAM_STATUSES = ['CONFIRMED']
+const EVENT_TIME_ZONE = 'Asia/Ho_Chi_Minh'
 
 const ensureObjectId = (id, fieldName = 'round id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -79,6 +80,45 @@ const ensureDateOrder = (payload = {}) => {
 
   if (payload.publishTime && payload.endTime && new Date(payload.publishTime) < new Date(payload.endTime)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['publishTime must be after or equal to endTime'])
+  }
+}
+
+const formatDateKeyInEventTimeZone = (value) => {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: EVENT_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date)
+
+  const lookup = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${lookup.year}-${lookup.month}-${lookup.day}`
+}
+
+const ensureRoundWindowWithinEvent = (event, payload = {}) => {
+  const eventStartKey = formatDateKeyInEventTimeZone(event?.startDate)
+  const eventEndKey = formatDateKeyInEventTimeZone(event?.endDate)
+  const fields = [
+    ['startTime', 'Round start time'],
+    ['endTime', 'Round end time']
+  ]
+
+  for (const [field, label] of fields) {
+    if (!payload[field]) continue
+    const roundKey = formatDateKeyInEventTimeZone(payload[field])
+    if (!roundKey) continue
+
+    if (eventStartKey && roundKey < eventStartKey) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`${label} must be within the event date range`])
+    }
+
+    if (eventEndKey && roundKey > eventEndKey) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`${label} must be within the event date range`])
+    }
   }
 }
 
@@ -453,6 +493,7 @@ export const createRoundService = ({
   const createRound = async (payload = {}) => {
     ensureDateOrder(payload)
     const event = await ensureEventExists(payload.eventId)
+    ensureRoundWindowWithinEvent(event, payload)
     await ensureTrackBelongsToEvent({ eventId: event._id, trackId: payload.trackId })
     await ensureRubricBelongsToEvent({ eventId: event._id, rubricId: payload.rubricId })
     await ensureUsersExist(payload.assignedJudgeIds || [])
@@ -489,7 +530,8 @@ export const createRoundService = ({
     }
 
     ensureDateOrder(mergedPayload)
-    await ensureEventExists(eventId)
+    const event = await ensureEventExists(eventId)
+    ensureRoundWindowWithinEvent(event, mergedPayload)
     await ensureTrackBelongsToEvent({ eventId, trackId })
     await ensureRubricBelongsToEvent({
       eventId,
