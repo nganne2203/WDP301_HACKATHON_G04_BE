@@ -173,12 +173,12 @@ const createScoreSheetFixture = ({
   const rubricRepository = {
     async findRubricById(id) {
       if (id !== ids.rubric) return null
-      return { _id: ids.rubric, title: 'Official Rubric' }
+      return { _id: ids.rubric, title: 'Official Rubric', totalScore: 100 }
     },
     async findCriteriaByRubricId() {
       return [
-        { _id: ids.criterion1, name: 'Correctness', maxScore: 10, weight: 1, order: 1 },
-        { _id: ids.criterion2, name: 'Architecture', maxScore: 20, weight: 2, order: 2 }
+        { _id: ids.criterion1, name: 'Correctness', maxScore: 10, weight: 50, order: 1 },
+        { _id: ids.criterion2, name: 'Architecture', maxScore: 20, weight: 50, order: 2 }
       ]
     }
   }
@@ -210,7 +210,7 @@ const createRankingFixture = ({
   finalistCount = 2,
   finalistsPerBoard = 1,
   finalistSelectionMode = 'FIXED_PER_BOARD',
-  roundType = 'PRELIMINARY',
+  roundType = 'FINAL',
   eventStatus = 'SCORING'
 } = {}) => {
   const events = new Map()
@@ -527,6 +527,7 @@ test('submitted score sheet is locked', async () => {
 
   const submitted = await service.submitScoreSheet(created.id, { id: ids.judge1 })
   assert.equal(submitted.status, 'LOCKED')
+  assert.equal(submitted.finalScore, 90)
   assert.equal(stores.auditLogs.at(-1).action, 'SCORE_SHEET_SUBMITTED_AND_LOCKED')
   assert.equal(Object.hasOwn(stores.scores.values().next().value, 'aiSuggestedScore'), false)
   assert.equal(Object.hasOwn(stores.scores.values().next().value, 'aiReviewCriterionId'), false)
@@ -760,7 +761,8 @@ test('result publication works and audit log is written for critical ranking act
   assert.deepEqual(stores.auditLogs.map(item => item.action), [
     'RANKING_GENERATED',
     'FINALISTS_SELECTED',
-    'RESULTS_PUBLISHED'
+    'RESULTS_PUBLISHED',
+    'EVENT_COMPLETED_AFTER_FINAL_RESULTS'
   ])
 })
 

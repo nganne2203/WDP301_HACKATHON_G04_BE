@@ -2,6 +2,8 @@ import Joi from 'joi'
 
 const objectId = Joi.string().hex().length(24)
 const rubricStatus = Joi.string().trim().uppercase().valid('DRAFT', 'ACTIVE', 'ARCHIVED')
+const scoreScale = Joi.number().valid(4, 10, 100)
+const scoreNumber = Joi.number().positive().precision(2)
 
 export const RUBRIC_VALIDATION = {
   listRubrics: {
@@ -19,7 +21,7 @@ export const RUBRIC_VALIDATION = {
       roundId: objectId.allow(null),
       title: Joi.string().trim().min(2).max(200).required(),
       description: Joi.string().trim().max(2000).allow('', null),
-      totalScore: Joi.number().min(0),
+      totalScore: scoreScale.default(100),
       version: Joi.number().integer().min(1).default(1),
       status: rubricStatus.default('DRAFT')
     })
@@ -31,6 +33,7 @@ export const RUBRIC_VALIDATION = {
     body: Joi.object({
       title: Joi.string().trim().min(2).max(200),
       description: Joi.string().trim().max(2000).allow('', null),
+      totalScore: scoreScale,
       version: Joi.number().integer().min(1),
       status: rubricStatus
     }).min(1)
@@ -47,8 +50,8 @@ export const RUBRIC_VALIDATION = {
     body: Joi.object({
       name: Joi.string().trim().min(2).max(200).required(),
       description: Joi.string().trim().max(2000).allow('', null),
-      maxScore: Joi.number().min(0).required(),
-      weight: Joi.number().min(0).default(1),
+      maxScore: scoreNumber.required(),
+      weight: scoreNumber.default(1),
       order: Joi.number().integer().min(1),
       judgeOnly: Joi.boolean().default(false),
       aiSupportForAudit: Joi.boolean().default(true),
@@ -63,8 +66,8 @@ export const RUBRIC_VALIDATION = {
     body: Joi.object({
       name: Joi.string().trim().min(2).max(200),
       description: Joi.string().trim().max(2000).allow('', null),
-      maxScore: Joi.number().min(0),
-      weight: Joi.number().min(0),
+      maxScore: scoreNumber,
+      weight: scoreNumber,
       order: Joi.number().integer().min(1),
       judgeOnly: Joi.boolean(),
       aiSupportForAudit: Joi.boolean(),
