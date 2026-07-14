@@ -4,6 +4,77 @@ import test from 'node:test'
 import ApiError from '../src/utils/ApiError.js'
 import { createRoundService } from '../src/modules/rounds/round.service.js'
 
+test('createRound and updateRound reject windows outside the event dates', async () => {
+  const originalEventFindById = await import('../src/models/event.model.js')
+  const originalTeamFind = await import('../src/models/team.model.js')
+  const originalUserFind = await import('../src/models/user.model.js')
+
+  const eventModel = originalEventFindById.default
+  const teamModel = originalTeamFind.default
+  const userModel = originalUserFind.default
+
+  const existingRound = {
+    _id: '000000000000000000000901',
+    eventId: '000000000000000000000101',
+    name: 'Round 1',
+    startTime: '2026-08-13T03:00:00.000Z',
+    endTime: '2026-08-13T10:00:00.000Z',
+    status: 'DRAFT',
+    assignedTeamIds: [],
+    assignedJudgeIds: []
+  }
+  const repository = {
+    count: async () => 0,
+    findAll: async () => [],
+    findById: async () => existingRound,
+    create: async (data) => ({ _id: '000000000000000000000901', ...data }),
+    updateById: async () => existingRound,
+    deleteById: async () => null
+  }
+
+  const eventFindById = eventModel.findById
+  const teamFind = teamModel.find
+  const userFind = userModel.find
+
+  eventModel.findById = async () => ({
+    _id: '000000000000000000000101',
+    title: 'SEAL',
+    startDate: '2026-08-13T00:00:00.000Z',
+    endDate: '2026-08-16T00:00:00.000Z'
+  })
+  teamModel.find = async () => []
+  userModel.find = async () => []
+
+  const service = createRoundService({ repository })
+
+  try {
+    await assert.rejects(
+      service.createRound({
+        eventId: '000000000000000000000101',
+        name: 'Round before event',
+        startTime: '2026-08-12T03:27:00.000Z',
+        endTime: '2026-08-13T03:27:00.000Z'
+      }),
+      (error) => error instanceof ApiError &&
+        error.code === 'BAD_REQUEST' &&
+        error.errors.includes('Round start time must be within the event date range')
+    )
+
+    await assert.rejects(
+      service.updateRound('000000000000000000000901', {
+        endTime: '2026-08-17T03:27:00.000Z'
+      }),
+      (error) => error instanceof ApiError &&
+        error.code === 'BAD_REQUEST' &&
+        error.errors.includes('Round end time must be within the event date range')
+    )
+  } finally {
+    eventModel.findById = eventFindById
+    teamModel.find = teamFind
+    userModel.find = userFind
+  }
+})
+
 test('createRound rejects teams outside the selected track', async () => {
   const originalEventFindById = await import('../src/models/event.model.js')
   const originalTrackFindById = await import('../src/models/track.model.js')
