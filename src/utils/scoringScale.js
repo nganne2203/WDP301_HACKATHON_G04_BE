@@ -1,4 +1,4 @@
-export const ALLOWED_SCORE_SCALES = [5, 10, 100]
+export const ALLOWED_SCORE_SCALES = [4, 10, 100]
 
 export const roundToTwoDecimals = (value = 0) => {
   const numericValue = Number(value)
