@@ -50,12 +50,20 @@ const findByRoundId = async (roundId) => {
     .sort({ boardNumber: 1, createdAt: 1 })
 }
 
+const findByRoundIds = async (roundIds = []) => {
+  return await JudgingBoard.find({ roundId: { $in: roundIds } })
+    .populate(boardPopulate)
+    .sort({ boardNumber: 1, createdAt: 1 })
+}
+
 const deleteManyByRoundExcludingBoardNumbers = async ({ roundId, boardNumbers = [] }) => {
   return await JudgingBoard.deleteMany({
     roundId,
     boardNumber: { $nin: boardNumbers }
   })
 }
+
+const deleteByRoundIds = async (roundIds = []) => JudgingBoard.deleteMany({ roundId: { $in: roundIds } })
 
 const replaceRoundTeamPlacements = async ({ eventId, roundId, placements = [] }) => {
   await RoundTeamPlacement.deleteMany({ eventId, roundId })
@@ -72,6 +80,8 @@ export const JUDGING_BOARD_REPOSITORY = {
   deleteById,
   findByRoundAndBoardNumber,
   findByRoundId,
+  findByRoundIds,
   deleteManyByRoundExcludingBoardNumbers,
+  deleteByRoundIds,
   replaceRoundTeamPlacements
 }

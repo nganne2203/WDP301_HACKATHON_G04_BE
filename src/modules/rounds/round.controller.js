@@ -5,7 +5,7 @@ import { responseSuccess } from '#utils/responseUtil.js'
 
 const listRounds = async (req, res, next) => {
   try {
-    const { rounds, pagination } = await ROUND_SERVICE.listRounds(req.validated?.query || req.query)
+    const { rounds, pagination } = await ROUND_SERVICE.listRounds(req.validated?.query || req.query, req.user)
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get rounds successfully',
       data: rounds,
@@ -18,7 +18,7 @@ const listRounds = async (req, res, next) => {
 
 const getRoundById = async (req, res, next) => {
   try {
-    const round = await ROUND_SERVICE.getRoundById(req.params.id)
+    const round = await ROUND_SERVICE.getRoundById(req.params.id, req.user)
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get round successfully',
       data: round

@@ -15,7 +15,7 @@ import Submission from '#models/submission.model.js'
 import ScoreSheet from '#models/scoreSheet.model.js'
 import Ranking from '#models/ranking.model.js'
 import { JUDGING_BOARD_REPOSITORY } from '#modules/judging-boards/judging-board.repository.js'
-import { isActiveJudge } from '#utils/domainAccessUtil.js'
+import { actorHasRole, getActorId, isActiveJudge, isParticipantOnlyActor, isPrivilegedEventActor } from '#utils/domainAccessUtil.js'
 
 const ROUND_FIELDS = [
   'eventId',
@@ -330,9 +330,83 @@ export const createRoundService = ({
     return round
   }
 
-  const listRounds = async (query = {}) => {
+  const applyParticipantRoundScope = async (filter = {}, actor = {}) => {
+    if (!isParticipantOnlyActor(actor)) return filter
+
+    const actorId = getActorId(actor)
+    if (!actorId) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated participant is required'])
+    }
+
+    const teamFilter = {
+      status: 'CONFIRMED',
+      $or: [{ leaderId: actorId }, { memberIds: actorId }]
+    }
+    if (filter.eventId) teamFilter.eventId = filter.eventId
+
+    const teams = await Team.find(teamFilter).select('_id')
+    const teamIds = teams.map(team => team._id)
+    return { ...filter, assignedTeamIds: { $in: teamIds } }
+  }
+
+  const applyJudgeRoundScope = async (filter = {}, actor = {}) => {
+    if (!actorHasRole(actor, 'JUDGE') || isPrivilegedEventActor(actor)) return filter
+
+    const actorId = getActorId(actor)
+    if (!actorId) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated judge is required'])
+    }
+
+    const boardFilter = { judgeIds: actorId }
+    if (filter.eventId) boardFilter.eventId = filter.eventId
+    const boards = await JUDGING_BOARD_REPOSITORY.findAll({ filter: boardFilter, limit: 100 })
+    const roundIds = [...new Set(boards.map(board => board.roundId?._id?.toString?.() || board.roundId?.id || board.roundId?.toString?.()).filter(Boolean))]
+
+    return { ...filter, _id: { $in: roundIds } }
+  }
+
+  const ensureParticipantCanReadRound = async (round, actor = {}) => {
+    if (!isParticipantOnlyActor(actor)) return
+
+    const actorId = getActorId(actor)
+    if (!actorId) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated participant is required'])
+    }
+
+    const assignedTeamIds = (round.assignedTeamIds || []).map(team => team._id || team.id || team)
+    const team = await Team.findOne({
+      _id: { $in: assignedTeamIds },
+      status: 'CONFIRMED',
+      $or: [{ leaderId: actorId }, { memberIds: actorId }]
+    }).select('_id')
+
+    if (!team) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['You are not assigned to this round'])
+    }
+  }
+
+  const ensureJudgeCanReadRound = async (round, actor = {}) => {
+    if (!actorHasRole(actor, 'JUDGE') || isPrivilegedEventActor(actor)) return
+
+    const actorId = getActorId(actor)
+    if (!actorId) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated judge is required'])
+    }
+
+    const board = (await JUDGING_BOARD_REPOSITORY.findAll({
+      filter: { judgeIds: actorId, roundId: round._id || round.id },
+      limit: 1
+    }))[0]
+
+    if (!board) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['You are not assigned to this judging board'])
+    }
+  }
+
+  const listRounds = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
-    const filter = buildRoundFilter(query)
+    const participantScopedFilter = await applyParticipantRoundScope(buildRoundFilter(query), actor)
+    const filter = await applyJudgeRoundScope(participantScopedFilter, actor)
     const skip = (page - 1) * limit
 
     const [rounds, totalItems] = await Promise.all([
@@ -351,7 +425,12 @@ export const createRoundService = ({
     }
   }
 
-  const getRoundById = async (id) => normalizeRound(await ensureRoundExists(id))
+  const getRoundById = async (id, actor = {}) => {
+    const round = await ensureRoundExists(id)
+    await ensureParticipantCanReadRound(round, actor)
+    await ensureJudgeCanReadRound(round, actor)
+    return normalizeRound(round)
+  }
 
   const ensureRoundCanBeDeleted = async (round) => {
     if (round.status !== 'DRAFT') {

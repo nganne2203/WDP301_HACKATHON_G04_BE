@@ -21,6 +21,7 @@ import {
   isPrivilegedEventActor
 } from '#utils/domainAccessUtil.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
+import { env } from '#configs/environment.js'
 
 const SUBMISSION_FIELDS = [
   'repositoryId',
@@ -174,7 +175,8 @@ export const createSubmissionService = ({
   participantModel = Participant,
   repositoryModel = Repository,
   boardModel = JudgingBoard,
-  notificationService = null
+  notificationService = null,
+  relaxedWorkflow = false
 } = {}) => {
   const ensureSubmissionExists = async (id) => {
     ensureObjectId(id, 'submission id')
@@ -275,7 +277,7 @@ export const createSubmissionService = ({
     if (actorHasRole(actor, 'JUDGE') && boardModel?.find) {
       const boardFilter = {
         judgeIds: actorId,
-        status: 'SCORING'
+      status: { $in: relaxedWorkflow ? ['SCORING', 'COMPLETED'] : ['SCORING'] }
       }
       if (filter.eventId) boardFilter.eventId = filter.eventId
       if (filter.roundId) boardFilter.roundId = filter.roundId
@@ -308,7 +310,8 @@ export const createSubmissionService = ({
       const round = submission.roundId && typeof submission.roundId === 'object'
         ? submission.roundId
         : await roundModel.findById(roundId)
-      if (round?.status !== 'SCORING') {
+      const readableRoundStatuses = relaxedWorkflow ? ['SCORING', 'COMPLETED'] : ['SCORING']
+      if (!readableRoundStatuses.includes(round?.status)) {
         throw new ApiError(ERROR_CODES.FORBIDDEN, ['Judge can only access assigned submissions while the round is scoring'])
       }
       const board = await boardModel.findOne({
@@ -316,7 +319,7 @@ export const createSubmissionService = ({
         roundId,
         judgeIds: actorId,
         teamIds: teamId,
-        status: 'SCORING'
+        status: { $in: relaxedWorkflow ? ['SCORING', 'COMPLETED'] : ['SCORING'] }
       })
       if (board) return
     }
@@ -366,19 +369,20 @@ export const createSubmissionService = ({
     const submissionOpenAt = round.submissionOpenAt || round.startTime
     const submissionCloseAt = round.submissionCloseAt || round.submissionDeadline
 
-    if (round.status !== 'OPEN') {
+    const acceptedStatuses = relaxedWorkflow ? ['DRAFT', 'OPEN'] : ['OPEN']
+    if (!acceptedStatuses.includes(round.status)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round is not accepting submissions at this time'])
     }
 
-    if (submissionOpenAt && now < new Date(submissionOpenAt)) {
+    if (!relaxedWorkflow && submissionOpenAt && now < new Date(submissionOpenAt)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Submission window has not opened'])
     }
 
-    if (submissionCloseAt && now > new Date(submissionCloseAt)) {
+    if (!relaxedWorkflow && submissionCloseAt && now > new Date(submissionCloseAt)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Submission window has closed'])
     }
 
-    if (round.endTime && now > new Date(round.endTime)) {
+    if (!relaxedWorkflow && round.endTime && now > new Date(round.endTime)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round has already ended'])
     }
   }
@@ -687,6 +691,9 @@ export const createSubmissionService = ({
 }
 
 export const SUBMISSION_SERVICE = {
-  ...createSubmissionService({ notificationService: NOTIFICATION_SERVICE }),
+  ...createSubmissionService({
+    notificationService: NOTIFICATION_SERVICE,
+    relaxedWorkflow: env.workflow.relaxedDemoRules
+  }),
   normalizeSubmission
 }

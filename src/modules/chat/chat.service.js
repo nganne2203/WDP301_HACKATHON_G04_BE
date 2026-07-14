@@ -3,6 +3,7 @@ import mongoose from 'mongoose'
 import { CHAT_REPOSITORY } from './chat.repository.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
+import { env } from '#configs/environment.js'
 
 const MESSAGE_TYPES = ['text', 'image', 'file']
 const ACTIVE_CHAT_TEAM_STATUSES = ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED']
@@ -61,6 +62,7 @@ const getTeamEventStatus = (team) => {
 
 const ensureTeamChatVisible = (team) => {
   ensureTeamChatActive(team)
+  if (env.workflow.relaxedDemoRules) return
   const eventStatus = getTeamEventStatus(team)
   if (eventStatus && !READABLE_CHAT_EVENT_STATUSES.includes(eventStatus)) {
     throw new ApiError(ERROR_CODES.NOT_FOUND, ['Chat room not found'])
@@ -69,6 +71,7 @@ const ensureTeamChatVisible = (team) => {
 
 const ensureTeamChatWritable = (team) => {
   ensureTeamChatVisible(team)
+  if (env.workflow.relaxedDemoRules) return
   const eventStatus = getTeamEventStatus(team)
   if (eventStatus && !WRITABLE_CHAT_EVENT_STATUSES.includes(eventStatus)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Chat room is read-only after event completion'])

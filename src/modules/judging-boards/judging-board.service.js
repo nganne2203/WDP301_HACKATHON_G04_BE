@@ -13,7 +13,8 @@ import Track from '#models/track.model.js'
 import User from '#models/user.model.js'
 import ScoreSheet from '#models/scoreSheet.model.js'
 import Ranking from '#models/ranking.model.js'
-import { isActiveJudge } from '#utils/domainAccessUtil.js'
+import { actorHasRole, getActorId, isActiveJudge, isPrivilegedEventActor } from '#utils/domainAccessUtil.js'
+import { env } from '#configs/environment.js'
 
 const BOARD_FIELDS = [
   'eventId',
@@ -242,17 +243,26 @@ const shuffleItems = (items, randomFn = Math.random) => {
   return copied
 }
 
-const distributeTeamsAcrossBoards = ({ teams = [], boardCount }) => {
+const distributeTeamsAcrossBoards = ({ teams = [], boardCount, randomFn = Math.random }) => {
   const boards = Array.from({ length: boardCount }, () => [])
-  teams.forEach((team, index) => {
-    boards[index % boardCount].push(team)
+  // Keep the split balanced and predictable. Any remainder is assigned to
+  // the first boards, so 25 teams across 3 boards becomes 9 / 8 / 8.
+  const baseSize = Math.floor(teams.length / boardCount)
+  const remainder = teams.length % boardCount
+  const extraBoards = new Set(Array.from({ length: remainder }, (_, index) => index))
+  let offset = 0
+  boards.forEach((board, index) => {
+    const size = baseSize + (extraBoards.has(index) ? 1 : 0)
+    board.push(...teams.slice(offset, offset + size))
+    offset += size
   })
   return boards
 }
 
 export const createJudgingBoardService = ({
   repository = JUDGING_BOARD_REPOSITORY,
-  randomFn = Math.random
+  randomFn = Math.random,
+  relaxedWorkflow = false
 } = {}) => {
   const ensureBoardExists = async (id) => {
     ensureObjectId(id)
@@ -261,9 +271,29 @@ export const createJudgingBoardService = ({
     return board
   }
 
-  const listBoards = async (query = {}) => {
+  const applyJudgeBoardScope = (filter = {}, actor = {}) => {
+    if (!actorHasRole(actor, 'JUDGE') || isPrivilegedEventActor(actor)) return filter
+
+    const actorId = getActorId(actor)
+    if (!actorId) throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated judge is required'])
+    return { ...filter, judgeIds: actorId }
+  }
+
+  const ensureJudgeCanReadBoard = (board, actor = {}) => {
+    if (!actorHasRole(actor, 'JUDGE') || isPrivilegedEventActor(actor)) return
+
+    const actorId = getActorId(actor)
+    if (!actorId) throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated judge is required'])
+
+    const judgeIds = (board.judgeIds || []).map(judge => judge?._id?.toString?.() || judge?.id || judge?.toString?.())
+    if (!judgeIds.includes(actorId)) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['You are not assigned to this judging board'])
+    }
+  }
+
+  const listBoards = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
-    const filter = buildBoardFilter(query)
+    const filter = applyJudgeBoardScope(buildBoardFilter(query), actor)
     const skip = (page - 1) * limit
 
     const [boards, totalItems] = await Promise.all([
@@ -282,7 +312,11 @@ export const createJudgingBoardService = ({
     }
   }
 
-  const getBoardById = async (id) => normalizeBoard(await ensureBoardExists(id))
+  const getBoardById = async (id, actor = {}) => {
+    const board = await ensureBoardExists(id)
+    ensureJudgeCanReadBoard(board, actor)
+    return normalizeBoard(board)
+  }
 
   const ensureBoardCanBeDeleted = async (board) => {
     if (!['DRAFT', 'ASSIGNED'].includes(board.status)) {
@@ -331,6 +365,11 @@ export const createJudgingBoardService = ({
     const eventId = safePayload.eventId || existingBoard.eventId?._id || existingBoard.eventId
     const roundId = safePayload.roundId || existingBoard.roundId?._id || existingBoard.roundId
     const round = await ensureRoundBelongsToEvent({ eventId, roundId })
+    const eventForUpdate = await ensureEventExists(eventId)
+    if (!relaxedWorkflow && safePayload.judgeIds !== undefined &&
+      (existingBoard.status === 'COMPLETED' || round.status === 'COMPLETED' || eventForUpdate.status === 'COMPLETED')) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Judge assignments cannot be changed after the event or judging round is completed'])
+    }
     const trackId = safePayload.trackId !== undefined ? safePayload.trackId : (existingBoard.trackId?._id || existingBoard.trackId || round.trackId)
 
     await ensureTrackBelongsToEvent({ eventId, trackId })
@@ -366,7 +405,13 @@ export const createJudgingBoardService = ({
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Event competitionConfig.boardCount is required for board randomization'])
     }
 
-    const assignedTeamIds = (round.assignedTeamIds || []).map(value => value.toString())
+    // Preliminary boards are one judging stage. Older seed data may contain
+    // one preliminary round per track; combine those rounds so randomization
+    // distributes the complete event lineup across the configured boards.
+    const stageRounds = round.roundType === 'PRELIMINARY'
+      ? await Round.find({ eventId: event._id, roundType: 'PRELIMINARY' }).select('_id assignedTeamIds')
+      : [round]
+    const assignedTeamIds = [...new Set(stageRounds.flatMap(item => (item.assignedTeamIds || []).map(value => value.toString())))]
     const roundTeams = await Team.find({
       _id: { $in: assignedTeamIds }
     }).sort({ createdAt: 1, name: 1 })
@@ -378,6 +423,7 @@ export const createJudgingBoardService = ({
       ? Math.ceil(eligibleTeams.length / boardCount)
       : configuredMaxTeamsPerBoard || 0
     const maxTeamsPerBoard = configuredMaxTeamsPerBoard || derivedMaxTeamsPerBoard || 0
+    const stageRoundIds = stageRounds.map(item => item._id)
 
     if (maxTeamsPerBoard && eligibleTeams.length > boardCount * maxTeamsPerBoard) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Eligible teams exceed configured board capacity'])
@@ -389,13 +435,16 @@ export const createJudgingBoardService = ({
       boardCount,
       maxTeamsPerBoard,
       eligibleTeams,
-      ineligibleTeams
+      ineligibleTeams,
+      stageRoundIds
     }
   }
 
   const buildBoardPlan = async ({ eventId, roundId, randomize = true, predefinedBoards = null }) => {
     const context = await getRandomizationContext({ eventId, roundId })
-    const existingBoards = await repository.findByRoundId(roundId)
+    const existingBoards = context.stageRoundIds.length > 1
+      ? await repository.findByRoundIds(context.stageRoundIds)
+      : await repository.findByRoundId(roundId)
     const normalizedExistingBoards = existingBoards.map(normalizeBoard)
 
     let boardPlans
@@ -419,7 +468,8 @@ export const createJudgingBoardService = ({
       const shuffledTeams = randomize ? shuffleItems(context.eligibleTeams, randomFn) : [...context.eligibleTeams]
       const distributedTeams = distributeTeamsAcrossBoards({
         teams: shuffledTeams,
-        boardCount: context.boardCount
+        boardCount: context.boardCount,
+        randomFn
       })
       boardPlans = Array.from({ length: context.boardCount }, (_, index) => {
         const boardNumber = index + 1
@@ -470,7 +520,7 @@ export const createJudgingBoardService = ({
     const expectedBoardNumbers = new Set(Array.from({ length: result.boardCount }, (_, index) => index + 1))
     const submittedBoardNumbers = result.boards.map(board => Number(board.boardNumber))
 
-    if (result.boards.length !== result.boardCount) {
+    if (!relaxedWorkflow && result.boards.length !== result.boardCount) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Randomized board confirmation must include exactly the configured number of boards'])
     }
     if (new Set(submittedBoardNumbers).size !== submittedBoardNumbers.length) {
@@ -499,7 +549,7 @@ export const createJudgingBoardService = ({
     }
 
     await Team.updateMany(
-      { _id: { $in: (result.round.assignedTeamIds || []).map(value => value.toString()) } },
+      { _id: { $in: [...eligibleIds] } },
       { $unset: { boardNumber: 1, placementSlot: 1 } }
     )
 
@@ -510,6 +560,13 @@ export const createJudgingBoardService = ({
           placementSlot: index + 1
         })
       }
+    }
+
+    // Collapse legacy per-track preliminary boards into the selected stage
+    // round before writing the new balanced A/B/C lineup.
+    if (result.round.roundType === 'PRELIMINARY') {
+      const siblingRounds = await Round.find({ eventId, roundType: 'PRELIMINARY', _id: { $ne: roundId } }).select('_id')
+      if (siblingRounds.length) await repository.deleteByRoundIds(siblingRounds.map(item => item._id))
     }
 
     const confirmedBoards = []
@@ -600,6 +657,6 @@ export const createJudgingBoardService = ({
 }
 
 export const JUDGING_BOARD_SERVICE = {
-  ...createJudgingBoardService(),
+  ...createJudgingBoardService({ relaxedWorkflow: env.workflow.relaxedDemoRules }),
   normalizeBoard
 }

@@ -206,7 +206,8 @@ export const createParticipantService = ({
   randomToken = () => crypto.randomBytes(32).toString('base64url'),
   now = () => new Date(),
   qrExpiresMinutes = env.checkInQr.expiresMinutes,
-  checkInUrlBase = env.client.frontendUrl
+  checkInUrlBase = env.client.frontendUrl,
+  relaxedWorkflow = false
 } = {}) => {
   const ensureParticipantExists = async (id) => {
     ensureObjectId(id)
@@ -257,7 +258,9 @@ export const createParticipantService = ({
 
   const ensureCheckInWindowOpen = async (eventId, { allowOverride = false, overrideReason = null, actor = null } = {}) => {
     const event = await ensureEventExists(eventId)
-    const checkInOpen = event.status === 'ONGOING'
+    const relaxedCheckInStatuses = ['OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING']
+    const checkInOpen = event.status === 'ONGOING' ||
+      (relaxedWorkflow && relaxedCheckInStatuses.includes(event.status))
 
     if (checkInOpen) return { event, overridden: false }
 
@@ -553,6 +556,6 @@ export const createParticipantService = ({
 }
 
 export const PARTICIPANT_SERVICE = {
-  ...createParticipantService(),
+  ...createParticipantService({ relaxedWorkflow: env.workflow.relaxedDemoRules }),
   normalizeParticipant
 }
