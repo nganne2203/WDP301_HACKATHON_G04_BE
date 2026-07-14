@@ -278,7 +278,7 @@ const normalizeCreator = (creator) => {
   }
 }
 
-const normalizeEvent = (event) => {
+const normalizeEvent = (event, stats = {}) => {
   if (!event) return null
 
   const plainEvent = typeof event.toObject === 'function'
@@ -306,6 +306,7 @@ const normalizeEvent = (event) => {
     competitionConfig: plainEvent.competitionConfig || null,
     finalistSlotsPerTrack: plainEvent.finalistSlotsPerTrack,
     totalFinalistSlots: plainEvent.totalFinalistSlots,
+    roundCount: stats.roundCount ?? plainEvent.roundCount ?? 0,
     status: plainEvent.status,
     createdBy: normalizeCreator(plainEvent.createdBy),
     createdAt: plainEvent.createdAt,
@@ -341,6 +342,41 @@ const createEventService = ({
     return event
   }
 
+  const getEventId = (event) => event?._id?.toString?.() || event?.id?.toString?.()
+
+  const buildRoundCountMap = async (events = []) => {
+    const eventIds = events
+      .map(event => event?._id || event?.id)
+      .filter(Boolean)
+
+    if (eventIds.length === 0 || !roundModel) return new Map()
+
+    if (typeof roundModel.aggregate === 'function') {
+      const counts = await roundModel.aggregate([
+        { $match: { eventId: { $in: eventIds } } },
+        { $group: { _id: '$eventId', count: { $sum: 1 } } }
+      ])
+
+      return new Map(counts.map(item => [item._id?.toString?.() || item._id?.toString(), item.count]))
+    }
+
+    if (typeof roundModel.countDocuments === 'function') {
+      const counts = await Promise.all(eventIds.map(async (eventId) => [
+        eventId?.toString?.() || String(eventId),
+        await roundModel.countDocuments({ eventId })
+      ]))
+
+      return new Map(counts)
+    }
+
+    return new Map()
+  }
+
+  const normalizeEventWithRoundCount = async (event) => {
+    const roundCountMap = await buildRoundCountMap([event])
+    return normalizeEvent(event, { roundCount: roundCountMap.get(getEventId(event)) ?? 0 })
+  }
+
   const listEvents = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
     const filter = buildEventFilter(query)
@@ -361,8 +397,10 @@ const createEventService = ({
       repository.count(filter)
     ])
 
+    const roundCountMap = await buildRoundCountMap(events)
+
     return {
-      events: events.map(normalizeEvent),
+      events: events.map(event => normalizeEvent(event, { roundCount: roundCountMap.get(getEventId(event)) ?? 0 })),
       pagination: {
         currentPage: page,
         totalPages: Math.ceil(totalItems / limit) || 1,
@@ -382,7 +420,7 @@ const createEventService = ({
       const isParticipant = participantEventIds.some(eventId => eventId.toString() === event._id.toString())
       if (!isParticipant && !isRegistrationOpen(event)) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
     }
-    return normalizeEvent(event)
+    return await normalizeEventWithRoundCount(event)
   }
 
   const getRawEventById = async (id) => {
@@ -557,7 +595,7 @@ const createEventService = ({
       createdBy: actor.id
     })
 
-    return normalizeEvent(await repository.findById(event._id))
+    return await normalizeEventWithRoundCount(await repository.findById(event._id))
   }
 
   const updateEvent = async (id, payload = {}) => {
@@ -591,7 +629,7 @@ const createEventService = ({
     const normalizedPayload = syncLegacyEventFields(safePayload, competitionConfig, existingEvent)
     const event = await repository.updateById(id, normalizedPayload)
 
-    return normalizeEvent(event)
+    return await normalizeEventWithRoundCount(event)
   }
 
   const updateEventStatus = async (id, status, actor = {}) => {
@@ -637,7 +675,7 @@ const createEventService = ({
       toStatus: status
     })
 
-    return normalizeEvent(event)
+    return await normalizeEventWithRoundCount(event)
   }
 
   const deleteEvent = async (id) => {

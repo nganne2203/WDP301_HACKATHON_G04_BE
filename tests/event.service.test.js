@@ -51,6 +51,7 @@ const createService = (overrides = {}) => {
     repository: createRepository(),
     notificationService: { sendEventInvitations: async () => ({}) },
     auditLogRepository: testAuditLogRepository,
+    roundModel: countModel(0),
     ...overrides
   })
 }
@@ -113,9 +114,33 @@ test('createEvent derives competition config from legacy finalist fields for bac
   assert.deepEqual(event.competitionConfig.rankingScopes, ['TEAM'])
 })
 
+test('listEvents and getEventById include the event round count', async () => {
+  const repository = createRepository()
+  const roundCounts = new Map()
+  const service = createEventService({
+    repository,
+    notificationService: { sendEventInvitations: async () => ({}) },
+    auditLogRepository: testAuditLogRepository,
+    roundModel: {
+      async countDocuments(filter = {}) {
+        return roundCounts.get(filter.eventId?.toString?.() || String(filter.eventId)) || 0
+      }
+    }
+  })
+
+  const event = await service.createEvent({ title: 'Round Count Event' }, { id: '000000000000000000000099' })
+  roundCounts.set(event.id, 3)
+
+  const listResult = await service.listEvents({}, { roles: ['COORDINATOR'] })
+  const detailResult = await service.getEventById(event.id, { roles: ['COORDINATOR'] })
+
+  assert.equal(listResult.events[0].roundCount, 3)
+  assert.equal(detailResult.roundCount, 3)
+})
+
 test('only admin and coordinators can list or retrieve draft events', async () => {
   const repository = createRepository()
-  const service = createEventService({ repository, notificationService: { sendEventInvitations: async () => ({}) }, auditLogRepository: testAuditLogRepository })
+  const service = createEventService({ repository, notificationService: { sendEventInvitations: async () => ({}) }, auditLogRepository: testAuditLogRepository, roundModel: countModel(0) })
   const draft = await service.createEvent({ title: 'Hidden draft', status: 'DRAFT' }, { id: '000000000000000000000099' })
   let receivedFilter = null
   const originalFindAll = repository.findAll
@@ -141,7 +166,7 @@ test('only admin and coordinators can list or retrieve draft events', async () =
 
 test('participant can only list and retrieve events they joined or can register for', async () => {
   const repository = createRepository()
-  const service = createEventService({ repository, notificationService: { sendEventInvitations: async () => ({}) }, auditLogRepository: testAuditLogRepository })
+  const service = createEventService({ repository, notificationService: { sendEventInvitations: async () => ({}) }, auditLogRepository: testAuditLogRepository, roundModel: countModel(0) })
   const event = await service.createEvent({ title: 'Joined event' }, { id: '000000000000000000000099' })
   await repository.updateById(event.id, { status: 'COMPLETED' })
   let receivedFilter = null
@@ -216,6 +241,7 @@ test('updateEventStatus rejects unconfirmed teams when registration closes', asy
         return entry
       }
     },
+    roundModel: countModel(0),
     teamService: {
       rejectUnconfirmedTeamsForRegistrationClosure: async (payload) => {
         rejectedEvents.push(payload)
@@ -244,7 +270,8 @@ test('updateEvent rejects direct status changes outside the lifecycle endpoint',
   const service = createEventService({
     repository,
     notificationService: { sendEventInvitations: async () => ({}) },
-    auditLogRepository: testAuditLogRepository
+    auditLogRepository: testAuditLogRepository,
+    roundModel: countModel(0)
   })
 
   const created = await service.createEvent({
