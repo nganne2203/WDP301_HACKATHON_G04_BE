@@ -80,11 +80,17 @@ const findEventById = async (id) => {
 }
 
 const findUserById = async (id) => {
-  return await User.findById(id)
+  return await User.findById(id).populate({ path: 'roles', select: 'name code' })
 }
 
 const findTeamById = async (id) => {
   return await Team.findById(id)
+}
+
+const findConfirmedTeamIds = async ({ eventId } = {}) => {
+  const filter = { status: 'CONFIRMED' }
+  if (eventId) filter.eventId = eventId
+  return await Team.find(filter).distinct('_id')
 }
 
 export const PARTICIPANT_REPOSITORY = {
@@ -100,5 +106,6 @@ export const PARTICIPANT_REPOSITORY = {
   deleteById,
   findEventById,
   findUserById,
-  findTeamById
+  findTeamById,
+  findConfirmedTeamIds
 }

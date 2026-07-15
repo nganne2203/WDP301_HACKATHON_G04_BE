@@ -9,6 +9,7 @@ import { LOGGER } from '#utils/logger.js'
 import User from '#models/user.model.js'
 import Team from '#models/team.model.js'
 import TeamInvitation from '#models/teamInvitation.model.js'
+import { actorHasRole, getIdString } from '#utils/domainAccessUtil.js'
 
 const buildEventConfigKey = (eventId) => `github.event.${eventId}.organization`
 
@@ -20,7 +21,7 @@ const normalizeString = (value) => {
 }
 
 const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const ACTIVE_TEAM_STATUSES = ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED']
+const REPOSITORY_ELIGIBLE_TEAM_STATUSES = ['CONFIRMED']
 
 const getInvitationEmail = (invitation = {}) => {
   const plainInvitation = typeof invitation.toObject === 'function'
@@ -332,7 +333,7 @@ export const createGithubService = ({
     }
 
     const activeTeamIds = await Team.find({
-      status: { $in: ACTIVE_TEAM_STATUSES }
+      status: { $in: REPOSITORY_ELIGIBLE_TEAM_STATUSES }
     }).distinct('_id')
 
     const invitationFilter = {
@@ -494,6 +495,21 @@ export const createGithubService = ({
 
   const createRepository = async (payload = {}, actor = {}) => {
     const config = await loadOperationalConfig({ eventId: payload.eventId })
+    if (payload.teamId && repository.findTeamById) {
+      const team = await repository.findTeamById(payload.teamId)
+      if (!team) {
+        throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
+      }
+      if (getIdString(team.eventId) !== getIdString(payload.eventId)) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified event'])
+      }
+      if (team.status && !REPOSITORY_ELIGIBLE_TEAM_STATUSES.includes(team.status)) {
+        const reason = payload.overrideReason?.trim()
+        if (!actorHasRole(actor, 'ADMIN') || !reason) {
+          throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Repository creation is only allowed for CONFIRMED teams unless an admin override reason is provided'])
+        }
+      }
+    }
     const requestBody = {
       name: payload.repoName,
       description: payload.description || '',
@@ -581,6 +597,7 @@ export const createGithubService = ({
         private: requestBody.private,
         status,
         teamId: payload.teamId,
+        overrideReason: payload.overrideReason || null,
         repositoryId: linkedRepository?._id?.toString?.() || linkedRepository?.id || null
       }
     })
@@ -822,7 +839,7 @@ export const createGithubService = ({
   }
 
   const bulkCreateRepositories = async (payload = {}, actor = {}) => {
-    const config = await loadOperationalConfig({ eventId: payload.eventId })
+    await loadOperationalConfig({ eventId: payload.eventId })
     const teams = await repository.findConfirmedTeamsByEvent(payload.eventId)
     const existingRepos = await repository.findRepositoriesByEvent(payload.eventId)
     const existingTeamIds = new Set(existingRepos.map((r) => r.teamId.toString()))
@@ -893,7 +910,7 @@ export const createGithubService = ({
   }
 
   const bulkGrantAccess = async (payload = {}, actor = {}) => {
-    const config = await loadOperationalConfig({ eventId: payload.eventId })
+    await loadOperationalConfig({ eventId: payload.eventId })
     const repos = await repository.findRepositoriesByEvent(payload.eventId)
 
     const success = []
@@ -902,6 +919,15 @@ export const createGithubService = ({
     for (const repo of repos) {
       const repoName = repo.repoName || repo.githubRepo
       if (!repoName) continue
+      const teamStatus = repo.teamId?.status
+      if (teamStatus && !REPOSITORY_ELIGIBLE_TEAM_STATUSES.includes(teamStatus)) {
+        failed.push({
+          repoName,
+          teamId: getIdString(repo.teamId),
+          error: 'Repository access can only be granted to CONFIRMED teams'
+        })
+        continue
+      }
 
       try {
         const usernames = await repository.findTeamMembersGithubUsernames(repo.teamId)
@@ -938,7 +964,7 @@ export const createGithubService = ({
   }
 
   const bulkRevokeAccess = async (payload = {}, actor = {}) => {
-    const config = await loadOperationalConfig({ eventId: payload.eventId })
+    await loadOperationalConfig({ eventId: payload.eventId })
     const repos = await repository.findRepositoriesByEvent(payload.eventId)
 
     const success = []

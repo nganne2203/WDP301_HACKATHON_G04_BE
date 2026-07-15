@@ -5,15 +5,28 @@ import test from 'node:test'
 import ApiError from '../src/utils/ApiError.js'
 import { createParticipantService } from '../src/modules/participants/participant.service.js'
 
-const createRepository = () => {
+const createRepository = ({
+  eventOverrides = {}
+} = {}) => {
   const records = new Map()
   let checkInQrSession = null
   let sequence = 1
 
-  const event = { _id: '000000000000000000000201', title: 'SEAL Event', status: 'OPEN_REGISTRATION' }
-  const userA = { _id: '000000000000000000000301', email: 'a@example.com', fullName: 'User A', status: 'APPROVED' }
-  const userB = { _id: '000000000000000000000302', email: 'b@example.com', fullName: 'User B', status: 'APPROVED' }
-  const team = { _id: '000000000000000000000401', eventId: event._id, name: 'Code Wizards' }
+  const event = {
+    _id: '000000000000000000000201',
+    title: 'SEAL Event',
+    status: 'OPEN_REGISTRATION',
+    registrationStart: new Date('2026-06-01T00:00:00.000Z'),
+    registrationEnd: new Date('2026-06-30T00:00:00.000Z'),
+    startDate: new Date('2026-06-22T07:00:00.000Z'),
+    endDate: new Date('2026-06-22T18:00:00.000Z'),
+    ...eventOverrides
+  }
+  const participantRole = { name: 'PARTICIPANT' }
+  const userA = { _id: '000000000000000000000301', email: 'a@example.com', fullName: 'User A', status: 'ACTIVE', roles: [participantRole] }
+  const userB = { _id: '000000000000000000000302', email: 'b@example.com', fullName: 'User B', status: 'ACTIVE', roles: [participantRole] }
+  const team = { _id: '000000000000000000000401', eventId: event._id, name: 'Code Wizards', status: 'CONFIRMED' }
+  const auditLogs = []
 
   return {
     count: async () => records.size,
@@ -78,12 +91,46 @@ const createRepository = () => {
       if (id === userB._id) return userB
       return null
     },
-    findTeamById: async (id) => id === team._id ? team : null
+    findTeamById: async (id) => id === team._id ? team : null,
+    findConfirmedTeamIds: async ({ eventId } = {}) => eventId === event._id ? [team._id] : [],
+    createAuditLog: async (entry) => {
+      auditLogs.push(entry)
+      return entry
+    },
+    getAuditLogs: () => auditLogs
   }
 }
 
+const createAuditRepository = (records = []) => ({
+  async create(entry) {
+    records.push(entry)
+    return entry
+  }
+})
+
+test('listParticipants can limit check-in data to confirmed teams', async () => {
+  const repository = createRepository()
+  let receivedFilter = null
+  repository.findAll = async ({ filter }) => {
+    receivedFilter = filter
+    return []
+  }
+  repository.count = async () => 0
+  const service = createParticipantService({ repository, now: () => new Date('2026-06-10T00:00:00.000Z') })
+
+  await service.listParticipants({
+    eventId: '000000000000000000000201',
+    confirmedTeamsOnly: true
+  })
+
+  assert.deepEqual(receivedFilter.teamId, { $in: ['000000000000000000000401'] })
+})
+
 test('createParticipant lets a user register themselves for an event', async () => {
-  const service = createParticipantService({ repository: createRepository() })
+  const service = createParticipantService({
+    repository: createRepository(),
+    now: () => new Date('2026-06-10T00:00:00.000Z')
+  })
 
   const participant = await service.createParticipant({
     eventId: '000000000000000000000201',
@@ -100,7 +147,10 @@ test('createParticipant lets a user register themselves for an event', async () 
 })
 
 test('createParticipant rejects registering another user without approver permission', async () => {
-  const service = createParticipantService({ repository: createRepository() })
+  const service = createParticipantService({
+    repository: createRepository(),
+    now: () => new Date('2026-06-10T00:00:00.000Z')
+  })
 
   await assert.rejects(
     service.createParticipant({
@@ -117,7 +167,10 @@ test('createParticipant rejects registering another user without approver permis
 })
 
 test('getMyParticipant returns only the authenticated user registration for an event', async () => {
-  const service = createParticipantService({ repository: createRepository() })
+  const service = createParticipantService({
+    repository: createRepository(),
+    now: () => new Date('2026-06-10T00:00:00.000Z')
+  })
   await service.createParticipant({
     eventId: '000000000000000000000201'
   }, {
@@ -134,7 +187,10 @@ test('getMyParticipant returns only the authenticated user registration for an e
 
 test('updateAttendance and updateGithubAccessStatus persist participant lifecycle updates', async () => {
   const repository = createRepository()
-  const service = createParticipantService({ repository })
+  const service = createParticipantService({
+    repository,
+    now: () => new Date('2026-06-10T00:00:00.000Z')
+  })
 
   const created = await service.createParticipant({
     eventId: '000000000000000000000201',
@@ -152,10 +208,14 @@ test('updateAttendance and updateGithubAccessStatus persist participant lifecycl
 })
 
 const createQrTestService = ({ currentTime = new Date('2026-06-22T08:00:00.000Z') } = {}) => {
-  const repository = createRepository()
+  const repository = createRepository({
+    eventOverrides: { status: 'ONGOING' }
+  })
   let nowValue = currentTime
+  const auditLogs = []
   const service = createParticipantService({
     repository,
+    auditLogRepository: createAuditRepository(auditLogs),
     qrEncoder: { toDataURL: async payload => `data:image/png;base64,${payload}` },
     randomToken: () => 'fixed-check-in-token-with-enough-entropy-123456789',
     now: () => nowValue,
@@ -166,16 +226,19 @@ const createQrTestService = ({ currentTime = new Date('2026-06-22T08:00:00.000Z'
   return {
     repository,
     service,
+    auditLogs,
     setNow: value => { nowValue = value }
   }
 }
 
 const createQrParticipant = async (service) => {
   return await service.createParticipant({
-    eventId: '000000000000000000000201'
+    eventId: '000000000000000000000201',
+    teamId: '000000000000000000000401',
+    overrideReason: 'seed participant for check-in test'
   }, {
     id: '000000000000000000000301',
-    permissions: ['EVENT_VIEW']
+    permissions: ['PARTICIPANT_APPROVE']
   })
 }
 
@@ -225,10 +288,12 @@ test('the same event QR checks in multiple different participants', async () => 
   const { service } = createQrTestService()
   const participantA = await createQrParticipant(service)
   const participantB = await service.createParticipant({
-    eventId: participantA.eventId
+    eventId: participantA.eventId,
+    teamId: '000000000000000000000401',
+    overrideReason: 'seed participant for check-in test'
   }, {
     id: '000000000000000000000302',
-    permissions: ['EVENT_VIEW']
+    permissions: ['PARTICIPANT_APPROVE']
   })
   const qr = await service.generateCheckInQr(participantA.eventId, {
     id: '000000000000000000000999',
@@ -256,6 +321,89 @@ test('scanCheckInQr rejects an expired token', async () => {
     service.scanCheckInQr(qr.qrPayload, { id: participant.userId }),
     error => error instanceof ApiError && error.code === 'CHECK_IN_QR_EXPIRED' && error.errors.includes('Check-in QR has expired')
   )
+})
+
+test('QR and manual check-in reject participants outside confirmed teams', async () => {
+  const { service } = createQrTestService()
+  const participant = await service.createParticipant({
+    eventId: '000000000000000000000201',
+    overrideReason: 'seed participant for check-in test'
+  }, {
+    id: '000000000000000000000301',
+    permissions: ['PARTICIPANT_APPROVE']
+  })
+  const qr = await service.generateCheckInQr(participant.eventId, {
+    id: '000000000000000000000999',
+    permissions: ['PARTICIPANT_APPROVE']
+  })
+
+  await assert.rejects(
+    service.scanCheckInQr(qr.qrPayload, { id: participant.userId }),
+    error => error instanceof ApiError && error.code === 'BAD_REQUEST' && error.errors.includes('Only members of confirmed teams can check in')
+  )
+  await assert.rejects(
+    service.updateCheckInStatus(participant.id, 'CHECKED_IN'),
+    error => error instanceof ApiError && error.code === 'BAD_REQUEST' && error.errors.includes('Only members of confirmed teams can check in')
+  )
+})
+
+test('check-in QR can be generated while event is ONGOING without a CHECK_IN timeline', async () => {
+  const repository = createRepository({
+    eventOverrides: { status: 'ONGOING' }
+  })
+  const service = createParticipantService({
+    repository,
+    now: () => new Date('2026-06-22T08:00:00.000Z')
+  })
+
+  const qr = await service.generateCheckInQr('000000000000000000000201', {
+    id: '000000000000000000000999',
+    permissions: ['PARTICIPANT_APPROVE']
+  })
+
+  assert.equal(qr.eventId, '000000000000000000000201')
+})
+
+test('manual admin check-in override requires a reason and writes audit log', async () => {
+  const repository = createRepository({
+    eventOverrides: { status: 'COMPLETED' }
+  })
+  const auditLogs = []
+  const service = createParticipantService({
+    repository,
+    auditLogRepository: createAuditRepository(auditLogs),
+    now: () => new Date('2026-06-22T10:00:00.000Z')
+  })
+  const participant = await service.createParticipant({
+    eventId: '000000000000000000000201',
+    teamId: '000000000000000000000401',
+    overrideReason: 'late registration correction'
+  }, {
+    id: '000000000000000000000301',
+    permissions: ['PARTICIPANT_APPROVE']
+  })
+
+  await assert.rejects(
+    service.updateCheckInStatus(participant.id, 'CHECKED_IN', {
+      id: '000000000000000000000999',
+      roles: ['ADMIN'],
+      permissions: ['PARTICIPANT_APPROVE']
+    }),
+    error => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Check-in is only available while the event is ONGOING')
+  )
+
+  const checkedIn = await service.updateCheckInStatus(participant.id, 'CHECKED_IN', {
+    id: '000000000000000000000999',
+    roles: ['ADMIN'],
+    permissions: ['PARTICIPANT_APPROVE']
+  }, {
+    overrideReason: 'verified attendee at help desk'
+  })
+
+  assert.equal(checkedIn.checkInStatus, 'CHECKED_IN')
+  assert.equal(auditLogs.some(log => log.action === 'CHECK_IN_WINDOW_OVERRIDE'), true)
 })
 
 test('generateCheckInQr rejects users without coordinator approval permission', async () => {

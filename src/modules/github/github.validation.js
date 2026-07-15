@@ -53,7 +53,8 @@ const createRepository = {
     description: Joi.string().trim().max(500).allow('', null),
     private: Joi.boolean().default(true),
     teamId: objectId,
-    roundId: objectId.allow(null)
+    roundId: objectId.allow(null),
+    overrideReason: Joi.string().trim().max(500).allow('', null)
   })
 }
 
@@ -132,4 +133,3 @@ export const GITHUB_VALIDATION = {
   bulkCreateRepositories,
   bulkCollaboratorAction
 }
-

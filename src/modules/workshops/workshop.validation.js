@@ -98,8 +98,13 @@ const createRating = {
 const listRatings = {
   params: idParam,
   query: Joi.object({
-    ...paginationQuery
+    ...paginationQuery,
+    mine: Joi.boolean().default(false)
   })
+}
+
+const getRatingStats = {
+  params: idParam
 }
 
 const createFeedback = {
@@ -123,7 +128,8 @@ const createGoogleMeet = {
 const listFeedback = {
   params: idParam,
   query: Joi.object({
-    ...paginationQuery
+    ...paginationQuery,
+    mine: Joi.boolean().default(false)
   })
 }
 
@@ -137,6 +143,7 @@ export const WORKSHOP_VALIDATION = {
   voteQuestion,
   createRating,
   listRatings,
+  getRatingStats,
   createFeedback,
   listFeedback,
   createGoogleMeet

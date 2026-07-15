@@ -5,12 +5,17 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
+import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
 import Event from '#models/event.model.js'
 import Rubric from '#models/rubric.model.js'
 import Team from '#models/team.model.js'
 import Track from '#models/track.model.js'
 import User from '#models/user.model.js'
+import Submission from '#models/submission.model.js'
+import ScoreSheet from '#models/scoreSheet.model.js'
+import Ranking from '#models/ranking.model.js'
 import { JUDGING_BOARD_REPOSITORY } from '#modules/judging-boards/judging-board.repository.js'
+import { actorHasRole, getActorId, isActiveJudge, isParticipantOnlyActor, isPrivilegedEventActor } from '#utils/domainAccessUtil.js'
 
 const ROUND_FIELDS = [
   'eventId',
@@ -24,6 +29,8 @@ const ROUND_FIELDS = [
   'maxPromotedTeams',
   'startTime',
   'endTime',
+  'submissionOpenAt',
+  'submissionCloseAt',
   'submissionDeadline',
   'publishTime',
   'assignedJudgeIds',
@@ -34,6 +41,9 @@ const ROUND_FIELDS = [
   'status'
 ]
 
+const ROUND_ASSIGNABLE_TEAM_STATUSES = ['CONFIRMED']
+const EVENT_TIME_ZONE = 'Asia/Ho_Chi_Minh'
+
 const ensureObjectId = (id, fieldName = 'round id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Invalid ${fieldName}`])
@@ -41,6 +51,9 @@ const ensureObjectId = (id, fieldName = 'round id') => {
 }
 
 const ensureDateOrder = (payload = {}) => {
+  const submissionOpenAt = payload.submissionOpenAt || payload.startTime
+  const submissionCloseAt = payload.submissionCloseAt || payload.submissionDeadline
+
   if (payload.startTime && payload.endTime && new Date(payload.startTime) > new Date(payload.endTime)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['startTime must be before or equal to endTime'])
   }
@@ -53,8 +66,59 @@ const ensureDateOrder = (payload = {}) => {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['submissionDeadline must be before or equal to endTime'])
   }
 
+  if (submissionOpenAt && submissionCloseAt && new Date(submissionOpenAt) > new Date(submissionCloseAt)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['submissionOpenAt must be before or equal to submissionCloseAt'])
+  }
+
+  if (payload.startTime && payload.submissionOpenAt && new Date(payload.submissionOpenAt) < new Date(payload.startTime)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['submissionOpenAt must be after or equal to startTime'])
+  }
+
+  if (payload.submissionCloseAt && payload.endTime && new Date(payload.submissionCloseAt) > new Date(payload.endTime)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['submissionCloseAt must be before or equal to endTime'])
+  }
+
   if (payload.publishTime && payload.endTime && new Date(payload.publishTime) < new Date(payload.endTime)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['publishTime must be after or equal to endTime'])
+  }
+}
+
+const formatDateKeyInEventTimeZone = (value) => {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: EVENT_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date)
+
+  const lookup = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${lookup.year}-${lookup.month}-${lookup.day}`
+}
+
+const ensureRoundWindowWithinEvent = (event, payload = {}) => {
+  const eventStartKey = formatDateKeyInEventTimeZone(event?.startDate)
+  const eventEndKey = formatDateKeyInEventTimeZone(event?.endDate)
+  const fields = [
+    ['startTime', 'Round start time'],
+    ['endTime', 'Round end time']
+  ]
+
+  for (const [field, label] of fields) {
+    if (!payload[field]) continue
+    const roundKey = formatDateKeyInEventTimeZone(payload[field])
+    if (!roundKey) continue
+
+    if (eventStartKey && roundKey < eventStartKey) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`${label} must be within the event date range`])
+    }
+
+    if (eventEndKey && roundKey > eventEndKey) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`${label} must be within the event date range`])
+    }
   }
 }
 
@@ -145,6 +209,8 @@ const normalizeRound = (round) => {
     maxPromotedTeams: plainRound.maxPromotedTeams,
     startTime: plainRound.startTime,
     endTime: plainRound.endTime,
+    submissionOpenAt: plainRound.submissionOpenAt,
+    submissionCloseAt: plainRound.submissionCloseAt,
     submissionDeadline: plainRound.submissionDeadline,
     publishTime: plainRound.publishTime,
     assignedJudges: (plainRound.assignedJudgeIds || []).map(normalizeJudge),
@@ -173,8 +239,8 @@ const buildRoundFilter = (query = {}) => {
   if (query.roundType) filter.roundType = query.roundType
   if (query.status) filter.status = query.status
   if (query.search) {
-    const pattern = new RegExp(query.search, 'i')
-    filter.$or = [{ name: pattern }, { promotionRule: pattern }, { tieBreakRule: pattern }]
+    const pattern = buildSafeSearchRegex(query.search)
+    if (pattern) filter.$or = [{ name: pattern }, { promotionRule: pattern }, { tieBreakRule: pattern }]
   }
   return filter
 }
@@ -212,9 +278,17 @@ const ensureUsersExist = async (userIds = []) => {
   for (const userId of userIds) {
     ensureObjectId(userId, 'judge id')
   }
-  const users = await User.find({ _id: { $in: userIds } })
+  const query = User.find({ _id: { $in: userIds } })
+  const users = query && typeof query.populate === 'function'
+    ? await query.populate({ path: 'roles', select: 'name code' })
+    : await query
   if (users.length !== userIds.length) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['One or more judges do not exist'])
+  }
+  for (const user of users) {
+    if (!isActiveJudge(user)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned judges must have ACTIVE accounts and the JUDGE role'])
+    }
   }
 }
 
@@ -235,6 +309,9 @@ const ensureTeamsBelongToRoundContext = async ({ eventId, trackId, teamIds = [] 
     if (trackId && team.trackId?.toString() !== trackId.toString()) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned teams must belong to the selected track'])
     }
+    if (!ROUND_ASSIGNABLE_TEAM_STATUSES.includes(team.status)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only confirmed teams can be assigned to rounds'])
+    }
   }
 }
 
@@ -245,6 +322,11 @@ const ensurePromotionRuleConsistency = ({ promotedTeamIds = [], maxPromotedTeams
 }
 
 const extractIds = (values = []) => values.map(value => value?._id?.toString?.() || value?.toString?.() || value).filter(Boolean)
+
+const countDocuments = async (model, filter) => {
+  if (!model?.countDocuments) return 0
+  return await model.countDocuments(filter)
+}
 
 const syncSingleJudgingBoardForRound = async (round) => {
   if (!round) return
@@ -288,9 +370,83 @@ export const createRoundService = ({
     return round
   }
 
-  const listRounds = async (query = {}) => {
+  const applyParticipantRoundScope = async (filter = {}, actor = {}) => {
+    if (!isParticipantOnlyActor(actor)) return filter
+
+    const actorId = getActorId(actor)
+    if (!actorId) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated participant is required'])
+    }
+
+    const teamFilter = {
+      status: 'CONFIRMED',
+      $or: [{ leaderId: actorId }, { memberIds: actorId }]
+    }
+    if (filter.eventId) teamFilter.eventId = filter.eventId
+
+    const teams = await Team.find(teamFilter).select('_id')
+    const teamIds = teams.map(team => team._id)
+    return { ...filter, assignedTeamIds: { $in: teamIds } }
+  }
+
+  const applyJudgeRoundScope = async (filter = {}, actor = {}) => {
+    if (!actorHasRole(actor, 'JUDGE') || isPrivilegedEventActor(actor)) return filter
+
+    const actorId = getActorId(actor)
+    if (!actorId) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated judge is required'])
+    }
+
+    const boardFilter = { judgeIds: actorId }
+    if (filter.eventId) boardFilter.eventId = filter.eventId
+    const boards = await JUDGING_BOARD_REPOSITORY.findAll({ filter: boardFilter, limit: 100 })
+    const roundIds = [...new Set(boards.map(board => board.roundId?._id?.toString?.() || board.roundId?.id || board.roundId?.toString?.()).filter(Boolean))]
+
+    return { ...filter, _id: { $in: roundIds } }
+  }
+
+  const ensureParticipantCanReadRound = async (round, actor = {}) => {
+    if (!isParticipantOnlyActor(actor)) return
+
+    const actorId = getActorId(actor)
+    if (!actorId) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated participant is required'])
+    }
+
+    const assignedTeamIds = (round.assignedTeamIds || []).map(team => team._id || team.id || team)
+    const team = await Team.findOne({
+      _id: { $in: assignedTeamIds },
+      status: 'CONFIRMED',
+      $or: [{ leaderId: actorId }, { memberIds: actorId }]
+    }).select('_id')
+
+    if (!team) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['You are not assigned to this round'])
+    }
+  }
+
+  const ensureJudgeCanReadRound = async (round, actor = {}) => {
+    if (!actorHasRole(actor, 'JUDGE') || isPrivilegedEventActor(actor)) return
+
+    const actorId = getActorId(actor)
+    if (!actorId) {
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated judge is required'])
+    }
+
+    const board = (await JUDGING_BOARD_REPOSITORY.findAll({
+      filter: { judgeIds: actorId, roundId: round._id || round.id },
+      limit: 1
+    }))[0]
+
+    if (!board) {
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['You are not assigned to this judging board'])
+    }
+  }
+
+  const listRounds = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
-    const filter = buildRoundFilter(query)
+    const participantScopedFilter = await applyParticipantRoundScope(buildRoundFilter(query), actor)
+    const filter = await applyJudgeRoundScope(participantScopedFilter, actor)
     const skip = (page - 1) * limit
 
     const [rounds, totalItems] = await Promise.all([
@@ -309,11 +465,35 @@ export const createRoundService = ({
     }
   }
 
-  const getRoundById = async (id) => normalizeRound(await ensureRoundExists(id))
+  const getRoundById = async (id, actor = {}) => {
+    const round = await ensureRoundExists(id)
+    await ensureParticipantCanReadRound(round, actor)
+    await ensureJudgeCanReadRound(round, actor)
+    return normalizeRound(round)
+  }
+
+  const ensureRoundCanBeDeleted = async (round) => {
+    if (round.status !== 'DRAFT') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only unused DRAFT rounds can be deleted'])
+    }
+
+    const roundId = round._id || round.id
+    const [boardCount, submissionCount, scoreSheetCount, rankingCount] = await Promise.all([
+      JUDGING_BOARD_REPOSITORY.count({ roundId }),
+      countDocuments(Submission, { roundId }),
+      countDocuments(ScoreSheet, { roundId }),
+      countDocuments(Ranking, { roundId })
+    ])
+
+    if (boardCount || submissionCount || scoreSheetCount || rankingCount) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Cannot delete round after boards, submissions, score sheets, or rankings have been created'])
+    }
+  }
 
   const createRound = async (payload = {}) => {
     ensureDateOrder(payload)
     const event = await ensureEventExists(payload.eventId)
+    ensureRoundWindowWithinEvent(event, payload)
     await ensureTrackBelongsToEvent({ eventId: event._id, trackId: payload.trackId })
     await ensureRubricBelongsToEvent({ eventId: event._id, rubricId: payload.rubricId })
     await ensureUsersExist(payload.assignedJudgeIds || [])
@@ -343,12 +523,15 @@ export const createRoundService = ({
     const mergedPayload = {
       startTime: safePayload.startTime ?? existingRound.startTime,
       endTime: safePayload.endTime ?? existingRound.endTime,
+      submissionOpenAt: safePayload.submissionOpenAt ?? existingRound.submissionOpenAt,
+      submissionCloseAt: safePayload.submissionCloseAt ?? existingRound.submissionCloseAt,
       submissionDeadline: safePayload.submissionDeadline ?? existingRound.submissionDeadline,
       publishTime: safePayload.publishTime ?? existingRound.publishTime
     }
 
     ensureDateOrder(mergedPayload)
-    await ensureEventExists(eventId)
+    const event = await ensureEventExists(eventId)
+    ensureRoundWindowWithinEvent(event, mergedPayload)
     await ensureTrackBelongsToEvent({ eventId, trackId })
     await ensureRubricBelongsToEvent({
       eventId,
@@ -374,7 +557,8 @@ export const createRoundService = ({
   }
 
   const deleteRound = async (id) => {
-    await ensureRoundExists(id)
+    const round = await ensureRoundExists(id)
+    await ensureRoundCanBeDeleted(round)
     await repository.deleteById(id)
   }
 

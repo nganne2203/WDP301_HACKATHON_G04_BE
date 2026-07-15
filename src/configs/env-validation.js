@@ -48,6 +48,10 @@ export const validateRuntimeEnvironment = ({
     }
   }
 
+  if (['prod', 'production'].includes(config.server?.nodeEnv) && config.server?.readinessRequiresTransactions === false) {
+    errors.push('READINESS_REQUIRES_TRANSACTIONS must remain enabled in production')
+  }
+
   if (config.github?.webhookCallbackUrl && !config.github?.webhookSecret) {
     errors.push('GITHUB_WEBHOOK_SECRET is required when GITHUB_WEBHOOK_CALLBACK_URL is configured')
   }

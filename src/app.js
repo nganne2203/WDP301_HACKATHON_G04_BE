@@ -30,6 +30,24 @@ export const processHealthHandler = (req, res) => {
   })
 }
 
+const checkMongoTransactionReadiness = async () => {
+  if (mongoose.connection.readyState !== 1) {
+    return { ready: false, status: 'not_ready', error: 'MongoDB is not connected' }
+  }
+
+  try {
+    const hello = await mongoose.connection.db.admin().command({ hello: 1 })
+    const transactionReady = Boolean(hello.setName || hello.msg === 'isdbgrid')
+    return {
+      ready: transactionReady,
+      status: transactionReady ? 'ready' : 'not_ready',
+      ...(transactionReady ? {} : { error: 'MongoDB transactions require a replica set or mongos' })
+    }
+  } catch (error) {
+    return { ready: false, status: 'not_ready', error: error.message }
+  }
+}
+
 export const createApp = () => {
   const app = express()
   const jsonParser = express.json({ limit: '2mb' })
@@ -64,6 +82,8 @@ export const createApp = () => {
     const dbReady = mongoose.connection.readyState === 1
     let redisReady = true
     let redisError = null
+    let transactionReady = true
+    let transactionError = null
 
     if (env.server.readinessRequiresRedis) {
       try {
@@ -74,14 +94,22 @@ export const createApp = () => {
       }
     }
 
-    const ready = dbReady && redisReady
+    if (env.server.readinessRequiresTransactions) {
+      const transactionCheck = await checkMongoTransactionReadiness()
+      transactionReady = transactionCheck.ready
+      transactionError = transactionCheck.error || null
+    }
+
+    const ready = dbReady && redisReady && transactionReady
     res.status(ready ? 200 : 503).json({
       status: ready ? 'ok' : 'degraded',
       checks: {
         mongodb: dbReady ? 'ready' : 'not_ready',
-        redis: redisReady ? 'ready' : 'not_ready'
+        redis: redisReady ? 'ready' : 'not_ready',
+        transactions: transactionReady ? 'ready' : 'not_ready'
       },
-      ...(redisError ? { redisError } : {})
+      ...(redisError ? { redisError } : {}),
+      ...(transactionError ? { transactionError } : {})
     })
   })
 

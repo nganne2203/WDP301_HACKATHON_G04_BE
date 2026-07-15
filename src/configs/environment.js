@@ -24,7 +24,13 @@ export const env = {
     hostname: process.env.HOSTNAME,
     nodeEnv,
     publicUrl: process.env.APP_BASE_URL || process.env.SERVER_PUBLIC_URL,
-    readinessRequiresRedis: parseBoolean(process.env.READINESS_REQUIRES_REDIS, true)
+    readinessRequiresRedis: parseBoolean(process.env.READINESS_REQUIRES_REDIS, true),
+    readinessRequiresTransactions: parseBoolean(process.env.READINESS_REQUIRES_TRANSACTIONS, true)
+  },
+  workflow: {
+    relaxedDemoRules: !process.env.NODE_TEST_CONTEXT &&
+      !['prod', 'production'].includes(nodeEnv) &&
+      parseBoolean(process.env.RELAXED_DEMO_RULES, false)
   },
   db: {
     uri: process.env.MONGODB_URI

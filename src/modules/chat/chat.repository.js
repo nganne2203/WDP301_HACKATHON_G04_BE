@@ -4,6 +4,7 @@ import ChatRoom from '#models/chatRoom.model.js'
 import Team from '#models/team.model.js'
 
 const teamSelect = 'name eventId leaderId memberIds mentorIds projectName status'
+const teamPopulate = { path: 'eventId', select: 'title status' }
 const ACTIVE_CHAT_TEAM_STATUSES = ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED']
 const messagePopulate = {
   path: 'senderId',
@@ -24,19 +25,22 @@ const findTeamsForUser = async (userId) => {
     ]
   })
     .select(teamSelect)
+    .populate(teamPopulate)
     .sort({ updatedAt: -1 })
 }
 
 const findTeamById = async (teamId) => {
-  return await Team.findOne({ _id: teamId, status: { $in: ACTIVE_CHAT_TEAM_STATUSES } }).select(teamSelect)
+  return await Team.findOne({ _id: teamId, status: { $in: ACTIVE_CHAT_TEAM_STATUSES } })
+    .select(teamSelect)
+    .populate(teamPopulate)
 }
 
 const findRoomById = async (id) => {
-  return await ChatRoom.findById(id).populate({ path: 'teamId', select: teamSelect })
+  return await ChatRoom.findById(id).populate({ path: 'teamId', select: teamSelect, populate: teamPopulate })
 }
 
 const findRoomByTeamId = async (teamId) => {
-  return await ChatRoom.findOne({ teamId }).populate({ path: 'teamId', select: teamSelect })
+  return await ChatRoom.findOne({ teamId }).populate({ path: 'teamId', select: teamSelect, populate: teamPopulate })
 }
 
 const ensureRoomForTeam = async (teamId) => {
@@ -49,12 +53,12 @@ const ensureRoomForTeam = async (teamId) => {
       }
     },
     { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true }
-  ).populate({ path: 'teamId', select: teamSelect })
+  ).populate({ path: 'teamId', select: teamSelect, populate: teamPopulate })
 }
 
 const findRoomsByTeamIds = async (teamIds = []) => {
   return await ChatRoom.find({ teamId: { $in: teamIds } })
-    .populate({ path: 'teamId', select: teamSelect })
+    .populate({ path: 'teamId', select: teamSelect, populate: teamPopulate })
     .sort({ updatedAt: -1 })
 }
 

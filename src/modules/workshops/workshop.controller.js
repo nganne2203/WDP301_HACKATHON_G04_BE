@@ -5,7 +5,7 @@ import { responseSuccess } from '#utils/responseUtil.js'
 
 const listWorkshops = async (req, res, next) => {
   try {
-    const { workshops, pagination } = await WORKSHOP_SERVICE.listWorkshops(req.validated?.query || req.query)
+    const { workshops, pagination } = await WORKSHOP_SERVICE.listWorkshops(req.validated?.query || req.query, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get workshops successfully',
@@ -19,7 +19,7 @@ const listWorkshops = async (req, res, next) => {
 
 const getWorkshopById = async (req, res, next) => {
   try {
-    const workshop = await WORKSHOP_SERVICE.getWorkshopById(req.params.id)
+    const workshop = await WORKSHOP_SERVICE.getWorkshopById(req.params.id, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get workshop successfully',
@@ -149,6 +149,19 @@ const listRatings = async (req, res, next) => {
   }
 }
 
+const getRatingStats = async (req, res, next) => {
+  try {
+    const { stats } = await WORKSHOP_SERVICE.listRatings(req.params.id, { page: 1, limit: 1 }, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message: 'Get workshop rating statistics successfully',
+      data: stats
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 const createFeedback = async (req, res, next) => {
   try {
     const feedback = await WORKSHOP_SERVICE.createFeedback(req.params.id, req.body, req.user)
@@ -188,6 +201,7 @@ export const WORKSHOP_CONTROLLER = {
   voteQuestion,
   createRating,
   listRatings,
+  getRatingStats,
   createFeedback,
   listFeedback
 }

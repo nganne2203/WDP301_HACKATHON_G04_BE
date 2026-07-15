@@ -7,6 +7,14 @@ import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import Event from '#models/event.model.js'
 import Round from '#models/round.model.js'
+import ScoreSheet from '#models/scoreSheet.model.js'
+import {
+  ALLOWED_SCORE_SCALES,
+  getRubricScale,
+  hasAtMostTwoDecimals,
+  roundToTwoDecimals,
+  sumCriterionWeights
+} from '#utils/scoringScale.js'
 
 const RUBRIC_FIELDS = [
   'eventId',
@@ -21,6 +29,7 @@ const RUBRIC_FIELDS = [
 const RUBRIC_UPDATE_FIELDS = [
   'title',
   'description',
+  'totalScore',
   'version',
   'status'
 ]
@@ -36,8 +45,8 @@ const normalizeCriterion = (criterion) => {
     rubricId: plainCriterion.rubricId?._id?.toString?.() || plainCriterion.rubricId?.toString?.() || plainCriterion.rubricId,
     name: plainCriterion.name,
     description: plainCriterion.description,
-    maxScore: plainCriterion.maxScore,
-    weight: plainCriterion.weight,
+    maxScore: roundToTwoDecimals(plainCriterion.maxScore),
+    weight: roundToTwoDecimals(plainCriterion.weight),
     order: plainCriterion.order,
     judgeOnly: Boolean(plainCriterion.judgeOnly),
     aiSupportForAudit: plainCriterion.aiSupportForAudit !== false,
@@ -76,6 +85,7 @@ const normalizeRubric = async (rubric, repository) => {
     title: plainRubric.title,
     description: plainRubric.description,
     totalScore: plainRubric.totalScore,
+    criteriaWeightTotal: sumCriterionWeights(criteria),
     version: plainRubric.version,
     status: plainRubric.status,
     criteria: criteria.map(normalizeCriterion),
@@ -101,7 +111,8 @@ const ensureObjectId = (id, fieldName = 'id') => {
 export const createRubricService = ({
   repository = RUBRIC_REPOSITORY,
   eventModel = Event,
-  roundModel = Round
+  roundModel = Round,
+  scoreSheetModel = ScoreSheet
 } = {}) => {
   const ensureRubricExists = async (id) => {
     ensureObjectId(id, 'rubric id')
@@ -134,6 +145,54 @@ export const createRubricService = ({
     return { event, round }
   }
 
+  const countScoreSheetsForRubric = async (rubricId) => {
+    if (!scoreSheetModel?.countDocuments) return 0
+    return await scoreSheetModel.countDocuments({ rubricId })
+  }
+
+  const ensureRubricMutable = async (rubric) => {
+    const scoreSheetCount = await countScoreSheetsForRubric(rubric._id || rubric.id)
+    if (scoreSheetCount > 0) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric cannot be changed after score sheets have been created; create a new rubric version instead'])
+    }
+  }
+
+  const ensureCriterionNumbers = (criterion = {}) => {
+    const maxScore = Number(criterion.maxScore)
+    const weight = Number(criterion.weight)
+
+    if (!Number.isFinite(maxScore) || maxScore <= 0) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Criterion maxScore must be greater than zero'])
+    }
+    if (!Number.isFinite(weight) || weight <= 0) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Criterion weight must be greater than zero'])
+    }
+    if (!hasAtMostTwoDecimals(maxScore) || !hasAtMostTwoDecimals(weight)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Criterion maxScore and weight can have at most 2 decimal places'])
+    }
+  }
+
+  const ensureRubricScale = (rubric = {}) => {
+    const scale = getRubricScale(rubric)
+    if (!scale) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Rubric totalScore must be one of ${ALLOWED_SCORE_SCALES.join(', ')}`])
+    }
+    return scale
+  }
+
+  const ensureCriteriaFitRubricScale = ({ rubric, criteria = [], requireExact = false }) => {
+    const scale = ensureRubricScale(rubric)
+    const totalWeight = sumCriterionWeights(criteria)
+
+    if (totalWeight > scale) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Total criterion weight cannot exceed rubric scale ${scale}`])
+    }
+
+    if (requireExact && totalWeight !== scale) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Total criterion weight must equal rubric scale ${scale}`])
+    }
+  }
+
   const listRubrics = async (query = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
     const skip = (page - 1) * limit
@@ -161,6 +220,11 @@ export const createRubricService = ({
 
   const createRubric = async (payload = {}, actor = {}) => {
     const safePayload = pickSafeFields(payload, RUBRIC_FIELDS)
+    safePayload.totalScore = safePayload.totalScore ?? 100
+    ensureRubricScale({ totalScore: safePayload.totalScore })
+    if (safePayload.status === 'ACTIVE') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric must be created as DRAFT and activated after criteria weights match the scale'])
+    }
     await ensureContext({
       eventId: safePayload.eventId,
       roundId: safePayload.roundId
@@ -176,30 +240,51 @@ export const createRubricService = ({
 
   const updateRubric = async (id, payload = {}) => {
     const existingRubric = await ensureRubricExists(id)
+    await ensureRubricMutable(existingRubric)
     const safePayload = pickSafeFields(payload, RUBRIC_UPDATE_FIELDS)
+    const existingRubricPlain = typeof existingRubric.toObject === 'function'
+      ? existingRubric.toObject({ getters: true, virtuals: false })
+      : existingRubric
+    const candidateRubric = {
+      ...existingRubricPlain,
+      ...safePayload
+    }
+    ensureCriteriaFitRubricScale({
+      rubric: candidateRubric,
+      criteria: await repository.findCriteriaByRubricId(existingRubric._id || existingRubric.id),
+      requireExact: candidateRubric.status === 'ACTIVE'
+    })
 
     const updatedRubric = await repository.updateRubricById(existingRubric._id, safePayload)
     return await normalizeRubric(updatedRubric, repository)
   }
 
   const addCriterion = async (rubricId, payload = {}) => {
-    await ensureRubricExists(rubricId)
+    const rubric = await ensureRubricExists(rubricId)
+    await ensureRubricMutable(rubric)
     const criteria = await repository.findCriteriaByRubricId(rubricId)
+    const nextCriterion = {
+      ...payload,
+      weight: roundToTwoDecimals(payload.weight),
+      maxScore: roundToTwoDecimals(payload.maxScore)
+    }
+    ensureCriterionNumbers(nextCriterion)
+    ensureCriteriaFitRubricScale({
+      rubric,
+      criteria: [...criteria, nextCriterion],
+      requireExact: rubric.status === 'ACTIVE'
+    })
     const criterion = await repository.createCriterion({
       rubricId,
       name: payload.name,
       description: payload.description,
-      maxScore: payload.maxScore,
-      weight: payload.weight,
+      maxScore: nextCriterion.maxScore,
+      weight: nextCriterion.weight,
       order: payload.order || (criteria.length + 1),
       judgeOnly: Boolean(payload.judgeOnly),
       aiSupportForAudit: payload.aiSupportForAudit !== false,
       aiInstruction: payload.aiInstruction || null
     })
-
-    const updatedCriteria = [...criteria, criterion]
-    const totalScore = updatedCriteria.reduce((sum, item) => sum + (item.maxScore || 0), 0)
-    await repository.updateRubricById(rubricId, { totalScore })
 
     return {
       criterion: normalizeCriterion(criterion),
@@ -208,26 +293,33 @@ export const createRubricService = ({
   }
 
   const updateCriterion = async (rubricId, criterionId, payload = {}) => {
-    await ensureRubricExists(rubricId)
+    const rubric = await ensureRubricExists(rubricId)
+    await ensureRubricMutable(rubric)
     const criterion = await ensureCriterionExists(criterionId)
     if (criterion.rubricId?.toString() !== rubricId.toString()) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Criterion does not belong to the specified rubric'])
     }
 
-    const updatedCriterion = await repository.updateCriterionById(criterionId, {
+    const nextCriterion = {
       name: payload.name ?? criterion.name,
       description: payload.description ?? criterion.description,
-      maxScore: payload.maxScore ?? criterion.maxScore,
-      weight: payload.weight ?? criterion.weight,
+      maxScore: roundToTwoDecimals(payload.maxScore ?? criterion.maxScore),
+      weight: roundToTwoDecimals(payload.weight ?? criterion.weight),
       order: payload.order ?? criterion.order,
       judgeOnly: payload.judgeOnly ?? criterion.judgeOnly,
       aiSupportForAudit: payload.aiSupportForAudit ?? criterion.aiSupportForAudit,
       aiInstruction: payload.aiInstruction ?? criterion.aiInstruction
+    }
+    const criteria = await repository.findCriteriaByRubricId(rubricId)
+    const nextCriteria = criteria.map(item => item._id?.toString() === criterionId.toString() ? { ...item, ...nextCriterion } : item)
+    ensureCriterionNumbers(nextCriterion)
+    ensureCriteriaFitRubricScale({
+      rubric,
+      criteria: nextCriteria,
+      requireExact: rubric.status === 'ACTIVE'
     })
 
-    const criteria = await repository.findCriteriaByRubricId(rubricId)
-    const totalScore = criteria.reduce((sum, item) => sum + (item.maxScore || 0), 0)
-    await repository.updateRubricById(rubricId, { totalScore })
+    const updatedCriterion = await repository.updateCriterionById(criterionId, nextCriterion)
 
     return {
       criterion: normalizeCriterion(updatedCriterion),
@@ -236,16 +328,21 @@ export const createRubricService = ({
   }
 
   const deleteCriterion = async (rubricId, criterionId) => {
-    await ensureRubricExists(rubricId)
+    const rubric = await ensureRubricExists(rubricId)
+    await ensureRubricMutable(rubric)
     const criterion = await ensureCriterionExists(criterionId)
     if (criterion.rubricId?.toString() !== rubricId.toString()) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Criterion does not belong to the specified rubric'])
     }
 
-    await repository.deleteCriterionById(criterionId)
     const criteria = await repository.findCriteriaByRubricId(rubricId)
-    const totalScore = criteria.reduce((sum, item) => sum + (item.maxScore || 0), 0)
-    await repository.updateRubricById(rubricId, { totalScore })
+    const nextCriteria = criteria.filter(item => item._id?.toString() !== criterionId.toString())
+    ensureCriteriaFitRubricScale({
+      rubric,
+      criteria: nextCriteria,
+      requireExact: rubric.status === 'ACTIVE'
+    })
+    await repository.deleteCriterionById(criterionId)
 
     return {
       deletedCriterionId: criterionId,

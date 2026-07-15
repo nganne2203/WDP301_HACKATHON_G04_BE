@@ -27,4 +27,12 @@ router.post(
   RANKING_CONTROLLER.generateRankings
 )
 
+router.post(
+  '/tie-breaks/resolve',
+  sensitiveRateLimiter,
+  permissionMiddleware(PERMISSIONS.RANKING_GENERATE),
+  validationHandlingMiddleware(RANKING_VALIDATION.resolveTieBreak),
+  RANKING_CONTROLLER.resolveTieBreak
+)
+
 export default router

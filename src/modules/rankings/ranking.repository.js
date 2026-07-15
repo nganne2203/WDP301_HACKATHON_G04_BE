@@ -1,4 +1,6 @@
 import Ranking from '#models/ranking.model.js'
+import JudgingBoard from '#models/judgingBoard.model.js'
+import RoundTeamPlacement from '#models/roundTeamPlacement.model.js'
 import ScoreSheet from '#models/scoreSheet.model.js'
 
 const rankingPopulate = [
@@ -6,7 +8,8 @@ const rankingPopulate = [
   { path: 'roundId', select: 'name roundType status tieBreakRule' },
   { path: 'trackId', select: 'code name status' },
   { path: 'teamId', select: 'name chapterName projectName boardNumber trackId status' },
-  { path: 'publishedBy', select: 'fullName email' }
+  { path: 'publishedBy', select: 'fullName email' },
+  { path: 'tieBreakResolvedBy', select: 'fullName email' }
 ]
 
 const findRankings = async ({ filter = {}, skip = 0, limit = 50, sort = { rank: 1, score: -1 } } = {}) => {
@@ -40,6 +43,10 @@ const updateManyRankings = async (filter = {}, data = {}) => {
   await Ranking.updateMany(filter, data)
 }
 
+const findRankingById = async (id) => {
+  return await Ranking.findById(id).populate(rankingPopulate)
+}
+
 const findScoreSheetsForRanking = async ({ eventId, roundId }) => {
   return await ScoreSheet.find({
     eventId,
@@ -52,12 +59,31 @@ const findScoreSheetsForRanking = async ({ eventId, roundId }) => {
   ])
 }
 
+const findRoundTeamPlacements = async ({ eventId, roundId }) => {
+  return await RoundTeamPlacement.find({ eventId, roundId })
+}
+
+const findBoardsForRanking = async ({ eventId, roundId }) => {
+  return await JudgingBoard.find({
+    eventId,
+    roundId,
+    teamIds: { $exists: true, $ne: [] },
+    judgeIds: { $exists: true, $ne: [] }
+  }).populate([
+    { path: 'teamIds', select: 'name status' },
+    { path: 'judgeIds', select: 'fullName email status roles', populate: { path: 'roles', select: 'name code' } }
+  ])
+}
+
 export const RANKING_REPOSITORY = {
   findRankings,
   countRankings,
   deleteRankings,
   createManyRankings,
+  findRankingById,
   updateRankingById,
   updateManyRankings,
-  findScoreSheetsForRanking
+  findScoreSheetsForRanking,
+  findRoundTeamPlacements,
+  findBoardsForRanking
 }

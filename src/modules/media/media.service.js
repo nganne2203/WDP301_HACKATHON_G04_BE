@@ -10,6 +10,7 @@ import { LOGGER } from '#utils/logger.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { PERMISSIONS } from '#constants/permissions.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
+import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
 
 const CONFIG_KEYS = {
   provider: 'media.storage_provider',
@@ -284,10 +285,6 @@ const normalizeTags = (value) => {
   return [...new Set(tags)]
 }
 
-const escapeRegex = (value) => {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
 const buildDateRange = (query = {}, fieldName = 'uploadedAt') => {
   const filter = {}
   let fromDate = query.fromDate ? new Date(query.fromDate) : null
@@ -331,12 +328,14 @@ const buildMediaFilter = (query = {}) => {
   }
 
   if (query.search) {
-    const pattern = new RegExp(escapeRegex(query.search), 'i')
-    filter.$or = [
-      { title: pattern },
-      { description: pattern },
-      { tags: pattern }
-    ]
+    const pattern = buildSafeSearchRegex(query.search)
+    if (pattern) {
+      filter.$or = [
+        { title: pattern },
+        { description: pattern },
+        { tags: pattern }
+      ]
+    }
   }
 
   return filter
@@ -356,12 +355,14 @@ const buildGalleryFilter = ({ eventId, query = {} }) => {
   }
 
   if (query.search) {
-    const pattern = new RegExp(escapeRegex(query.search), 'i')
-    filter.$or = [
-      { title: pattern },
-      { description: pattern },
-      { tags: pattern }
-    ]
+    const pattern = buildSafeSearchRegex(query.search)
+    if (pattern) {
+      filter.$or = [
+        { title: pattern },
+        { description: pattern },
+        { tags: pattern }
+      ]
+    }
   }
 
   return filter

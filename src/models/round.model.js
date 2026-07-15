@@ -19,6 +19,8 @@ const roundSchema = new Schema(
     maxPromotedTeams: { type: Number },
     startTime: { type: Date },
     endTime: { type: Date },
+    submissionOpenAt: { type: Date },
+    submissionCloseAt: { type: Date },
     submissionDeadline: { type: Date },
     publishTime: { type: Date },
     assignedJudgeIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
@@ -38,6 +40,7 @@ const roundSchema = new Schema(
 roundSchema.index({ eventId: 1, trackId: 1 })
 roundSchema.index({ roundType: 1 })
 roundSchema.index({ assignedTeamIds: 1 })
+roundSchema.index({ submissionOpenAt: 1, submissionCloseAt: 1 })
 roundSchema.index({ submissionDeadline: 1 })
 
 const Round = mongoose.model('Round', roundSchema)

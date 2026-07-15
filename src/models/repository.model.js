@@ -26,7 +26,7 @@ const repositorySchema = new Schema(
     },
     accessState: {
       type: String,
-      enum: ['UNKNOWN', 'PENDING', 'GRANTED', 'REVOKED'],
+      enum: ['UNKNOWN', 'PENDING', 'GRANTED', 'REVOKE_PENDING', 'REVOKE_FAILED', 'REVOKED'],
       default: 'UNKNOWN'
     },
     submissionStatus: {
@@ -36,7 +36,9 @@ const repositorySchema = new Schema(
     },
     lastSyncAt: { type: Date },
     accessGrantedAt: { type: Date },
+    accessRevokeRequestedAt: { type: Date },
     accessRevokedAt: { type: Date },
+    lastAccessRevokeError: { type: String, trim: true },
     webhookRegisteredAt: { type: Date },
     webhookStatus: {
       type: String,

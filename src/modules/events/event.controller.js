@@ -5,7 +5,7 @@ import { responseSuccess } from '#utils/responseUtil.js'
 
 const listEvents = async (req, res, next) => {
   try {
-    const { events, pagination } = await EVENT_SERVICE.listEvents(req.validated?.query || req.query)
+    const { events, pagination } = await EVENT_SERVICE.listEvents(req.validated?.query || req.query, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get events successfully',
@@ -19,7 +19,7 @@ const listEvents = async (req, res, next) => {
 
 const getEventById = async (req, res, next) => {
   try {
-    const event = await EVENT_SERVICE.getEventById(req.params.id)
+    const event = await EVENT_SERVICE.getEventById(req.params.id, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get event successfully',
@@ -45,7 +45,7 @@ const createEvent = async (req, res, next) => {
 
 const updateEvent = async (req, res, next) => {
   try {
-    const event = await EVENT_SERVICE.updateEvent(req.params.id, req.body)
+    const event = await EVENT_SERVICE.updateEvent(req.params.id, req.body, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Update event successfully',
@@ -58,10 +58,23 @@ const updateEvent = async (req, res, next) => {
 
 const updateEventStatus = async (req, res, next) => {
   try {
-    const event = await EVENT_SERVICE.updateEventStatus(req.params.id, req.body.status)
+    const event = await EVENT_SERVICE.updateEventStatus(req.params.id, req.body.status, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Update event status successfully',
+      data: event
+    }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const transitionEventStatus = (status, message) => async (req, res, next) => {
+  try {
+    const event = await EVENT_SERVICE.updateEventStatus(req.params.id, status, req.user)
+
+    res.status(StatusCodes.OK).json(responseSuccess({
+      message,
       data: event
     }))
   } catch (error) {
@@ -101,6 +114,12 @@ export const EVENT_CONTROLLER = {
   createEvent,
   updateEvent,
   updateEventStatus,
+  openRegistration: transitionEventStatus('OPEN_REGISTRATION', 'Open event registration successfully'),
+  closeRegistration: transitionEventStatus('REGISTRATION_CLOSED', 'Close event registration successfully'),
+  startEvent: transitionEventStatus('ONGOING', 'Start event successfully'),
+  startScoring: transitionEventStatus('SCORING', 'Start event scoring successfully'),
+  completeEvent: transitionEventStatus('COMPLETED', 'Complete event successfully'),
+  archiveEvent: transitionEventStatus('ARCHIVED', 'Archive event successfully'),
   deleteEvent,
   sendInvitations
 }

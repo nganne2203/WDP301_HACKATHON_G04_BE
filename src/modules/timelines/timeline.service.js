@@ -6,8 +6,20 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
+import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
+import Workshop from '#models/workshop.model.js'
+import {
+  applyEventVisibilityScope,
+  ensureCanViewEventChild
+} from '#utils/eventVisibilityUtil.js'
 
 const TIMELINE_FIELDS = ['eventId', 'title', 'description', 'startTime', 'endTime', 'eventType', 'status']
+const TIMELINE_STATUS_TRANSITIONS = {
+  SCHEDULED: ['ONGOING', 'CANCELLED'],
+  ONGOING: ['COMPLETED', 'CANCELLED'],
+  COMPLETED: [],
+  CANCELLED: []
+}
 
 const ensureObjectId = (id, fieldName = 'timeline id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -23,6 +35,34 @@ const ensureDateRange = (payload = {}) => {
   }
 }
 
+const ensureTimelineWithinEventWindow = ({ event, startTime, endTime }) => {
+  if (!event || !startTime || !endTime) return
+  const timelineStart = new Date(startTime)
+  const timelineEnd = new Date(endTime)
+
+  if (event.startDate && timelineStart < new Date(event.startDate)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Timeline startTime must be within the event date window'])
+  }
+  if (event.endDate && timelineEnd > new Date(event.endDate)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Timeline endTime must be within the event date window'])
+  }
+}
+
+const ensureTimelineStatusTransition = ({ fromStatus, toStatus, isCreate = false }) => {
+  if (!toStatus || fromStatus === toStatus) return
+  if (isCreate) {
+    if (toStatus !== 'SCHEDULED') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Timeline events must be created in SCHEDULED status'])
+    }
+    return
+  }
+
+  const allowedStatuses = TIMELINE_STATUS_TRANSITIONS[fromStatus] || []
+  if (!allowedStatuses.includes(toStatus)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Invalid timeline status transition from ${fromStatus} to ${toStatus}`])
+  }
+}
+
 const buildTimelineFilter = (query = {}) => {
   const filter = {}
 
@@ -35,11 +75,13 @@ const buildTimelineFilter = (query = {}) => {
   if (query.status) filter.status = query.status
 
   if (query.search) {
-    const pattern = new RegExp(query.search, 'i')
-    filter.$or = [
-      { title: pattern },
-      { description: pattern }
-    ]
+    const pattern = buildSafeSearchRegex(query.search)
+    if (pattern) {
+      filter.$or = [
+        { title: pattern },
+        { description: pattern }
+      ]
+    }
   }
 
   return filter
@@ -57,6 +99,11 @@ const normalizeEvent = (event) => {
     year: event.year,
     status: event.status
   }
+}
+
+const countDocuments = async (model, filter) => {
+  if (!model?.countDocuments) return 0
+  return await model.countDocuments(filter)
 }
 
 const normalizeTimeline = (timeline) => {
@@ -92,9 +139,13 @@ export const createTimelineService = ({
     return timeline
   }
 
-  const listTimelines = async (query = {}) => {
+  const listTimelines = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
-    const filter = buildTimelineFilter(query)
+    const filter = await applyEventVisibilityScope({
+      filter: buildTimelineFilter(query),
+      actor,
+      repository
+    })
     const skip = (page - 1) * limit
 
     const [timelines, totalItems] = await Promise.all([
@@ -113,14 +164,40 @@ export const createTimelineService = ({
     }
   }
 
-  const getTimelineById = async (id) => {
+  const getTimelineById = async (id, actor = {}) => {
     const timeline = await ensureTimelineExists(id)
+    await ensureCanViewEventChild({
+      resource: timeline,
+      actor,
+      repository,
+      notFoundMessage: 'Timeline not found'
+    })
     return normalizeTimeline(timeline)
+  }
+
+  const ensureTimelineCanBeDeleted = async (timeline) => {
+    if (timeline.status !== 'SCHEDULED') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only SCHEDULED timeline events can be deleted'])
+    }
+
+    const linkedWorkshopCount = await countDocuments(Workshop, { timelineEventId: timeline._id || timeline.id })
+    if (linkedWorkshopCount > 0) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Cannot delete timeline event while workshops are linked to it'])
+    }
   }
 
   const createTimeline = async (payload = {}) => {
     ensureDateRange(payload)
-    await eventService.getRawEventById(payload.eventId)
+    const event = await eventService.getRawEventById(payload.eventId)
+    ensureTimelineWithinEventWindow({
+      event,
+      startTime: payload.startTime,
+      endTime: payload.endTime
+    })
+    ensureTimelineStatusTransition({
+      toStatus: payload.status || 'SCHEDULED',
+      isCreate: true
+    })
 
     const timeline = await repository.create(pickSafeFields(payload, TIMELINE_FIELDS))
     return normalizeTimeline(await repository.findById(timeline._id))
@@ -133,10 +210,18 @@ export const createTimelineService = ({
     if (safePayload.eventId) {
       await eventService.getRawEventById(safePayload.eventId)
     }
+    const eventId = safePayload.eventId || existingTimeline.eventId?._id?.toString?.() || existingTimeline.eventId?.toString?.()
+    const event = await eventService.getRawEventById(eventId)
 
-    ensureDateRange({
+    const nextSchedule = {
       startTime: safePayload.startTime ?? existingTimeline.startTime,
       endTime: safePayload.endTime ?? existingTimeline.endTime
+    }
+    ensureDateRange(nextSchedule)
+    ensureTimelineWithinEventWindow({ event, ...nextSchedule })
+    ensureTimelineStatusTransition({
+      fromStatus: existingTimeline.status || 'SCHEDULED',
+      toStatus: safePayload.status
     })
 
     const timeline = await repository.updateById(id, safePayload)
@@ -144,7 +229,8 @@ export const createTimelineService = ({
   }
 
   const deleteTimeline = async (id) => {
-    await ensureTimelineExists(id)
+    const timeline = await ensureTimelineExists(id)
+    await ensureTimelineCanBeDeleted(timeline)
     await repository.deleteById(id)
   }
 

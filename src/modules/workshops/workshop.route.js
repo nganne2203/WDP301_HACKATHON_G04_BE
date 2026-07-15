@@ -1041,6 +1041,12 @@ router.post(
   WORKSHOP_CONTROLLER.createRating
 )
 
+router.get(
+  '/:id/ratings/stats',
+  validationHandlingMiddleware(WORKSHOP_VALIDATION.getRatingStats),
+  WORKSHOP_CONTROLLER.getRatingStats
+)
+
 /**
  * @swagger
  * /api/workshops/{id}/ratings:

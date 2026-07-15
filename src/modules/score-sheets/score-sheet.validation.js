@@ -2,10 +2,11 @@ import Joi from 'joi'
 
 const objectId = Joi.string().hex().length(24)
 const scoreSheetStatus = Joi.string().trim().uppercase().valid('DRAFT', 'SUBMITTED', 'LOCKED')
+const scoreValue = Joi.number().min(0).precision(2).required()
 
 const scoreItem = Joi.object({
   criterionId: objectId.required(),
-  scoreValue: Joi.number().min(0).required(),
+  scoreValue,
   comment: Joi.string().trim().max(2000).allow('', null)
 })
 
