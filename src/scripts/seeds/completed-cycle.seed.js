@@ -97,19 +97,19 @@ const FINAL_RESULTS = [
 ]
 
 const PRELIMINARY_CRITERIA = [
-  ['Domain accuracy and relevance', 'Accuracy, evidence quality, and fit with the selected domain.', 30],
-  ['Agentic RAG architecture and algorithms', 'Retrieval, agent design, grounding, and technical reasoning.', 30],
-  ['Idea and presentation', 'Originality, communication, and demonstration quality.', 15],
-  ['Feasibility and creativity', 'Implementation feasibility and creative problem solving.', 15],
-  ['User experience and interaction', 'Usability and quality of the interactive experience.', 10]
+  ['Domain accuracy and relevance', 'Accuracy, evidence quality, and fit with the selected domain.', 30, false],
+  ['Agentic RAG architecture and algorithms', 'Retrieval, agent design, grounding, and technical reasoning.', 30, true],
+  ['Idea and presentation', 'Originality, communication, and demonstration quality.', 15, false],
+  ['Feasibility and creativity', 'Implementation feasibility and creative problem solving.', 15, false],
+  ['User experience and interaction', 'Usability and quality of the interactive experience.', 10, false]
 ]
 
 const FINAL_CRITERIA = [
-  ['Data processing and retrieval quality', 'Quality of ingestion, indexing, retrieval, and response construction.', 30],
-  ['Reliability and hallucination resistance', 'Grounding, evaluation, citations, and hallucination control.', 20],
-  ['Agent reasoning and multi-stage processing', 'Agent workflow quality and multi-step reasoning.', 20],
-  ['Practicality and operational optimization', 'Deployment feasibility, performance, and operations.', 20],
-  ['Scalability and innovation', 'Ability to extend the solution and originality of the approach.', 10]
+  ['Data processing and retrieval quality', 'Quality of ingestion, indexing, retrieval, and response construction.', 30, false],
+  ['Reliability and hallucination resistance', 'Grounding, evaluation, citations, and hallucination control.', 20, false],
+  ['Agent reasoning and multi-stage processing', 'Agent workflow quality and multi-step reasoning.', 20, false],
+  ['Practicality and operational optimization', 'Deployment feasibility, performance, and operations.', 20, false],
+  ['Scalability and innovation', 'Ability to extend the solution and originality of the approach.', 10, false]
 ]
 
 const slugify = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -136,22 +136,25 @@ const seedRubric = async ({ competitionId, title, createdBy, definitions }) => {
     title,
     description: 'Official judge-only rubric for the completed-cycle showcase.',
     totalScore: 100,
+    criterionMaxScore: 10,
     version: 1,
     status: 'ACTIVE',
     createdBy
   })
 
-  const criteria = await Promise.all(definitions.map(([name, description, weight], index) => {
+  const criteria = await Promise.all(definitions.map(([name, description, weight, aiSupportForAudit], index) => {
     return upsertOne(Criterion, { rubricId: rubric._id, name }, {
       rubricId: rubric._id,
       name,
       description,
       maxScore: 10,
-      weight: weight / 10,
+      weight,
       order: index + 1,
       judgeOnly: true,
-      aiSupportForAudit: true,
-      aiInstruction: 'Use AI findings only as supporting evidence; the judge decides the official score.'
+      aiSupportForAudit,
+      aiInstruction: aiSupportForAudit
+        ? 'Use AI findings only as supporting evidence; the judge decides the official score.'
+        : null
     })
   }))
 
@@ -203,7 +206,7 @@ const seedScoreSheet = async ({
   }))
   const total = values.reduce((sum, value) => sum + value, 0)
   const weightedTotal = values.reduce((sum, value, index) => {
-    return sum + (value * Number(criteria[index].weight || 1))
+    return sum + ((value / Number(criteria[index].maxScore || 10)) * Number(criteria[index].weight || 1))
   }, 0)
 
   return await upsertOne(ScoreSheet, { _id: sheet._id }, {

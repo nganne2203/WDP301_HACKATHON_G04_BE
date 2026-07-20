@@ -208,7 +208,7 @@ const buildRubricContext = ({ rubric, criteria }) => {
       maxScore: criterion.maxScore,
       weight: criterion.weight,
       judgeOnly: Boolean(criterion.judgeOnly),
-      aiSupportForAudit: criterion.aiSupportForAudit !== false,
+      aiSupportForAudit: Boolean(criterion.aiSupportForAudit),
       aiInstruction: criterion.aiInstruction || null,
       order: index
     }))

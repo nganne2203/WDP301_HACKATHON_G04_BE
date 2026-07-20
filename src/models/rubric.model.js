@@ -9,6 +9,7 @@ const rubricSchema = new Schema(
     title: { type: String, required: true, trim: true },
     description: { type: String },
     totalScore: { type: Number, enum: [4, 10, 100], default: 100 },
+    criterionMaxScore: { type: Number, enum: [4, 10, 100], default: 10 },
     version: { type: Number, default: 1, min: 1 },
     status: {
       type: String,

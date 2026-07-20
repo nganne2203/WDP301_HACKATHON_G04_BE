@@ -23,7 +23,7 @@ const countModel = (value) => ({
   }
 })
 
-test('updateCriterion and deleteCriterion recompute criteria weight total without changing rubric scale', async () => {
+test('updateCriterion and deleteCriterion recompute total weight without changing the configured total', async () => {
   const rubrics = new Map([[
     ids.rubric,
     {
@@ -86,7 +86,7 @@ test('updateCriterion and deleteCriterion recompute criteria weight total withou
   assert.equal(deleted.deletedCriterionId, ids.criterion1)
 })
 
-test('active rubric requires criterion weights to match rubric scale', async () => {
+test('active rubric requires criterion weights to match total weight', async () => {
   const rubrics = new Map([[
     ids.rubric,
     {
@@ -140,7 +140,7 @@ test('active rubric requires criterion weights to match rubric scale', async () 
   await assert.rejects(
     service.updateCriterion(ids.rubric, ids.criterion2, { weight: 50 }),
     error => error instanceof Error &&
-      error.errors.includes('Total criterion weight must equal rubric scale 100')
+      error.errors.includes('Total weight must equal 100')
   )
 })
 
@@ -167,7 +167,31 @@ test('rubric cannot be created as active before criteria are configured', async 
       status: 'ACTIVE'
     }),
     error => error instanceof Error &&
-      error.errors.includes('Rubric must be created as DRAFT and activated after criteria weights match the scale')
+      error.errors.includes('Rubric must be created as DRAFT; configure criterion coefficients before changing its status')
+  )
+})
+
+test('rubric cannot leave draft until criterion weights equal the total weight', async () => {
+  const rubric = {
+    _id: ids.rubric,
+    competitionId: ids.competition,
+    title: 'Incomplete Rubric',
+    totalScore: 100,
+    criterionMaxScore: 10,
+    status: 'DRAFT'
+  }
+  const repository = {
+    async findRubricById() { return rubric },
+    async findCriteriaByRubricId() {
+      return [{ _id: ids.criterion1, rubricId: ids.rubric, name: 'Correctness', maxScore: 10, weight: 90, order: 1 }]
+    },
+    async updateRubricById() { throw new Error('should not update an incomplete rubric') }
+  }
+  const service = createRubricService({ repository, scoreSheetModel: countModel(0) })
+
+  await assert.rejects(
+    service.updateRubric(ids.rubric, { status: 'ARCHIVED' }),
+    error => error instanceof Error && error.errors.includes('Total weight must equal 100')
   )
 })
 

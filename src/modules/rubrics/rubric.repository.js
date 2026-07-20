@@ -49,6 +49,10 @@ const updateCriterionById = async (id, data) => {
   })
 }
 
+const updateCriteriaMaxScoreByRubricId = async (rubricId, maxScore) => {
+  return await Criterion.updateMany({ rubricId }, { $set: { maxScore } })
+}
+
 const deleteCriterionById = async (id) => {
   return await Criterion.findByIdAndDelete(id)
 }
@@ -66,6 +70,7 @@ export const RUBRIC_REPOSITORY = {
   createCriterion,
   findCriterionById,
   updateCriterionById,
+  updateCriteriaMaxScoreByRubricId,
   deleteCriterionById,
   findCriteriaByRubricId
 }

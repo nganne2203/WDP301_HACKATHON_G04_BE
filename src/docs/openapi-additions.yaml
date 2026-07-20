@@ -526,6 +526,12 @@ components:
           nullable: true
         totalScore:
           type: number
+          description: Total weight. The sum of all criterion weights must equal this value before the rubric leaves DRAFT.
+        criterionMaxScore:
+          type: number
+          enum: [4, 10, 100]
+          default: 10
+          description: Scoring coefficient automatically applied to every criterion in this rubric.
         version:
           type: integer
         status:
@@ -539,6 +545,13 @@ components:
         description:
           type: string
           nullable: true
+        totalScore:
+          type: number
+          description: Total weight. The sum of all criterion weights must equal this value before the rubric leaves DRAFT.
+        criterionMaxScore:
+          type: number
+          enum: [4, 10, 100]
+          description: Changing this also updates every criterion that has not been scored.
         version:
           type: integer
         status:
@@ -546,18 +559,17 @@ components:
           enum: [DRAFT, ACTIVE, ARCHIVED]
     CriterionRequest:
       type: object
-      description: Add a criterion to a rubric, including AI-specific audit hints.
-      required: [name, maxScore]
+      description: Add a criterion to a rubric. Its scoring coefficient is set from rubric.criterionMaxScore.
+      required: [name]
       properties:
         name:
           type: string
         description:
           type: string
           nullable: true
-        maxScore:
-          type: number
         weight:
-          type: number
+          type: integer
+          minimum: 1
         order:
           type: integer
         judgeOnly:
@@ -575,10 +587,9 @@ components:
         description:
           type: string
           nullable: true
-        maxScore:
-          type: number
         weight:
-          type: number
+          type: integer
+          minimum: 1
         order:
           type: integer
         judgeOnly:
@@ -2276,7 +2287,7 @@ paths:
               maxScore: 10
               weight: 1
               judgeOnly: false
-              aiSupportForAudit: true
+              aiSupportForAudit: false
               aiInstruction: Focus on evidence from repository structure and changed services.
       responses:
         '201':

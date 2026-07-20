@@ -293,7 +293,7 @@ export const createScoreSheetService = ({
 
     const totalWeight = sumCriterionWeights(criteria)
     if (totalWeight !== scale) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Total criterion weight must equal rubric scale ${scale} before scoring`])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Total weight must equal ${scale} before scoring`])
     }
   }
 
