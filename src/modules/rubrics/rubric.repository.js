@@ -2,7 +2,7 @@ import Criterion from '#models/criterion.model.js'
 import Rubric from '#models/rubric.model.js'
 
 const rubricPopulate = [
-  { path: 'eventId', select: 'title semester season year status' },
+  { path: 'competitionId', select: 'title semester season year status' },
   { path: 'roundId', select: 'name roundType status' },
   { path: 'createdBy', select: 'fullName email' }
 ]

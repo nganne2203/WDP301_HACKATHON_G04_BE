@@ -11,7 +11,7 @@ import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
 import {
   getActorId,
   getIdString,
-  isPrivilegedEventActor
+  isPrivilegedCompetitionActor
 } from '#utils/domainAccessUtil.js'
 
 const WORKSHOP_STATUSES = ['SCHEDULED', 'LIVE', 'COMPLETED', 'CANCELLED']
@@ -22,8 +22,8 @@ const WORKSHOP_STATUS_TRANSITIONS = {
   CANCELLED: []
 }
 const WORKSHOP_FIELDS = [
-  'eventId',
-  'timelineEventId',
+  'competitionId',
+  'timelineActivityId',
   'title',
   'description',
   'presenterId',
@@ -52,16 +52,16 @@ const ensureWorkshopTimeRange = (payload = {}) => {
   }
 }
 
-const ensureWorkshopWithinEventWindow = ({ event, startTime, endTime }) => {
-  if (!event || !startTime || !endTime) return
+const ensureWorkshopWithinCompetitionWindow = ({ competition, startTime, endTime }) => {
+  if (!competition || !startTime || !endTime) return
   const workshopStart = new Date(startTime)
   const workshopEnd = new Date(endTime)
 
-  if (event.startDate && workshopStart < new Date(event.startDate)) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Workshop startTime must be within the event date window'])
+  if (competition.startDate && workshopStart < new Date(competition.startDate)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Workshop startTime must be within the competition date window'])
   }
-  if (event.endDate && workshopEnd > new Date(event.endDate)) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Workshop endTime must be within the event date window'])
+  if (competition.endDate && workshopEnd > new Date(competition.endDate)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Workshop endTime must be within the competition date window'])
   }
 }
 
@@ -80,15 +80,15 @@ const ensureWorkshopStatusTransition = ({ fromStatus, toStatus, isCreate = false
   }
 }
 
-const ensureEventExists = async (eventId) => {
-  ensureObjectId(eventId, 'event id')
+const ensureCompetitionExists = async (competitionId) => {
+  ensureObjectId(competitionId, 'competition id')
 
-  const event = await WORKSHOP_REPOSITORY.findEventById(eventId)
-  if (!event) {
-    throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+  const competition = await WORKSHOP_REPOSITORY.findCompetitionById(competitionId)
+  if (!competition) {
+    throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
   }
 
-  return event
+  return competition
 }
 
 const ensureWorkshopExists = async (id) => {
@@ -142,8 +142,8 @@ const ensureCanCreateGoogleMeet = ({ workshop, actor = {}, organizerUserId }) =>
 const buildWorkshopFilter = (query = {}) => {
   const filter = {}
 
-  if (query.eventId) {
-    filter.eventId = query.eventId
+  if (query.competitionId) {
+    filter.competitionId = query.competitionId
   }
 
   if (query.status) {
@@ -189,17 +189,17 @@ const normalizeUserSummary = (user) => {
   }
 }
 
-const normalizeEventSummary = (event) => {
-  if (!event) return null
-  if (typeof event === 'string' || event instanceof mongoose.Types.ObjectId) return { id: event.toString() }
+const normalizeCompetitionSummary = (competition) => {
+  if (!competition) return null
+  if (typeof competition === 'string' || competition instanceof mongoose.Types.ObjectId) return { id: competition.toString() }
 
   return {
-    id: event._id?.toString() || event.id,
-    title: event.title,
-    seriesName: event.seriesName,
-    season: event.season,
-    year: event.year,
-    status: event.status
+    id: competition._id?.toString() || competition.id,
+    title: competition.title,
+    seriesName: competition.seriesName,
+    season: competition.season,
+    year: competition.year,
+    status: competition.status
   }
 }
 
@@ -212,9 +212,9 @@ const normalizeWorkshop = (workshop) => {
 
   return {
     id: plainWorkshop._id?.toString() || plainWorkshop.id,
-    event: normalizeEventSummary(plainWorkshop.eventId),
-    eventId: plainWorkshop.eventId?._id?.toString() || plainWorkshop.eventId?.toString(),
-    timelineEventId: plainWorkshop.timelineEventId?.toString(),
+    competition: normalizeCompetitionSummary(plainWorkshop.competitionId),
+    competitionId: plainWorkshop.competitionId?._id?.toString() || plainWorkshop.competitionId?.toString(),
+    timelineActivityId: plainWorkshop.timelineActivityId?.toString(),
     title: plainWorkshop.title,
     description: plainWorkshop.description,
     presenter: normalizeUserSummary(plainWorkshop.presenterId),
@@ -225,7 +225,7 @@ const normalizeWorkshop = (workshop) => {
       ? {
         enabled: Boolean(plainWorkshop.googleMeet.enabled),
         meetLink: plainWorkshop.googleMeet.meetLink,
-        calendarEventId: plainWorkshop.googleMeet.calendarEventId,
+        calendarCompetitionId: plainWorkshop.googleMeet.calendarCompetitionId,
         htmlLink: plainWorkshop.googleMeet.htmlLink,
         organizerUserId: plainWorkshop.googleMeet.organizerUserId?.toString(),
         organizerEmail: plainWorkshop.googleMeet.organizerEmail,
@@ -305,8 +305,8 @@ const normalizeFeedback = (feedback) => {
   }
 }
 
-const findVisibleEventIdsForActor = async (actor = {}) => {
-  if (isPrivilegedEventActor(actor)) return null
+const findVisibleCompetitionIdsForActor = async (actor = {}) => {
+  if (isPrivilegedCompetitionActor(actor)) return null
 
   const actorId = getActorId(actor)
   if (!actorId) {
@@ -314,63 +314,63 @@ const findVisibleEventIdsForActor = async (actor = {}) => {
   }
 
   if (isParticipantOnly(actor)) {
-    const [participantEventIds, openRegistrationEventIds] = await Promise.all([
-      WORKSHOP_REPOSITORY.findEventIdsForParticipant(actorId),
-      WORKSHOP_REPOSITORY.findOpenRegistrationEventIds()
+    const [participantCompetitionIds, openRegistrationCompetitionIds] = await Promise.all([
+      WORKSHOP_REPOSITORY.findCompetitionIdsForParticipant(actorId),
+      WORKSHOP_REPOSITORY.findOpenRegistrationCompetitionIds()
     ])
-    return [...new Set([...participantEventIds, ...openRegistrationEventIds].map(getIdString).filter(Boolean))]
+    return [...new Set([...participantCompetitionIds, ...openRegistrationCompetitionIds].map(getIdString).filter(Boolean))]
   }
 
-  const nonDraftEventIds = await WORKSHOP_REPOSITORY.findNonDraftEventIds()
-  return nonDraftEventIds.map(getIdString).filter(Boolean)
+  const nonDraftCompetitionIds = await WORKSHOP_REPOSITORY.findNonDraftCompetitionIds()
+  return nonDraftCompetitionIds.map(getIdString).filter(Boolean)
 }
 
-const applyEventVisibilityScope = async (filter = {}, actor = {}) => {
-  const visibleEventIds = await findVisibleEventIdsForActor(actor)
-  if (!visibleEventIds) return filter
+const applyCompetitionVisibilityScope = async (filter = {}, actor = {}) => {
+  const visibleCompetitionIds = await findVisibleCompetitionIdsForActor(actor)
+  if (!visibleCompetitionIds) return filter
 
-  if (filter.eventId) {
-    return visibleEventIds.includes(getIdString(filter.eventId))
+  if (filter.competitionId) {
+    return visibleCompetitionIds.includes(getIdString(filter.competitionId))
       ? filter
-      : { ...filter, eventId: { $in: [] } }
+      : { ...filter, competitionId: { $in: [] } }
   }
 
-  return { ...filter, eventId: { $in: visibleEventIds } }
+  return { ...filter, competitionId: { $in: visibleCompetitionIds } }
 }
 
 const ensureCanViewWorkshop = async (workshop, actor = {}) => {
-  if (isPrivilegedEventActor(actor)) return
+  if (isPrivilegedCompetitionActor(actor)) return
 
-  const event = workshop?.eventId
-  const eventId = getIdString(event)
-  if (!eventId) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Workshop not found'])
+  const competition = workshop?.competitionId
+  const competitionId = getIdString(competition)
+  if (!competitionId) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Workshop not found'])
 
-  if (event?.status === 'DRAFT') {
+  if (competition?.status === 'DRAFT') {
     throw new ApiError(ERROR_CODES.NOT_FOUND, ['Workshop not found'])
   }
 
   if (isParticipantOnly(actor)) {
-    const visibleEventIds = await findVisibleEventIdsForActor(actor)
-    if (!visibleEventIds.includes(eventId)) {
+    const visibleCompetitionIds = await findVisibleCompetitionIdsForActor(actor)
+    if (!visibleCompetitionIds.includes(competitionId)) {
       throw new ApiError(ERROR_CODES.NOT_FOUND, ['Workshop not found'])
     }
   }
 }
 
-const ensureActorJoinedWorkshopEvent = async (workshop, actor = {}) => {
+const ensureActorJoinedWorkshopCompetition = async (workshop, actor = {}) => {
   const actorId = getActorId(actor)
   if (!actorId) throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authentication is required'])
 
-  const eventId = getIdString(workshop?.eventId)
-  const participant = await WORKSHOP_REPOSITORY.findJoinedParticipant({ eventId, userId: actorId })
+  const competitionId = getIdString(workshop?.competitionId)
+  const participant = await WORKSHOP_REPOSITORY.findJoinedParticipant({ competitionId, userId: actorId })
   if (!participant) {
-    throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only joined participants of this event can interact with the workshop'])
+    throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only joined participants of this competition can interact with the workshop'])
   }
 }
 
 const listWorkshops = async (query = {}, actor = {}) => {
   const { page, limit } = normalizePaginationQuery(query)
-  const filter = await applyEventVisibilityScope(buildWorkshopFilter(query), actor)
+  const filter = await applyCompetitionVisibilityScope(buildWorkshopFilter(query), actor)
   const skip = (page - 1) * limit
 
   const [workshops, totalItems] = await Promise.all([
@@ -413,10 +413,10 @@ const ensureWorkshopCanBeDeleted = async (workshop) => {
 }
 
 const createWorkshop = async (payload = {}) => {
-  const event = await ensureEventExists(payload.eventId)
+  const competition = await ensureCompetitionExists(payload.competitionId)
   ensureWorkshopTimeRange(payload)
-  ensureWorkshopWithinEventWindow({
-    event,
+  ensureWorkshopWithinCompetitionWindow({
+    competition,
     startTime: payload.startTime,
     endTime: payload.endTime
   })
@@ -434,18 +434,18 @@ const updateWorkshop = async (id, payload = {}) => {
   const existingWorkshop = await ensureWorkshopExists(id)
   const safePayload = pickSafeFields(payload, WORKSHOP_FIELDS)
 
-  if (safePayload.eventId) {
-    await ensureEventExists(safePayload.eventId)
+  if (safePayload.competitionId) {
+    await ensureCompetitionExists(safePayload.competitionId)
   }
-  const eventId = safePayload.eventId || getIdString(existingWorkshop.eventId)
-  const event = await ensureEventExists(eventId)
+  const competitionId = safePayload.competitionId || getIdString(existingWorkshop.competitionId)
+  const competition = await ensureCompetitionExists(competitionId)
 
   const nextSchedule = {
     startTime: safePayload.startTime ?? existingWorkshop.startTime,
     endTime: safePayload.endTime ?? existingWorkshop.endTime
   }
   ensureWorkshopTimeRange(nextSchedule)
-  ensureWorkshopWithinEventWindow({ event, ...nextSchedule })
+  ensureWorkshopWithinCompetitionWindow({ competition, ...nextSchedule })
 
   if (safePayload.status && !WORKSHOP_STATUSES.includes(safePayload.status)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Invalid workshop status'])
@@ -481,7 +481,7 @@ const createGoogleMeet = async (workshopId, payload = {}, actor = {}) => {
     endTime: workshop.endTime
   })
 
-  const googleMeet = await GOOGLE_SERVICE.createGoogleMeetEvent({
+  const googleMeet = await GOOGLE_SERVICE.createGoogleMeetCompetition({
     organizerUserId: payload.organizerUserId,
     title: workshop.title,
     description: workshop.description,
@@ -493,7 +493,7 @@ const createGoogleMeet = async (workshopId, payload = {}, actor = {}) => {
   const updatedWorkshop = await WORKSHOP_REPOSITORY.updateWorkshopGoogleMeet(workshopId, {
     enabled: true,
     meetLink: googleMeet.meetLink,
-    calendarEventId: googleMeet.calendarEventId,
+    calendarCompetitionId: googleMeet.calendarCompetitionId,
     htmlLink: googleMeet.htmlLink,
     organizerUserId: payload.organizerUserId,
     organizerEmail: googleMeet.organizerEmail,
@@ -502,7 +502,7 @@ const createGoogleMeet = async (workshopId, payload = {}, actor = {}) => {
 
   return {
     meetLink: updatedWorkshop.googleMeet.meetLink,
-    calendarEventId: updatedWorkshop.googleMeet.calendarEventId,
+    calendarCompetitionId: updatedWorkshop.googleMeet.calendarCompetitionId,
     htmlLink: updatedWorkshop.googleMeet.htmlLink,
     organizerEmail: updatedWorkshop.googleMeet.organizerEmail
   }
@@ -510,7 +510,7 @@ const createGoogleMeet = async (workshopId, payload = {}, actor = {}) => {
 
 const createQuestion = async (workshopId, payload = {}, actor = {}) => {
   const workshop = await ensureWorkshopExists(workshopId)
-  await ensureActorJoinedWorkshopEvent(workshop, actor)
+  await ensureActorJoinedWorkshopCompetition(workshop, actor)
 
   if (!canSubmitQuestion(workshop)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Questions can only be submitted before or during the workshop'])
@@ -560,7 +560,7 @@ const voteQuestion = async (questionId, actor = {}) => {
   }
 
   const workshop = await ensureWorkshopExists(question.workshopId)
-  await ensureActorJoinedWorkshopEvent(workshop, actor)
+  await ensureActorJoinedWorkshopCompetition(workshop, actor)
   if (!canSubmitQuestion(workshop)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Questions can only be voted before or during the workshop'])
   }
@@ -575,7 +575,7 @@ const voteQuestion = async (questionId, actor = {}) => {
 
 const createRating = async (workshopId, payload = {}, actor = {}) => {
   const workshop = await ensureWorkshopExists(workshopId)
-  await ensureActorJoinedWorkshopEvent(workshop, actor)
+  await ensureActorJoinedWorkshopCompetition(workshop, actor)
 
   if (!canSubmitPostWorkshopInteraction(workshop)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Workshop can only be rated after it ends'])
@@ -637,7 +637,7 @@ const listRatings = async (workshopId, query = {}, actor = {}) => {
 
 const createFeedback = async (workshopId, payload = {}, actor = {}) => {
   const workshop = await ensureWorkshopExists(workshopId)
-  await ensureActorJoinedWorkshopEvent(workshop, actor)
+  await ensureActorJoinedWorkshopCompetition(workshop, actor)
 
   if (!canSubmitPostWorkshopInteraction(workshop)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Workshop feedback can only be submitted after it ends'])

@@ -8,7 +8,7 @@ import { PERMISSIONS } from '#constants/permissions.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { LOGGER } from '#utils/logger.js'
 import { isActiveJudge } from '#utils/domainAccessUtil.js'
-import Event from '#models/event.model.js'
+import Competition from '#models/competition.model.js'
 import Repository from '#models/repository.model.js'
 import Round from '#models/round.model.js'
 import Team from '#models/team.model.js'
@@ -25,16 +25,16 @@ const normalizeRanking = (ranking) => {
 
   return {
     id: plainRanking._id?.toString() || plainRanking.id,
-    eventId: plainRanking.eventId?._id?.toString?.() || plainRanking.eventId?.toString?.() || plainRanking.eventId,
+    competitionId: plainRanking.competitionId?._id?.toString?.() || plainRanking.competitionId?.toString?.() || plainRanking.competitionId,
     roundId: plainRanking.roundId?._id?.toString?.() || plainRanking.roundId?.toString?.() || plainRanking.roundId || null,
     trackId: plainRanking.trackId?._id?.toString?.() || plainRanking.trackId?.toString?.() || plainRanking.trackId || null,
     teamId: plainRanking.teamId?._id?.toString?.() || plainRanking.teamId?.toString?.() || plainRanking.teamId || null,
     rankingType: plainRanking.rankingType,
-    event: plainRanking.eventId && typeof plainRanking.eventId === 'object'
+    competition: plainRanking.competitionId && typeof plainRanking.competitionId === 'object'
       ? {
-        id: plainRanking.eventId._id?.toString() || plainRanking.eventId.id,
-        title: plainRanking.eventId.title,
-        status: plainRanking.eventId.status
+        id: plainRanking.competitionId._id?.toString() || plainRanking.competitionId.id,
+        title: plainRanking.competitionId.title,
+        status: plainRanking.competitionId.status
       }
       : null,
     round: plainRanking.roundId && typeof plainRanking.roundId === 'object'
@@ -102,7 +102,7 @@ const ensureObjectId = (id, fieldName = 'id') => {
 
 const buildRankingFilter = (query = {}) => {
   const filter = {}
-  if (query.eventId) filter.eventId = query.eventId
+  if (query.competitionId) filter.competitionId = query.competitionId
   if (query.roundId) filter.roundId = query.roundId
   if (query.trackId) filter.trackId = query.trackId
   if (query.teamId) filter.teamId = query.teamId
@@ -261,10 +261,10 @@ const selectFixedPerBoard = ({ rankings, finalistsPerBoard }) => {
   return [...grouped.values()].flatMap(group => group.slice(0, finalistsPerBoard))
 }
 
-const validateRankingCompleteness = async ({ repository, eventId, roundId, scoreSheets = [] }) => {
+const validateRankingCompleteness = async ({ repository, competitionId, roundId, scoreSheets = [] }) => {
   if (!repository.findBoardsForRanking) return
 
-  const boards = await repository.findBoardsForRanking({ eventId, roundId })
+  const boards = await repository.findBoardsForRanking({ competitionId, roundId })
   if (boards.length === 0) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Judging boards with assigned teams and judges are required before ranking generation'])
   }
@@ -313,29 +313,29 @@ const validateRankingCompleteness = async ({ repository, eventId, roundId, score
 export const createRankingService = ({
   repository = RANKING_REPOSITORY,
   auditLogRepository = AUDIT_LOG_REPOSITORY,
-  eventModel = Event,
+  competitionModel = Competition,
   roundModel = Round,
   teamModel = Team,
   notificationService = null,
   repositoryModel = Repository,
   relaxedWorkflow = false
 } = {}) => {
-  const ensureEventRoundContext = async ({ eventId, roundId }) => {
-    ensureObjectId(eventId, 'event id')
+  const ensureCompetitionRoundContext = async ({ competitionId, roundId }) => {
+    ensureObjectId(competitionId, 'competition id')
     ensureObjectId(roundId, 'round id')
 
-    const [event, round] = await Promise.all([
-      eventModel.findById(eventId),
+    const [competition, round] = await Promise.all([
+      competitionModel.findById(competitionId),
       roundModel.findById(roundId)
     ])
 
-    if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+    if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
     if (!round) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Round not found'])
-    if (round.eventId?.toString() !== eventId.toString()) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round does not belong to the specified event'])
+    if (round.competitionId?.toString() !== competitionId.toString()) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round does not belong to the specified competition'])
     }
 
-    return { event, round }
+    return { competition, round }
   }
 
   const listRankings = async (query = {}, actor = {}) => {
@@ -359,30 +359,30 @@ export const createRankingService = ({
     }
   }
 
-  const generateRankings = async ({ eventId, roundId, rankingType = 'TEAM' }, actor = {}) => {
+  const generateRankings = async ({ competitionId, roundId, rankingType = 'TEAM' }, actor = {}) => {
     if (rankingType !== 'TEAM') {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Phase 9 supports official TEAM ranking generation only'])
     }
 
-    const { event, round } = await ensureEventRoundContext({ eventId, roundId })
+    const { competition, round } = await ensureCompetitionRoundContext({ competitionId, roundId })
     if (round.roundType !== 'FINAL') {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rankings can only be generated for the final round'])
     }
-    const scoreSheets = await repository.findScoreSheetsForRanking({ eventId, roundId })
+    const scoreSheets = await repository.findScoreSheetsForRanking({ competitionId, roundId })
     if (scoreSheets.length === 0) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['No submitted score sheets found for ranking generation'])
     }
     if (!relaxedWorkflow) {
       await validateRankingCompleteness({
         repository,
-        eventId,
+        competitionId,
         roundId,
         scoreSheets
       })
     }
 
     const roundPlacements = repository.findRoundTeamPlacements
-      ? await repository.findRoundTeamPlacements({ eventId, roundId })
+      ? await repository.findRoundTeamPlacements({ competitionId, roundId })
       : []
     const placementsByTeamId = new Map((roundPlacements || []).map(placement => [
       getId(placement.teamId),
@@ -416,12 +416,12 @@ export const createRankingService = ({
 
     const tiedGroups = buildTieNotes({
       rankedTeams,
-      tieBreakRule: round.tieBreakRule || event.competitionConfig?.tieBreakRule
+      tieBreakRule: round.tieBreakRule || competition.competitionConfig?.tieBreakRule
     })
 
     const calculatedAt = new Date()
     const rankingDocuments = rankedTeams.map(team => ({
-      eventId,
+      competitionId,
       roundId,
       rankingType,
       teamId: team.teamId,
@@ -444,7 +444,7 @@ export const createRankingService = ({
       note: team.note
     }))
 
-    await repository.deleteRankings({ eventId, roundId, rankingType })
+    await repository.deleteRankings({ competitionId, roundId, rankingType })
     const createdRankings = await repository.createManyRankings(rankingDocuments)
 
     await auditLogRepository.create({
@@ -452,13 +452,13 @@ export const createRankingService = ({
       action: 'RANKING_GENERATED',
       resourceType: 'Ranking',
       metadata: {
-        eventId,
+        competitionId,
         roundId,
         rankingType,
         generatedCount: createdRankings.length,
         source: 'OFFICIAL_JUDGE_SCORES_ONLY',
         aiReviewUsed: false,
-        tieBreakRule: round.tieBreakRule || event.competitionConfig?.tieBreakRule || null,
+        tieBreakRule: round.tieBreakRule || competition.competitionConfig?.tieBreakRule || null,
         tiedGroups
       }
     })
@@ -474,8 +474,8 @@ export const createRankingService = ({
     }
   }
 
-  const resolveTieBreak = async ({ eventId, roundId, decisions = [] }, actor = {}) => {
-    await ensureEventRoundContext({ eventId, roundId })
+  const resolveTieBreak = async ({ competitionId, roundId, decisions = [] }, actor = {}) => {
+    await ensureCompetitionRoundContext({ competitionId, roundId })
 
     if (!Array.isArray(decisions) || decisions.length < 2) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Tie-break resolution requires at least two team decisions'])
@@ -487,7 +487,7 @@ export const createRankingService = ({
     }
 
     const rankings = await repository.findRankings({
-      filter: { eventId, roundId, rankingType: 'TEAM' },
+      filter: { competitionId, roundId, rankingType: 'TEAM' },
       limit: 500
     })
     const rankingsByTeamId = new Map(rankings.map(ranking => [getId(ranking.teamId), ranking]))
@@ -532,7 +532,7 @@ export const createRankingService = ({
       action: 'RANKING_TIE_BREAK_RESOLVED',
       resourceType: 'Ranking',
       metadata: {
-        eventId,
+        competitionId,
         roundId,
         teamIds,
         decisions: decisions.map(item => ({
@@ -552,20 +552,20 @@ export const createRankingService = ({
     }
   }
 
-  const selectFinalists = async ({ eventId, roundId }, actor = {}) => {
-    const { event, round } = await ensureEventRoundContext({ eventId, roundId })
-    const config = event.competitionConfig || {}
+  const selectFinalists = async ({ competitionId, roundId }, actor = {}) => {
+    const { competition, round } = await ensureCompetitionRoundContext({ competitionId, roundId })
+    const config = competition.competitionConfig || {}
     const mode = config.finalistSelectionMode || 'OVERALL_SCORE'
     const selectAcrossPreliminaryStage = round.roundType === 'PRELIMINARY' &&
       ['FIXED_PER_BOARD', 'TOP_PER_BOARD_WITH_WILDCARD'].includes(mode)
 
     const scopedRounds = selectAcrossPreliminaryStage
-      ? await roundModel.find({ eventId, roundType: 'PRELIMINARY' }).select('_id')
+      ? await roundModel.find({ competitionId, roundType: 'PRELIMINARY' }).select('_id')
       : [round]
     const scopedRoundIds = scopedRounds.map(item => item._id?.toString?.() || item.id || item.toString())
     const rankings = await repository.findRankings({
       filter: {
-        eventId,
+        competitionId,
         roundId: selectAcrossPreliminaryStage ? { $in: scopedRoundIds } : roundId,
         rankingType: 'TEAM'
       },
@@ -644,7 +644,7 @@ export const createRankingService = ({
 
     await repository.updateManyRankings(
       {
-        eventId,
+        competitionId,
         roundId: selectAcrossPreliminaryStage ? { $in: scopedRoundIds } : roundId,
         rankingType: 'TEAM'
       },
@@ -680,7 +680,7 @@ export const createRankingService = ({
       action: 'FINALISTS_SELECTED',
       resourceType: 'Ranking',
       metadata: {
-        eventId,
+        competitionId,
         roundId,
         scopedRoundIds,
         finalistSelectionMode: mode,
@@ -726,12 +726,12 @@ export const createRankingService = ({
     }
   }
 
-  const selectManualFinalists = async ({ eventId, roundId, teamIds = [], selectionReason }, actor = {}) => {
-    const { event } = await ensureEventRoundContext({ eventId, roundId })
+  const selectManualFinalists = async ({ competitionId, roundId, teamIds = [], selectionReason }, actor = {}) => {
+    const { competition } = await ensureCompetitionRoundContext({ competitionId, roundId })
 
     const requestedTeamIds = [...new Set(teamIds.map(teamId => teamId.toString()))]
     const rankings = await repository.findRankings({
-      filter: { eventId, roundId, rankingType: 'TEAM' },
+      filter: { competitionId, roundId, rankingType: 'TEAM' },
       limit: 500
     })
     if (rankings.length === 0) {
@@ -746,7 +746,7 @@ export const createRankingService = ({
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Selected teams must exist in the generated rankings for this round'])
     }
 
-    const finalistCount = Number(event.competitionConfig?.finalistCount || 0)
+    const finalistCount = Number(competition.competitionConfig?.finalistCount || 0)
     const reason = selectionReason?.trim() || ''
     ensureExactFinalistCount({
       selectedCount: requestedTeamIds.length,
@@ -761,7 +761,7 @@ export const createRankingService = ({
     })
 
     await repository.updateManyRankings(
-      { eventId, roundId, rankingType: 'TEAM' },
+      { competitionId, roundId, rankingType: 'TEAM' },
       { isSelectedForFinal: false, selectionReason: null }
     )
 
@@ -785,7 +785,7 @@ export const createRankingService = ({
       action: 'FINALISTS_SELECTED_MANUALLY',
       resourceType: 'Ranking',
       metadata: {
-        eventId,
+        competitionId,
         roundId,
         finalistSelectionMode: 'CUSTOM',
         finalistCount: requestedTeamIds.length,
@@ -799,7 +799,7 @@ export const createRankingService = ({
 
     const updatedFinalists = await repository.findRankings({
       filter: {
-        eventId,
+        competitionId,
         roundId,
         rankingType: 'TEAM',
         isSelectedForFinal: true
@@ -818,7 +818,7 @@ export const createRankingService = ({
     }
   }
 
-  const applyRepositoryAccessAction = async ({ eventId, roundId, teamIds = [], action, publishedAt }, actor = {}) => {
+  const applyRepositoryAccessAction = async ({ competitionId, roundId, teamIds = [], action, publishedAt }, actor = {}) => {
     if (action === 'NONE' || teamIds.length === 0) {
       return {
         action: 'NONE',
@@ -827,7 +827,7 @@ export const createRankingService = ({
     }
 
     const filter = {
-      eventId,
+      competitionId,
       teamId: { $in: teamIds }
     }
 
@@ -878,7 +878,7 @@ export const createRankingService = ({
             for (const username of usernames) {
               try {
                 await GITHUB_SERVICE.revokeCollaborator({
-                  eventId,
+                  competitionId,
                   repoName,
                   username
                 }, actor)
@@ -928,10 +928,10 @@ export const createRankingService = ({
     return summary
   }
 
-  const publishResults = async ({ eventId, roundId, repositoryAccessAction = 'NONE' }, actor = {}) => {
-    const { event, round } = await ensureEventRoundContext({ eventId, roundId })
+  const publishResults = async ({ competitionId, roundId, repositoryAccessAction = 'NONE' }, actor = {}) => {
+    const { competition, round } = await ensureCompetitionRoundContext({ competitionId, roundId })
     const rankings = await repository.findRankings({
-      filter: { eventId, roundId, rankingType: 'TEAM' },
+      filter: { competitionId, roundId, rankingType: 'TEAM' },
       limit: 500
     })
     if (rankings.length === 0) {
@@ -942,12 +942,12 @@ export const createRankingService = ({
     const selectedTeamIds = selectedRankings
       .map(item => item.teamId?._id?.toString?.() || item.teamId?.toString?.())
       .filter(Boolean)
-    const finalistCount = Number(event.competitionConfig?.finalistCount || 0)
+    const finalistCount = Number(competition.competitionConfig?.finalistCount || 0)
     const selectionExceptionReason = selectedRankings.find(item => item.selectionReason)?.selectionReason || null
     ensureExactFinalistCount({
       selectedCount: selectedRankings.length,
       finalistCount,
-      mode: event.competitionConfig?.finalistSelectionMode || 'OVERALL_SCORE',
+      mode: competition.competitionConfig?.finalistSelectionMode || 'OVERALL_SCORE',
       exceptionReason: selectionExceptionReason
     })
     ensureNoUnresolvedCutoffTie({
@@ -961,7 +961,7 @@ export const createRankingService = ({
       .map(item => item.teamId?._id?.toString?.() || item.teamId?.toString?.())
       .filter(Boolean)
     await repository.updateManyRankings(
-      { eventId, roundId, rankingType: 'TEAM' },
+      { competitionId, roundId, rankingType: 'TEAM' },
       { publishedAt, publishedBy: actor.id || null }
     )
     await roundModel.findByIdAndUpdate(roundId, {
@@ -970,7 +970,7 @@ export const createRankingService = ({
       promotedTeamIds: selectedTeamIds
     })
     const repositoryActionSummary = await applyRepositoryAccessAction({
-      eventId,
+      competitionId,
       roundId,
       teamIds,
       action: repositoryAccessAction,
@@ -982,7 +982,7 @@ export const createRankingService = ({
       action: 'RESULTS_PUBLISHED',
       resourceType: 'Ranking',
       metadata: {
-        eventId,
+        competitionId,
         roundId,
         publishedCount: rankings.length,
         source: 'OFFICIAL_JUDGE_SCORES_ONLY',
@@ -995,33 +995,33 @@ export const createRankingService = ({
       }
     })
 
-    let eventCompleted = false
-    if (round.roundType === 'FINAL' && ['ONGOING', 'SCORING'].includes(event.status) && typeof eventModel.findByIdAndUpdate === 'function') {
-      await eventModel.findByIdAndUpdate(eventId, { status: 'COMPLETED' })
-      eventCompleted = true
+    let competitionCompleted = false
+    if (round.roundType === 'FINAL' && ['ONGOING', 'SCORING'].includes(competition.status) && typeof competitionModel.findByIdAndUpdate === 'function') {
+      await competitionModel.findByIdAndUpdate(competitionId, { status: 'COMPLETED' })
+      competitionCompleted = true
       await auditLogRepository.create({
         userId: actor.id || null,
-        action: 'EVENT_COMPLETED_AFTER_FINAL_RESULTS',
-        resourceType: 'Event',
-        resourceId: eventId,
+        action: 'COMPETITION_COMPLETED_AFTER_FINAL_RESULTS',
+        resourceType: 'Competition',
+        resourceId: competitionId,
         metadata: {
-          eventId,
+          competitionId,
           roundId,
-          fromStatus: event.status,
+          fromStatus: competition.status,
           toStatus: 'COMPLETED'
         }
       })
     }
 
     const publishedRankings = await repository.findRankings({
-      filter: { eventId, roundId, rankingType: 'TEAM' },
+      filter: { competitionId, roundId, rankingType: 'TEAM' },
       limit: 500
     })
 
     await notifyResultsPublished({
-      eventId,
+      competitionId,
       roundId,
-      event,
+      competition,
       round,
       rankings: publishedRankings
     })
@@ -1030,7 +1030,7 @@ export const createRankingService = ({
       publishedAt,
       rankings: publishedRankings.map(normalizeRanking),
       repositoryAccessAction: repositoryActionSummary,
-      eventCompleted
+      competitionCompleted
     }
   }
 
@@ -1048,7 +1048,7 @@ export const createRankingService = ({
     return await query
   }
 
-  const notifyResultsPublished = async ({ eventId, roundId, event, round, rankings = [] }) => {
+  const notifyResultsPublished = async ({ competitionId, roundId, competition, round, rankings = [] }) => {
     if (!notificationService?.notifyUser) return
 
     const teamIds = [...new Set(rankings.map(item => getId(item.teamId)).filter(Boolean))]
@@ -1060,7 +1060,7 @@ export const createRankingService = ({
       const ranking = rankings.find(item => getId(item.teamId) === teamId)
       const teamName = team?.name || ranking?.teamId?.name || 'your team'
       const roundName = round?.name || ranking?.roundId?.name || 'the round'
-      const eventTitle = event?.title || ranking?.eventId?.title || 'the event'
+      const eventTitle = competition?.title || ranking?.competitionId?.title || 'the competition'
       const rank = ranking?.rank ? ` Rank: #${ranking.rank}.` : ''
 
       for (const user of users) {
@@ -1069,10 +1069,10 @@ export const createRankingService = ({
           title: 'Results published',
           message: `${eventTitle} results for ${roundName} are now available for ${teamName}.${rank}`,
           type: 'RESULT',
-          dedupeKey: `results-published:${eventId}:${roundId}:${teamId}:${getId(user)}`,
+          dedupeKey: `results-published:${competitionId}:${roundId}:${teamId}:${getId(user)}`,
           metadata: {
             action: 'RESULTS_PUBLISHED',
-            eventId,
+            competitionId,
             roundId,
             teamId,
             rankingId: getId(ranking),

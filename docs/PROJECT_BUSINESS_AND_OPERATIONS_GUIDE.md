@@ -10,7 +10,7 @@
 SEAL Hackathon là hệ thống điều hành sự kiện hackathon từ lúc chuẩn bị đến khi công bố kết quả. Hệ thống quản lý:
 
 - tài khoản, role và quyền;
-- event, track, timeline và workshop;
+- competition, track, timeline và workshop;
 - đăng ký participant, lập team, lời mời và duyệt team;
 - check-in QR/manual;
 - mentor, chat giữa team và mentor;
@@ -20,7 +20,7 @@ SEAL Hackathon là hệ thống điều hành sự kiện hackathon từ lúc ch
 - ranking, finalist và kết quả công bố;
 - notification, audit log và operation/job nền.
 
-Hệ thống không chỉ là trang đăng ký. Nó là một chuỗi dữ liệu liên kết: **Event → Team/Participant → Round/Board → Submission/Score → Ranking/Result**, kèm các hoạt động hỗ trợ như workshop, chat, media và GitHub.
+Hệ thống không chỉ là trang đăng ký. Nó là một chuỗi dữ liệu liên kết: **Competition → Team/Participant → Round/Board → Submission/Score → Ranking/Result**, kèm các hoạt động hỗ trợ như workshop, chat, media và GitHub.
 
 ## 2. Các role và trách nhiệm
 
@@ -37,13 +37,13 @@ Admin có toàn bộ quyền. Trách nhiệm chính:
 
 Admin không nên làm thay công việc vận hành hằng ngày nếu coordinator có thể thực hiện. Mọi override nhạy cảm cần có lý do và được ghi audit.
 
-### 2.2 EVENT_COORDINATOR — Ban tổ chức cấp sự kiện
+### 2.2 COMPETITION_COORDINATOR — Ban tổ chức cấp sự kiện
 
-Role này có phạm vi quyền rất rộng: quản lý event, người dùng, team, workshop, round, judging, ranking, GitHub, AI review, result và audit. Đây là role dành cho người chịu trách nhiệm toàn bộ một hoặc nhiều sự kiện.
+Role này có phạm vi quyền rất rộng: quản lý competition, người dùng, team, workshop, round, judging, ranking, GitHub, AI review, result và audit. Đây là role dành cho người chịu trách nhiệm toàn bộ một hoặc nhiều sự kiện.
 
 Trách nhiệm:
 
-- dựng cấu hình event và lịch;
+- dựng cấu hình competition và lịch;
 - mở/đóng đăng ký đúng giờ;
 - giám sát team, mentor, check-in;
 - chuẩn bị repo, round, rubric và board;
@@ -53,7 +53,7 @@ Trách nhiệm:
 
 ### 2.3 COORDINATOR — Điều phối viên
 
-Trong cấu hình quyền hiện tại, COORDINATOR gần giống EVENT_COORDINATOR ở nghiệp vụ sự kiện nhưng ít quyền quản trị role hơn. Có thể hiểu đây là thành viên ban tổ chức trực tiếp vận hành.
+Trong cấu hình quyền hiện tại, COORDINATOR gần giống COMPETITION_COORDINATOR ở nghiệp vụ sự kiện nhưng ít quyền quản trị role hơn. Có thể hiểu đây là thành viên ban tổ chức trực tiếp vận hành.
 
 Khuyến nghị phân công nội bộ:
 
@@ -63,11 +63,11 @@ Khuyến nghị phân công nội bộ:
 - Judging coordinator: round, rubric, board, score completeness, ranking.
 - Media/check-in coordinator: QR, attendance, gallery moderation.
 
-Hệ thống hiện chưa giới hạn mọi dữ liệu theo “coordinator được gán event nào”, vì vậy ban tổ chức phải cấp role thận trọng.
+Hệ thống hiện chưa giới hạn mọi dữ liệu theo “coordinator được gán competition nào”, vì vậy ban tổ chức phải cấp role thận trọng.
 
 ### 2.4 JUDGE — Giám khảo
 
-Judge có thể xem thông tin event/track/workshop/team và tạo phiếu chấm. Judge chỉ nên:
+Judge có thể xem thông tin competition/track/workshop/team và tạo phiếu chấm. Judge chỉ nên:
 
 - xem round/board được giao;
 - xem submission của team thuộc board;
@@ -92,7 +92,7 @@ Mentor không được nộp bài hoặc chấm điểm thay team/judge. Mentor 
 
 Speaker phụ trách workshop:
 
-- xem event/track/workshop liên quan;
+- xem competition/track/workshop liên quan;
 - tạo Google Meet cho workshop khi được phép và có kết nối Google hợp lệ;
 - xem câu hỏi, rating/feedback insight theo phạm vi;
 - tổ chức nội dung đúng lịch.
@@ -103,12 +103,12 @@ Speaker không quản lý team, chấm điểm hoặc kết quả.
 
 Participant có thể:
 
-- xem event đang mở đăng ký và event mình đã tham gia;
+- xem competition đang mở đăng ký và competition mình đã tham gia;
 - đăng ký/lập team, mời hoặc chấp nhận lời mời theo quy tắc;
 - xem trạng thái team và check-in;
 - xem workshop, gửi câu hỏi, vote, rating/feedback;
 - chat trong team và với mentor được giao;
-- upload media của event/team mình;
+- upload media của competition/team mình;
 - làm việc trên repository khi được cấp quyền;
 - nộp submission của team trong thời gian hợp lệ;
 - xem kết quả đã được công bố theo phạm vi.
@@ -120,7 +120,7 @@ Tài khoản participant cần thông tin sinh viên; sinh viên ngoài trườn
 ```text
 Chuẩn bị tài khoản và tích hợp
         ↓
-Tạo Event (DRAFT)
+Tạo Competition (DRAFT)
         ↓
 Tạo Track + Timeline + Workshop + quy định
         ↓
@@ -145,16 +145,16 @@ Publish result → COMPLETED
 Thu hồi quyền, lưu trữ → ARCHIVED
 ```
 
-**Cảnh báo:** ngày giờ hiện không tự chuyển event qua các trạng thái. Coordinator phải đổi trạng thái đúng thời điểm và đối chiếu checklist ở phần 16.
+**Cảnh báo:** ngày giờ hiện không tự chuyển competition qua các trạng thái. Coordinator phải đổi trạng thái đúng thời điểm và đối chiếu checklist ở phần 16.
 
 ## 4. Trạng thái và ý nghĩa nghiệp vụ
 
-### 4.1 Event
+### 4.1 Competition
 
 | Trạng thái | Ý nghĩa | Người dùng được làm gì | Điều phối cần làm |
 |---|---|---|---|
 | `DRAFT` | Đang chuẩn bị, chưa công khai | Admin/coordinator cấu hình | Hoàn thiện thông tin, lịch, track, capacity, tích hợp |
-| `OPEN_REGISTRATION` | Đang nhận đăng ký | Participant thấy event và tạo/join team trong cửa sổ ngày | Theo dõi số team, lời mời, capacity |
+| `OPEN_REGISTRATION` | Đang nhận đăng ký | Participant thấy competition và tạo/join team trong cửa sổ ngày | Theo dõi số team, lời mời, capacity |
 | `REGISTRATION_CLOSED` | Ngừng nhận đăng ký | Team không tiếp tục tuyển theo luồng chuẩn | Chốt team, xử lý waitlist/rejected, phân mentor |
 | `ONGOING` | Sự kiện đang diễn ra | Check-in, workshop, làm bài, media theo lịch | Theo dõi vận hành và sự cố |
 | `SCORING` | Đang chấm | Judge nhập/nộp điểm; bài nên được đóng băng | Đối soát đủ phiếu, không sửa rubric |
@@ -183,7 +183,7 @@ Qualification phản ánh tiến trình thi, tách khỏi status đăng ký: `RE
 - GitHub access: `NOT_GRANTED`, `GRANTED`, `REVOKED`.
 - Invitation: `PENDING` → `ACCEPTED`, `DECLINED`, `EXPIRED` hoặc `CANCELLED`.
 
-Một user không nên đồng thời là active member của nhiều team trong cùng event. Lời mời pending không đồng nghĩa với membership đã xác nhận.
+Một user không nên đồng thời là active member của nhiều team trong cùng competition. Lời mời pending không đồng nghĩa với membership đã xác nhận.
 
 ### 4.4 Track, round, board và chấm điểm
 
@@ -226,12 +226,12 @@ Một user không nên đồng thời là active member của nhiều team trong
 - GitHub connection test thành công và webhook có secret.
 - Tài khoản operator ở trạng thái `ACTIVE`.
 
-## 6. Giai đoạn 1 — Tạo event ở DRAFT
+## 6. Giai đoạn 1 — Tạo competition ở DRAFT
 
-Coordinator tạo event với tối thiểu:
+Coordinator tạo competition với tối thiểu:
 
 - tên, mô tả, series/season/year;
-- thời gian bắt đầu/kết thúc event;
+- thời gian bắt đầu/kết thúc competition;
 - thời gian mở/đóng đăng ký;
 - số team tối đa;
 - số thành viên tối thiểu/tối đa mỗi team;
@@ -256,7 +256,7 @@ eventStartAt <= submissionOpenAt < submissionCloseAt <= scoringStartAt
 - chưa chốt min/max member hoặc capacity;
 - chưa có điều khoản tham gia;
 - chưa kiểm tra participant có thể đăng ký;
-- lịch event mâu thuẫn;
+- lịch competition mâu thuẫn;
 - coordinator chưa được phân công theo ca;
 - chưa thống nhất cách xử lý waitlist, tie, submission muộn và GitHub access.
 
@@ -268,15 +268,15 @@ Track phân nhóm chủ đề/problem statement. Mỗi track cần code/tên, m�
 
 ### Timeline
 
-Timeline là lịch hiển thị cho người dùng: mở đăng ký, workshop, check-in, khai mạc, hạn nộp, chấm và công bố. Timeline hiện có tính thông tin; không nên giả định timeline tự điều khiển event status.
+Timeline là lịch hiển thị cho người dùng: mở đăng ký, workshop, check-in, khai mạc, hạn nộp, chấm và công bố. Timeline hiện có tính thông tin; không nên giả định timeline tự điều khiển competition status.
 
 ### Workshop
 
-Mỗi workshop có event, tiêu đề, presenter/speaker, thời gian, mô tả, trạng thái và có thể có Google Meet.
+Mỗi workshop có competition, tiêu đề, presenter/speaker, thời gian, mô tả, trạng thái và có thể có Google Meet.
 
 Luồng chuẩn:
 
-1. Tạo workshop `SCHEDULED` trong thời gian event.
+1. Tạo workshop `SCHEDULED` trong thời gian competition.
 2. Gán speaker hoặc nhập speakerInfo.
 3. Speaker/coordinator kết nối Google và tạo Meet nếu cần.
 4. Đến giờ, chuyển `LIVE`.
@@ -284,14 +284,14 @@ Luồng chuẩn:
 6. Sau giờ kết thúc, chuyển `COMPLETED`; participant rating/feedback.
 7. Coordinator xem insight; không công khai danh tính/nguyên văn feedback nếu chính sách không cho phép.
 
-Hệ thống hiện dựa nhiều vào permission và chưa xác minh membership event ở mọi workshop endpoint; operator không nên chia sẻ link workshop riêng cho người ngoài event.
+Hệ thống hiện dựa nhiều vào permission và chưa xác minh membership competition ở mọi workshop endpoint; operator không nên chia sẻ link workshop riêng cho người ngoài competition.
 
 ## 8. Giai đoạn 3 — Mở đăng ký
 
 ### Checklist trước khi đổi `OPEN_REGISTRATION`
 
 - Thời gian hiện tại nằm trong cửa sổ đăng ký.
-- Event vẫn đủ capacity.
+- Competition vẫn đủ capacity.
 - Form participant/profile đã rõ yêu cầu.
 - Min/max team member đúng.
 - Track có thể chọn đã mở.
@@ -303,20 +303,20 @@ Hệ thống hiện dựa nhiều vào permission và chưa xác minh membership
 1. Tạo tài khoản hoặc đăng nhập.
 2. Hoàn thiện profile, student type, student ID; external student nhập school.
 3. Chờ tài khoản `ACTIVE` nếu hệ thống yêu cầu duyệt.
-4. Xem event đang mở đăng ký.
+4. Xem competition đang mở đăng ký.
 5. Chọn một trong hai cách:
    - tạo team và trở thành leader;
    - nhận lời mời vào team có sẵn.
 
 ### Leader tạo team
 
-1. Chọn event/track phù hợp.
+1. Chọn competition/track phù hợp.
 2. Nhập tên team/project/chapter theo form.
 3. Mời participant bằng tài khoản/email hợp lệ.
 4. Theo dõi invitation pending/accepted/declined.
 5. Bảo đảm số thành viên xác nhận đạt min và không vượt max trước hạn.
 
-Hệ thống kiểm tra trùng membership trong event, giới hạn thành viên, trạng thái tài khoản và capacity. Team đủ số member được xác nhận có thể tự chuyển `CONFIRMED` nếu còn suất.
+Hệ thống kiểm tra trùng membership trong competition, giới hạn thành viên, trạng thái tài khoản và capacity. Team đủ số member được xác nhận có thể tự chuyển `CONFIRMED` nếu còn suất.
 
 ### Khi hết capacity hoặc hết hạn
 
@@ -327,7 +327,7 @@ Hệ thống kiểm tra trùng membership trong event, giới hạn thành viên
 
 ## 9. Giai đoạn 4 — Đóng đăng ký và chốt danh sách
 
-Coordinator đổi event sang `REGISTRATION_CLOSED` đúng giờ và thực hiện:
+Coordinator đổi competition sang `REGISTRATION_CLOSED` đúng giờ và thực hiện:
 
 1. Xuất/đối soát danh sách Team `CONFIRMED`.
 2. Kiểm tra mỗi team đủ member `JOINED`/được xác nhận.
@@ -352,7 +352,7 @@ Coordinator đổi event sang `REGISTRATION_CLOSED` đúng giờ và thực hi�
 
 Repo chính được ban tổ chức/admin tạo hàng loạt trong GitHub organization, sau đó cấp collaborator cho member của Team `CONFIRMED`. “Link existing repository” chỉ là tính năng phụ khi repo đã tạo ngoài SEAL.
 
-### Thiết lập cho mỗi event
+### Thiết lập cho mỗi competition
 
 1. Bật GitHub integration.
 2. Nhập organization và owner username.
@@ -395,17 +395,17 @@ Dùng khi repo đã được tạo ngoài hệ thống. Chọn team, nhập owne
 
 ### Điều kiện nghiệp vụ
 
-- Participant thuộc event.
+- Participant thuộc competition.
 - Participant thuộc Team `CONFIRMED`.
-- Event đang ở trạng thái `ONGOING`.
+- Competition đang ở trạng thái `ONGOING`.
 - Một participant chỉ có một trạng thái check-in hợp lệ; scan lặp phải idempotent hoặc báo đã check-in.
 
 ### QR check-in
 
-1. Coordinator mở khu check-in của event.
+1. Coordinator mở khu check-in của competition.
 2. Tạo/hiển thị QR ngắn hạn.
 3. Participant đăng nhập mobile và scan.
-4. Backend xác minh QR, event, participant và confirmed team.
+4. Backend xác minh QR, competition, participant và confirmed team.
 5. Mobile hiển thị rõ `Checked in`; sau đó ẩn hành động QR để tránh nhầm.
 
 ### Manual check-in
@@ -414,11 +414,11 @@ Dùng khi camera/mạng/tài khoản gặp sự cố. Coordinator tìm participa
 
 ### Rule hiện tại
 
-Backend cho phép QR/manual check-in khi event `ONGOING` và participant thuộc Team `CONFIRMED`. Timeline `CHECK_IN` nếu có chỉ dùng để hiển thị lịch vận hành, không phải điều kiện bắt buộc.
+Backend cho phép QR/manual check-in khi competition `ONGOING` và participant thuộc Team `CONFIRMED`. Timeline `CHECK_IN` nếu có chỉ dùng để hiển thị lịch vận hành, không phải điều kiện bắt buộc.
 
 ## 12. Giai đoạn 7 — Vận hành ongoing
 
-Đổi event sang `ONGOING` khi sự kiện thực sự bắt đầu. Ban tổ chức theo dõi:
+Đổi competition sang `ONGOING` khi sự kiện thực sự bắt đầu. Ban tổ chức theo dõi:
 
 - tỷ lệ check-in và trường hợp manual;
 - workshop/live link và câu hỏi;
@@ -434,7 +434,7 @@ Phòng chat chung cho leader/member và mentor của team. Team WAITING/WAITLIST
 
 ### Media
 
-Participant đã JOINED event có thể upload cho event/team mình trong các status được hỗ trợ. Media mới ở `PENDING`; coordinator approve để vào gallery hoặc reject. File private dùng signed URL có thời hạn. Người upload chỉ tự xóa media pending của mình; moderator có quyền rộng hơn.
+Participant đã JOINED competition có thể upload cho competition/team mình trong các status được hỗ trợ. Media mới ở `PENDING`; coordinator approve để vào gallery hoặc reject. File private dùng signed URL có thời hạn. Người upload chỉ tự xóa media pending của mình; moderator có quyền rộng hơn.
 
 ## 13. Giai đoạn 8 — Thiết lập vòng thi và rubric
 
@@ -442,7 +442,7 @@ Participant đã JOINED event có thể upload cho event/team mình trong các s
 
 Mỗi round cần:
 
-- event;
+- competition;
 - tên/số thứ tự và loại PRELIMINARY hoặc FINAL;
 - thời gian mở/đóng submission;
 - thời gian chấm;
@@ -455,7 +455,7 @@ Round bắt đầu ở `DRAFT`. Không mở round khi chưa có team/rubric/boar
 
 ### Tạo rubric
 
-1. Tạo rubric DRAFT cho event/round.
+1. Tạo rubric DRAFT cho competition/round.
 2. Thêm criterion: tên, mô tả, max score, weight, order.
 3. Kiểm tra tổng điểm và cách dùng weight.
 4. Chạy thử một phiếu điểm mẫu.
@@ -488,7 +488,7 @@ Với nhiều round, phải đối chiếu placement theo từng round. Model Te
 
 ### Team thực hiện
 
-1. Chọn đúng event, round và team.
+1. Chọn đúng competition, round và team.
 2. Tạo draft trong cửa sổ nhận bài.
 3. Điền nội dung được yêu cầu: title/description, repository, demo URL, slide/tài liệu tùy form.
 4. Kiểm tra link truy cập được bằng tài khoản ban tổ chức.
@@ -509,7 +509,7 @@ Ownership của submission chưa được Backend khóa đủ chặt. FE phải 
 
 ## 16. Giai đoạn 11 — Scoring
 
-### Trước khi chuyển event/round sang SCORING
+### Trước khi chuyển competition/round sang SCORING
 
 - Đã khóa submission.
 - Mọi bài cần chấm ở SUBMITTED/ACCEPTED.
@@ -568,7 +568,7 @@ Code hiện mới có enum/ghi chú tie, chưa xử lý tie-break hoàn chỉnh;
 
 ### Chọn finalist
 
-- Top overall: lấy top toàn event/round.
+- Top overall: lấy top toàn competition/round.
 - Fixed per board: lấy số cố định mỗi board; phải bảo đảm tổng khớp finalistCount.
 - Custom/manual: coordinator chọn có lý do.
 
@@ -594,24 +594,24 @@ Nếu có vòng FINAL, lặp lại: tạo/kiểm tra round → placement → sub
 1. Publish result.
 2. Kiểm tra participant chỉ thấy dữ liệu được phép.
 3. Chuyển final round COMPLETED.
-4. Chuyển event COMPLETED thủ công nếu hệ thống chưa tự làm.
+4. Chuyển competition COMPLETED thủ công nếu hệ thống chưa tự làm.
 5. Gửi notification/email.
 6. Chuyển winner `AWARDED`, đội còn lại theo qualification policy.
 7. Thu hồi/quy trì GitHub access.
 8. Hoàn tất media moderation và báo cáo.
-9. Archive event sau thời gian khiếu nại/đối soát.
+9. Archive competition sau thời gian khiếu nại/đối soát.
 
 ## 19. Ma trận chức năng theo role
 
-| Nhóm chức năng | Admin | Event Coordinator | Coordinator | Judge | Mentor | Speaker | Participant |
+| Nhóm chức năng | Admin | Competition Coordinator | Coordinator | Judge | Mentor | Speaker | Participant |
 |---|---|---|---|---|---|---|---|
 | Quản trị role/permission | Toàn quyền | Rất rộng theo cấu hình hiện tại | Chủ yếu xem | Không | Không | Không | Không |
-| Event/track/timeline | Toàn quyền | Quản lý | Quản lý | Xem | Xem | Xem | Xem theo phạm vi |
+| Competition/track/timeline | Toàn quyền | Quản lý | Quản lý | Xem | Xem | Xem | Xem theo phạm vi |
 | Team/participant/check-in | Toàn quyền | Quản lý | Quản lý | Xem hạn chế | Team được giao | Xem hạn chế | Team của mình |
 | Mentor assignment | Có | Có | Có | Không | Nhận assignment | Không | Xem mentor |
 | Workshop | Quản lý | Quản lý | Quản lý | Xem | Xem | Trình bày/Meet/insight | Xem và tương tác |
 | Chat | Theo policy/team | Khi là participant phòng | Khi là participant phòng | Không mặc định | Team được giao | Không mặc định | Team của mình |
-| Media | Cấu hình/moderate | Moderate | Moderate | Xem theo scope | Xem theo scope | Xem theo scope | Upload event/team mình |
+| Media | Cấu hình/moderate | Moderate | Moderate | Xem theo scope | Xem theo scope | Xem theo scope | Upload competition/team mình |
 | GitHub/repo | Toàn quyền | Quản lý | Quản lý | Xem evidence | Xem audit | Không mặc định | Collaborator team mình |
 | Round/rubric/board | Toàn quyền | Quản lý | Quản lý | Board được giao | Xem hạn chế | Không | Xem thông tin công khai |
 | Submission | Quản lý/review | Quản lý/review | Quản lý/review | Đọc team được chấm | Đọc team được giao | Không | Tạo/nộp team mình |
@@ -623,10 +623,10 @@ Ma trận trên mô tả nghiệp vụ mong muốn. Một số endpoint hiện r
 
 ## 20. Business rules cốt lõi
 
-1. DRAFT chỉ dành cho admin/coordinator; participant không được biết event draft.
-2. Participant thấy event đã tham gia và event đang mở đăng ký theo policy sản phẩm.
-3. Một participant chỉ thuộc một team hoạt động trong cùng event.
-4. Team chỉ CONFIRMED khi đủ số member được xác nhận và event còn capacity.
+1. DRAFT chỉ dành cho admin/coordinator; participant không được biết competition draft.
+2. Participant thấy competition đã tham gia và competition đang mở đăng ký theo policy sản phẩm.
+3. Một participant chỉ thuộc một team hoạt động trong cùng competition.
+4. Team chỉ CONFIRMED khi đủ số member được xác nhận và competition còn capacity.
 5. REJECTED/CANCELLED không được tính vào confirmed capacity.
 6. Chỉ Team CONFIRMED được gán mentor, check-in, vào round chính thức và cấp repo theo nghiệp vụ chuẩn.
 7. Chỉ member team được tạo/sửa/nộp submission của team đó.
@@ -641,10 +641,10 @@ Ma trận trên mô tả nghiệp vụ mong muốn. Một số endpoint hiện r
 
 ## 21. Giới hạn hiện tại cần người vận hành biết
 
-- Event không tự đổi trạng thái theo ngày.
-- Check-in dùng trạng thái event `ONGOING`; timeline check-in chỉ mang tính lịch hiển thị.
+- Competition không tự đổi trạng thái theo ngày.
+- Check-in dùng trạng thái competition `ONGOING`; timeline check-in chỉ mang tính lịch hiển thị.
 - Submission ownership và data scope còn cần siết ở BE.
-- Tài nguyên con như workshop/track/timeline chưa dùng chung event visibility ở mọi nơi.
+- Tài nguyên con như workshop/track/timeline chưa dùng chung competition visibility ở mọi nơi.
 - Placement board trên Team chưa round-scoped hoàn chỉnh.
 - Ranking CHAPTER/INDIVIDUAL chưa phải luồng official đầy đủ.
 - Tie-break chưa được tự động thực thi.
@@ -659,15 +659,15 @@ Ma trận trên mô tả nghiệp vụ mong muốn. Một số endpoint hiện r
 ### T-30 đến T-14 ngày
 
 - [ ] Hạ tầng, role, email, storage, GitHub, Google, Redis/worker sẵn sàng.
-- [ ] Event DRAFT hoàn chỉnh.
+- [ ] Competition DRAFT hoàn chỉnh.
 - [ ] Track, thể lệ, min/max team, capacity được duyệt.
 - [ ] Timeline/workshop sơ bộ.
 - [ ] Chính sách scoring, tie, repo, media, check-in được công bố.
 
 ### T-14 ngày — Mở đăng ký
 
-- [ ] Đổi event sang OPEN_REGISTRATION.
-- [ ] Kiểm tra participant nhìn thấy đúng event.
+- [ ] Đổi competition sang OPEN_REGISTRATION.
+- [ ] Kiểm tra participant nhìn thấy đúng competition.
 - [ ] Test tạo team, mời, accept, auto-confirm.
 - [ ] Theo dõi capacity và email lỗi mỗi ngày.
 
@@ -693,7 +693,7 @@ Ma trận trên mô tả nghiệp vụ mong muốn. Một số endpoint hiện r
 - [ ] Khóa submission.
 - [ ] Review bài hợp lệ.
 - [ ] Rubric ACTIVE, board ASSIGNED, judge ACTIVE.
-- [ ] Đổi round/event sang SCORING theo quy trình.
+- [ ] Đổi round/competition sang SCORING theo quy trình.
 
 ### Trước publish
 
@@ -713,17 +713,17 @@ Ma trận trên mô tả nghiệp vụ mong muốn. Một số endpoint hiện r
 
 ## 23. Xử lý sự cố thường gặp
 
-### Participant không thấy event
+### Participant không thấy competition
 
-Kiểm tra event có DRAFT không, đã OPEN_REGISTRATION chưa, ngày đăng ký, participant đã tham gia event chưa và account có ACTIVE không.
+Kiểm tra competition có DRAFT không, đã OPEN_REGISTRATION chưa, ngày đăng ký, participant đã tham gia competition chưa và account có ACTIVE không.
 
 ### Team không CONFIRMED
 
-Kiểm tra số member accepted/joined, min/max, capacity event, lời mời pending và participant có đang ở team khác không.
+Kiểm tra số member accepted/joined, min/max, capacity competition, lời mời pending và participant có đang ở team khác không.
 
 ### Không check-in được
 
-Kiểm tra đúng event, QR còn hạn, participant thuộc Team CONFIRMED, đã đăng nhập đúng tài khoản và chưa check-in. Nếu cần manual, xác minh danh tính trước.
+Kiểm tra đúng competition, QR còn hạn, participant thuộc Team CONFIRMED, đã đăng nhập đúng tài khoản và chưa check-in. Nếu cần manual, xác minh danh tính trước.
 
 ### Mentor không thấy team/chat
 
@@ -749,15 +749,15 @@ Kiểm tra assigned teams, accepted submissions, score sheet LOCKED, đủ judge
 
 - Không chia sẻ `.env`, GitHub token, Google token, storage service-role key hoặc webhook secret.
 - Không dùng Danger Zone trên organization khi chưa có backup/danh sách member và xác nhận hai người.
-- Không hard delete event đã có team/submission/score.
+- Không hard delete competition đã có team/submission/score.
 - Không sửa trực tiếp MongoDB để “chữa nhanh” nếu chưa hiểu quan hệ; ưu tiên API/operation có audit.
 - Không công bố ranking khi còn job/phiếu thiếu.
 - Không tin riêng trạng thái DB cho thao tác tích hợp ngoài; đối soát GitHub/Google/storage thật.
-- Dùng tài khoản role thấp để test khả năng nhìn thấy dữ liệu trước khi mở event/publish.
+- Dùng tài khoản role thấp để test khả năng nhìn thấy dữ liệu trước khi mở competition/publish.
 
 ## 25. Tiêu chí một sự kiện được xem là vận hành thành công
 
-- Không participant nào thấy event/tài nguyên riêng ngoài phạm vi.
+- Không participant nào thấy competition/tài nguyên riêng ngoài phạm vi.
 - 100% team chính thức là CONFIRMED và membership rõ ràng.
 - Check-in có thể truy vết người, thời gian, phương thức.
 - Mỗi confirmed team có repo/access đúng chính sách.
@@ -770,4 +770,4 @@ Kiểm tra assigned teams, accepted submissions, score sheet LOCKED, đủ judge
 
 ## 26. Kết luận
 
-SEAL Hackathon đã bao phủ gần trọn chu trình một hackathon, nhưng chất lượng vận hành phụ thuộc vào việc coordinator dùng đúng thứ tự trạng thái và thực hiện các bước đối soát. Cho tới khi các vấn đề P0/P1 trong báo cáo kỹ thuật được sửa, ban tổ chức cần coi checklist trong tài liệu này là bắt buộc, đặc biệt ở submission ownership, score visibility, event ONGOING cho check-in, đủ phiếu judge, tie-break và đồng bộ GitHub.
+SEAL Hackathon đã bao phủ gần trọn chu trình một hackathon, nhưng chất lượng vận hành phụ thuộc vào việc coordinator dùng đúng thứ tự trạng thái và thực hiện các bước đối soát. Cho tới khi các vấn đề P0/P1 trong báo cáo kỹ thuật được sửa, ban tổ chức cần coi checklist trong tài liệu này là bắt buộc, đặc biệt ở submission ownership, score visibility, competition ONGOING cho check-in, đủ phiếu judge, tie-break và đồng bộ GitHub.

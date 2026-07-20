@@ -1,6 +1,6 @@
 import User from '#models/user.model.js'
-import Event from '#models/event.model.js'
-import TimelineEvent from '#models/timelineEvent.model.js'
+import Competition from '#models/competition.model.js'
+import TimelineActivity from '#models/timelineActivity.model.js'
 import Workshop from '#models/workshop.model.js'
 import WorkshopQuestion from '#models/workshopQuestion.model.js'
 import WorkshopFeedback from '#models/workshopFeedback.model.js'
@@ -45,7 +45,7 @@ const upsertOne = async (Model, filter, data) => {
 }
 
 const at = (value) => new Date(value)
-const EVENT_KEY = { seriesName: 'SEAL Hackathon', season: 'SPRING', year: 2026 }
+const COMPETITION_KEY = { seriesName: 'SEAL Hackathon', season: 'SPRING', year: 2026 }
 const EMAIL_DOMAIN = 'spring-2026.seal.example.com'
 
 const TRACK_DEFINITIONS = [
@@ -130,9 +130,9 @@ const seedParticipantUser = async ({ localPart, fullName, participantRoleId, pas
   })
 }
 
-const seedRubric = async ({ eventId, title, createdBy, definitions }) => {
-  const rubric = await upsertOne(Rubric, { eventId, title }, {
-    eventId,
+const seedRubric = async ({ competitionId, title, createdBy, definitions }) => {
+  const rubric = await upsertOne(Rubric, { competitionId, title }, {
+    competitionId,
     title,
     description: 'Official judge-only rubric for the completed-cycle showcase.',
     totalScore: 100,
@@ -159,7 +159,7 @@ const seedRubric = async ({ eventId, title, createdBy, definitions }) => {
 }
 
 const seedScoreSheet = async ({
-  eventId,
+  competitionId,
   roundId,
   boardId,
   teamId,
@@ -172,7 +172,7 @@ const seedScoreSheet = async ({
   submittedAt
 }) => {
   const sheet = await upsertOne(ScoreSheet, { roundId, teamId, judgeId }, {
-    eventId,
+    competitionId,
     roundId,
     boardId,
     teamId,
@@ -245,8 +245,8 @@ export const seedCompletedCycleShowcase = async ({
   }))
   const judgeByName = new Map(judgeUsers.map(user => [user.fullName, user]))
   const finalJudges = judgeNames.slice(6).map(name => judgeByName.get(name))
-  const event = await upsertOne(Event, EVENT_KEY, {
-    ...EVENT_KEY,
+  const competition = await upsertOne(Competition, COMPETITION_KEY, {
+    ...COMPETITION_KEY,
     title: 'SEAL Hackathon Spring 2026',
     description: 'The second season of the Software Engineering Agile League, focused on building reliable domain-specific Retrieval-Augmented Generation systems for complex knowledge problems.',
     semester: 'Spring 2026',
@@ -288,21 +288,21 @@ export const seedCompletedCycleShowcase = async ({
     ['Final presentations and scoring', 'ROUND', 'COMPLETED', '2026-04-12T16:30:00+07:00', '2026-04-12T18:30:00+07:00'],
     ['Closing and awards', 'RESULT_PUBLISHING', 'COMPLETED', '2026-04-12T18:30:00+07:00', '2026-04-12T19:00:00+07:00']
   ]
-  const timelines = await Promise.all(timelineDefinitions.map(([title, eventType, status, startTime, endTime]) => {
-    return upsertOne(TimelineEvent, { eventId: event._id, title }, {
-      eventId: event._id,
+  const timelines = await Promise.all(timelineDefinitions.map(([title, activityType, status, startTime, endTime]) => {
+    return upsertOne(TimelineActivity, { competitionId: competition._id, title }, {
+      competitionId: competition._id,
       title,
       description: `${title} for the completed-cycle showcase.`,
-      eventType,
+      activityType,
       status,
       startTime: at(startTime),
       endTime: at(endTime)
     })
   }))
 
-  const workshop = await upsertOne(Workshop, { eventId: event._id, title: 'The RAG Revolution: Transforming Complex Data into Actionable Domain Insights' }, {
-    eventId: event._id,
-    timelineEventId: timelines[1]._id,
+  const workshop = await upsertOne(Workshop, { competitionId: competition._id, title: 'The RAG Revolution: Transforming Complex Data into Actionable Domain Insights' }, {
+    competitionId: competition._id,
+    timelineActivityId: timelines[1]._id,
     title: 'The RAG Revolution: Transforming Complex Data into Actionable Domain Insights',
     description: 'Official online training on domain-specific datasets, retrieval, grounding, agentic RAG, evaluation, and actionable domain insights.',
     presenterId: speakerUser._id,
@@ -315,8 +315,8 @@ export const seedCompletedCycleShowcase = async ({
   })
 
   const tracks = await Promise.all(TRACK_DEFINITIONS.map(({ code, name, description, teams }) => {
-    return upsertOne(Track, { eventId: event._id, code }, {
-      eventId: event._id,
+    return upsertOne(Track, { competitionId: competition._id, code }, {
+      competitionId: competition._id,
       code,
       name: `Board ${code} — ${name}`,
       description,
@@ -335,8 +335,8 @@ export const seedCompletedCycleShowcase = async ({
       const boardCode = trackDefinition.code
       const padded = String(teamIndex).padStart(2, '0')
       const memberCount = 3 + ((teamIndex - 1) % 3)
-      let team = await upsertOne(Team, { eventId: event._id, name }, {
-        eventId: event._id,
+      let team = await upsertOne(Team, { competitionId: competition._id, name }, {
+        competitionId: competition._id,
         trackId: track._id,
         mentorIds: [mentorUser._id],
         name,
@@ -361,8 +361,8 @@ export const seedCompletedCycleShowcase = async ({
           passwordHash: seededPasswordHash,
           studentId: `SC26${boardCode}${padded}${memberIndex}`
         })
-        const participant = await upsertOne(Participant, { eventId: event._id, userId: user._id }, {
-          eventId: event._id,
+        const participant = await upsertOne(Participant, { competitionId: competition._id, userId: user._id }, {
+          competitionId: competition._id,
           userId: user._id,
           teamId: team._id,
           chapterName: team.chapterName,
@@ -402,8 +402,8 @@ export const seedCompletedCycleShowcase = async ({
     const boardCode = TRACK_DEFINITIONS[trackIndex].code
     for (const scenario of ['REJECTED', 'CANCELLED']) {
       const name = `Showcase ${boardCode} ${scenario === 'REJECTED' ? 'Rejected' : 'Late Cancelled'}`
-      let team = await upsertOne(Team, { eventId: event._id, name }, {
-        eventId: event._id,
+      let team = await upsertOne(Team, { competitionId: competition._id, name }, {
+        competitionId: competition._id,
         trackId: track._id,
         name,
         chapterName: 'SE',
@@ -424,8 +424,8 @@ export const seedCompletedCycleShowcase = async ({
           passwordHash: seededPasswordHash,
           studentId: `SC26${boardCode}${scenario[0]}${memberIndex}`
         })
-        await upsertOne(Participant, { eventId: event._id, userId: user._id }, {
-          eventId: event._id,
+        await upsertOne(Participant, { competitionId: competition._id, userId: user._id }, {
+          competitionId: competition._id,
           userId: user._id,
           teamId: team._id,
           chapterName: 'SE',
@@ -442,7 +442,7 @@ export const seedCompletedCycleShowcase = async ({
         teamId: team._id,
         invitedEmail: members[1].email,
         invitedBy: members[0]._id,
-        tokenHash: `seed-${event._id}-${trackIndex}-${scenario}`,
+        tokenHash: `seed-${competition._id}-${trackIndex}-${scenario}`,
         status: scenario === 'CANCELLED' ? 'EXPIRED' : 'CANCELLED',
         expiresAt: at('2026-04-05T23:59:59+07:00'),
         respondedAt: at('2026-04-06T00:00:00+07:00'),
@@ -455,9 +455,9 @@ export const seedCompletedCycleShowcase = async ({
     teamIds: officialTeams.filter(record => record.track._id.equals(track._id)).map(record => record.team._id)
   })))
 
-  await upsertOne(CheckInQrSession, { eventId: event._id }, {
-    eventId: event._id,
-    tokenHash: `expired-seal-spring-2026-${event._id}`,
+  await upsertOne(CheckInQrSession, { competitionId: competition._id }, {
+    competitionId: competition._id,
+    tokenHash: `expired-seal-spring-2026-${competition._id}`,
     expiresAt: at('2026-04-12T07:00:00+07:00'),
     createdBy: coordinatorUser._id
   })
@@ -508,13 +508,13 @@ export const seedCompletedCycleShowcase = async ({
   }
 
   const { rubric: preliminaryRubric, criteria: preliminaryCriteria } = await seedRubric({
-    eventId: event._id,
+    competitionId: competition._id,
     title: 'SEAL Spring 2026 Preliminary Rubric',
     createdBy: coordinatorUser._id,
     definitions: PRELIMINARY_CRITERIA
   })
   const { rubric: finalRubric, criteria: finalCriteria } = await seedRubric({
-    eventId: event._id,
+    competitionId: competition._id,
     title: 'SEAL Spring 2026 Final Rubric',
     createdBy: coordinatorUser._id,
     definitions: FINAL_CRITERIA
@@ -526,8 +526,8 @@ export const seedCompletedCycleShowcase = async ({
     const boardTeams = officialTeams.filter(record => record.trackIndex === trackIndex)
     const promotedTeams = boardTeams.filter(record => record.preliminaryRank <= 2)
     const assignedJudges = TRACK_DEFINITIONS[trackIndex].judges.map(name => judgeByName.get(name))
-    const round = await upsertOne(Round, { eventId: event._id, trackId: track._id, name: `Preliminary Board ${TRACK_DEFINITIONS[trackIndex].code}` }, {
-      eventId: event._id,
+    const round = await upsertOne(Round, { competitionId: competition._id, trackId: track._id, name: `Preliminary Board ${TRACK_DEFINITIONS[trackIndex].code}` }, {
+      competitionId: competition._id,
       trackId: track._id,
       name: `Preliminary Board ${TRACK_DEFINITIONS[trackIndex].code}`,
       roundType: 'PRELIMINARY',
@@ -549,8 +549,8 @@ export const seedCompletedCycleShowcase = async ({
       tieBreakDurationMinutes: 10,
       status: 'COMPLETED'
     })
-    const board = await upsertOne(JudgingBoard, { eventId: event._id, roundId: round._id, boardNumber: trackIndex + 1 }, {
-      eventId: event._id,
+    const board = await upsertOne(JudgingBoard, { competitionId: competition._id, roundId: round._id, boardNumber: trackIndex + 1 }, {
+      competitionId: competition._id,
       roundId: round._id,
       trackId: track._id,
       name: `Judging Board ${TRACK_DEFINITIONS[trackIndex].code}`,
@@ -563,7 +563,7 @@ export const seedCompletedCycleShowcase = async ({
     preliminaryRounds.push(round)
     preliminaryBoards.push(board)
     await Promise.all(boardTeams.map((record, index) => upsertOne(RoundTeamPlacement, { roundId: round._id, teamId: record.team._id }, {
-      eventId: event._id,
+      competitionId: competition._id,
       roundId: round._id,
       teamId: record.team._id,
       boardId: board._id,
@@ -573,8 +573,8 @@ export const seedCompletedCycleShowcase = async ({
   }
 
   const finalists = FINAL_RESULTS.map(([teamName]) => officialTeams.find(record => record.team.name === teamName))
-  const finalRound = await upsertOne(Round, { eventId: event._id, name: 'SEAL Spring 2026 Final' }, {
-    eventId: event._id,
+  const finalRound = await upsertOne(Round, { competitionId: competition._id, name: 'SEAL Spring 2026 Final' }, {
+    competitionId: competition._id,
     name: 'SEAL Spring 2026 Final',
     roundType: 'FINAL',
     problemStatement: 'Present a production-ready solution and defend its measurable impact.',
@@ -594,8 +594,8 @@ export const seedCompletedCycleShowcase = async ({
     tieBreakDurationMinutes: 10,
     status: 'COMPLETED'
   })
-  const finalBoard = await upsertOne(JudgingBoard, { eventId: event._id, roundId: finalRound._id, boardNumber: 1 }, {
-    eventId: event._id,
+  const finalBoard = await upsertOne(JudgingBoard, { competitionId: competition._id, roundId: finalRound._id, boardNumber: 1 }, {
+    competitionId: competition._id,
     roundId: finalRound._id,
     name: 'Final Judging Board',
     boardNumber: 1,
@@ -605,7 +605,7 @@ export const seedCompletedCycleShowcase = async ({
     status: 'COMPLETED'
   })
   await Promise.all(finalists.map((record, index) => upsertOne(RoundTeamPlacement, { roundId: finalRound._id, teamId: record.team._id }, {
-    eventId: event._id,
+    competitionId: competition._id,
     roundId: finalRound._id,
     teamId: record.team._id,
     boardId: finalBoard._id,
@@ -616,7 +616,7 @@ export const seedCompletedCycleShowcase = async ({
   for (const record of officialTeams) {
     const slug = slugify(record.team.name)
     const repo = await upsertOne(Repository, { teamId: record.team._id }, {
-      eventId: event._id,
+      competitionId: competition._id,
       teamId: record.team._id,
       roundId: preliminaryRounds[record.trackIndex]._id,
       githubOwner: 'seal-hackathon-spring-2026',
@@ -668,7 +668,7 @@ export const seedCompletedCycleShowcase = async ({
     })
     await upsertOne(GitHubWebhookEvent, { deliveryId: `seal-spring-2026-${slug}` }, {
       deliveryId: `seal-spring-2026-${slug}`,
-      eventType: 'push',
+      activityType: 'push',
       repositoryFullName: repo.repositoryFullName,
       repositoryId: repo._id,
       teamId: record.team._id,
@@ -698,7 +698,7 @@ export const seedCompletedCycleShowcase = async ({
       }]
     })
     const review = await upsertOne(AiReview, { repositoryId: repo._id, commitSha: sha, reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT' }, {
-      eventId: event._id,
+      competitionId: competition._id,
       teamId: record.team._id,
       roundId: preliminaryRounds[record.trackIndex]._id,
       repositoryId: repo._id,
@@ -737,14 +737,14 @@ export const seedCompletedCycleShowcase = async ({
       type: 'PERFORMANCE',
       severity: 'LOW',
       title: 'Add peak-load validation',
-      evidence: ['Current tests cover functional paths but not event-day peak concurrency.'],
+      evidence: ['Current tests cover functional paths but not competition-day peak concurrency.'],
       comment: 'This is advisory and does not determine the official judge score.',
       recommendedAction: 'Run a small load test before production deployment.'
     })
 
     const preliminaryRound = preliminaryRounds[record.trackIndex]
     const preliminarySubmission = await upsertOne(Submission, { roundId: preliminaryRound._id, teamId: record.team._id }, {
-      eventId: event._id,
+      competitionId: competition._id,
       roundId: preliminaryRound._id,
       teamId: record.team._id,
       repositoryId: repo._id,
@@ -760,7 +760,7 @@ export const seedCompletedCycleShowcase = async ({
       : [record.preliminaryScore - 0.5, record.preliminaryScore + 0.5]
     for (const [judgeIndex, judge] of assignedJudges.entries()) {
       await seedScoreSheet({
-        eventId: event._id,
+        competitionId: competition._id,
         roundId: preliminaryRound._id,
         boardId: preliminaryBoards[record.trackIndex]._id,
         teamId: record.team._id,
@@ -775,8 +775,8 @@ export const seedCompletedCycleShowcase = async ({
         submittedAt: at(`2026-04-12T15:${judgeIndex === 0 ? '20' : '30'}:00+07:00`)
       })
     }
-    await upsertOne(Ranking, { eventId: event._id, rankingType: 'TEAM', roundId: preliminaryRound._id, teamId: record.team._id }, {
-      eventId: event._id,
+    await upsertOne(Ranking, { competitionId: competition._id, rankingType: 'TEAM', roundId: preliminaryRound._id, teamId: record.team._id }, {
+      competitionId: competition._id,
       rankingType: 'TEAM',
       roundId: preliminaryRound._id,
       trackId: record.track._id,
@@ -799,7 +799,7 @@ export const seedCompletedCycleShowcase = async ({
     const repo = await Repository.findOne({ teamId: record.team._id })
     const slug = slugify(record.team.name)
     const submission = await upsertOne(Submission, { roundId: finalRound._id, teamId: record.team._id }, {
-      eventId: event._id,
+      competitionId: competition._id,
       roundId: finalRound._id,
       teamId: record.team._id,
       repositoryId: repo._id,
@@ -812,7 +812,7 @@ export const seedCompletedCycleShowcase = async ({
     const judgeOffsets = [-1, -0.5, 0, 0.5, 1]
     for (const [judgeIndex, judge] of finalJudges.entries()) {
       await seedScoreSheet({
-        eventId: event._id,
+        competitionId: competition._id,
         roundId: finalRound._id,
         boardId: finalBoard._id,
         teamId: record.team._id,
@@ -827,8 +827,8 @@ export const seedCompletedCycleShowcase = async ({
         submittedAt: at(`2026-04-12T18:${String(10 + judgeIndex * 3).padStart(2, '0')}:00+07:00`)
       })
     }
-    await upsertOne(Ranking, { eventId: event._id, rankingType: 'TEAM', roundId: finalRound._id, teamId: record.team._id }, {
-      eventId: event._id,
+    await upsertOne(Ranking, { competitionId: competition._id, rankingType: 'TEAM', roundId: finalRound._id, teamId: record.team._id }, {
+      competitionId: competition._id,
       rankingType: 'TEAM',
       roundId: finalRound._id,
       teamId: record.team._id,
@@ -855,8 +855,8 @@ export const seedCompletedCycleShowcase = async ({
     ['Third Prize', 3000000, 3, finalists[2]],
     ['Creative Idea Prize', 1500000, 4, finalists[3]]
   ]
-  await Promise.all(prizes.map(([title, amount, rank, record]) => upsertOne(Prize, { eventId: event._id, title }, {
-    eventId: event._id,
+  await Promise.all(prizes.map(([title, amount, rank, record]) => upsertOne(Prize, { competitionId: competition._id, title }, {
+    competitionId: competition._id,
     title,
     description: `${title} for SEAL Hackathon Spring 2026.`,
     prizeType: 'TEAM',
@@ -885,15 +885,15 @@ export const seedCompletedCycleShowcase = async ({
     rating: 5
   })
 
-  const media = await upsertOne(Media, { eventId: event._id, title: 'SEAL Hackathon Spring 2026 Award Ceremony' }, {
-    eventId: event._id,
+  const media = await upsertOne(Media, { competitionId: competition._id, title: 'SEAL Hackathon Spring 2026 Award Ceremony' }, {
+    competitionId: competition._id,
     uploadedBy: coordinatorUser._id,
     teamId: finalists[0].team._id,
     title: 'SEAL Hackathon Spring 2026 Award Ceremony',
     description: 'Approved gallery media for the closing and award ceremony.',
     mediaType: 'IMAGE',
     storageProvider: 'CLOUDINARY',
-    bucketName: 'event-media',
+    bucketName: 'competition-media',
     storagePath: 'seal-spring-2026/award-ceremony.jpg',
     fileUrl: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
     originalFileName: 'seal-spring-2026-award-ceremony.jpg',
@@ -908,7 +908,7 @@ export const seedCompletedCycleShowcase = async ({
   })
   await upsertOne(MediaActivity, { mediaId: media._id, action: 'UPLOAD' }, {
     mediaId: media._id,
-    eventId: event._id,
+    competitionId: competition._id,
     userId: coordinatorUser._id,
     action: 'UPLOAD',
     metadata: { seeded: true, approved: true },
@@ -921,14 +921,14 @@ export const seedCompletedCycleShowcase = async ({
     message: `${record.team.name} completed the final round. Results are now available.`,
     type: 'RESULT',
     status: 'UNREAD',
-    metadata: { eventId: event._id, teamId: record.team._id, roundId: finalRound._id }
+    metadata: { competitionId: competition._id, teamId: record.team._id, roundId: finalRound._id }
   })))
 
-  await upsertOne(AuditLog, { action: 'SEED_COMPLETED_CYCLE', resourceType: 'Event', resourceId: event._id }, {
+  await upsertOne(AuditLog, { action: 'SEED_COMPLETED_CYCLE', resourceType: 'Competition', resourceId: competition._id }, {
     userId: adminUser._id,
     action: 'SEED_COMPLETED_CYCLE',
-    resourceType: 'Event',
-    resourceId: event._id,
+    resourceType: 'Competition',
+    resourceId: competition._id,
     metadata: {
       confirmedTeams: officialTeams.length,
       rejectedTeams: 3,
@@ -946,7 +946,7 @@ export const seedCompletedCycleShowcase = async ({
   await upsertOne(SystemConfiguration, { key: 'SEAL_SPRING_2026_SEED_SUMMARY' }, {
     key: 'SEAL_SPRING_2026_SEED_SUMMARY',
     value: {
-      eventId: event._id.toString(),
+      competitionId: competition._id.toString(),
       accountPassword: 'Password123!',
       participantEmailDomain: EMAIL_DOMAIN,
       confirmedTeams: officialTeams.length,
@@ -958,7 +958,7 @@ export const seedCompletedCycleShowcase = async ({
   })
 
   return {
-    event,
+    competition,
     tracks,
     confirmedTeams: officialTeams.map(record => record.team),
     finalists: finalists.map(record => record.team),

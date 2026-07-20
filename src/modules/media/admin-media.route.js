@@ -26,35 +26,35 @@ router.put(
 
 router.get(
   '/statistics',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
   validationHandlingMiddleware(MEDIA_VALIDATION.statistics),
   MEDIA_CONTROLLER.getStatistics
 )
 
 router.get(
   '/',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
   validationHandlingMiddleware(MEDIA_VALIDATION.listAdminMedia),
   MEDIA_CONTROLLER.listAdminMedia
 )
 
 router.patch(
   '/:mediaId/approve',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
   validationHandlingMiddleware(MEDIA_VALIDATION.approveMedia),
   MEDIA_CONTROLLER.approveMedia
 )
 
 router.patch(
   '/:mediaId/reject',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
   validationHandlingMiddleware(MEDIA_VALIDATION.rejectMedia),
   MEDIA_CONTROLLER.rejectMedia
 )
 
 router.delete(
   '/:mediaId',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
   validationHandlingMiddleware(MEDIA_VALIDATION.deleteMedia),
   MEDIA_CONTROLLER.deleteMedia
 )

@@ -78,6 +78,6 @@ eventSchema.index(
   }
 )
 
-const Event = mongoose.model('Event', eventSchema)
+const Competition = mongoose.model('Competition', eventSchema)
 
-export default Event
+export default Competition

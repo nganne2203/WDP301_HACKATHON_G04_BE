@@ -3,8 +3,8 @@ import ChatParticipant from '#models/chatParticipant.model.js'
 import ChatRoom from '#models/chatRoom.model.js'
 import Team from '#models/team.model.js'
 
-const teamSelect = 'name eventId leaderId memberIds mentorIds projectName status'
-const teamPopulate = { path: 'eventId', select: 'title status' }
+const teamSelect = 'name competitionId leaderId memberIds mentorIds projectName status'
+const teamPopulate = { path: 'competitionId', select: 'title status' }
 const ACTIVE_CHAT_TEAM_STATUSES = ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED']
 const messagePopulate = {
   path: 'senderId',

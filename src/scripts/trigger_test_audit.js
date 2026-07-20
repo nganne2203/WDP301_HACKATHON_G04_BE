@@ -5,7 +5,7 @@ import { AI_REVIEW_SERVICE } from '#modules/ai-reviews/ai-review.service.js'
 // Import models so they register with mongoose
 import '#models/user.model.js'
 import '#models/repository.model.js'
-import '#models/event.model.js'
+import '#models/competition.model.js'
 import '#models/round.model.js'
 import '#models/rubric.model.js'
 import '#models/criterion.model.js'

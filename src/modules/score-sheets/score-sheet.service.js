@@ -11,9 +11,9 @@ import {
   getIdString,
   idsEqual,
   isActiveJudge,
-  isPrivilegedEventActor
+  isPrivilegedCompetitionActor
 } from '#utils/domainAccessUtil.js'
-import Event from '#models/event.model.js'
+import Competition from '#models/competition.model.js'
 import JudgingBoard from '#models/judgingBoard.model.js'
 import Round from '#models/round.model.js'
 import Submission from '#models/submission.model.js'
@@ -63,7 +63,7 @@ const normalizeScoreSheet = (scoreSheet) => {
 
   return {
     id: plainScoreSheet._id?.toString() || plainScoreSheet.id,
-    eventId: plainScoreSheet.eventId?._id?.toString?.() || plainScoreSheet.eventId?.toString?.() || plainScoreSheet.eventId,
+    competitionId: plainScoreSheet.competitionId?._id?.toString?.() || plainScoreSheet.competitionId?.toString?.() || plainScoreSheet.competitionId,
     roundId: plainScoreSheet.roundId?._id?.toString?.() || plainScoreSheet.roundId?.toString?.() || plainScoreSheet.roundId,
     boardId: plainScoreSheet.boardId?._id?.toString?.() || plainScoreSheet.boardId?.toString?.() || plainScoreSheet.boardId || null,
     teamId: plainScoreSheet.teamId?._id?.toString?.() || plainScoreSheet.teamId?.toString?.() || plainScoreSheet.teamId,
@@ -121,7 +121,7 @@ const ensureObjectId = (id, fieldName = 'id') => {
 
 const buildScoreSheetFilter = (query = {}) => {
   const filter = {}
-  if (query.eventId) filter.eventId = query.eventId
+  if (query.competitionId) filter.competitionId = query.competitionId
   if (query.roundId) filter.roundId = query.roundId
   if (query.teamId) filter.teamId = query.teamId
   if (query.judgeId) filter.judgeId = query.judgeId
@@ -134,7 +134,7 @@ const getScoreCriterionId = (score = {}) => {
 }
 
 const mergeJudgeScope = (filter = {}, actor = {}) => {
-  if (isPrivilegedEventActor(actor)) return filter
+  if (isPrivilegedCompetitionActor(actor)) return filter
 
   const actorId = getActorId(actor)
   if (!actorId) {
@@ -175,7 +175,7 @@ const buildScoreSheetTotals = ({ scores = [], criteriaById = new Map() }) => {
 export const createScoreSheetService = ({
   repository = SCORE_SHEET_REPOSITORY,
   auditLogRepository = AUDIT_LOG_REPOSITORY,
-  eventModel = Event,
+  competitionModel = Competition,
   roundModel = Round,
   boardModel = JudgingBoard,
   teamModel = Team,
@@ -199,7 +199,7 @@ export const createScoreSheetService = ({
   }
 
   const ensureJudgeContext = async ({
-    eventId,
+    competitionId,
     roundId,
     boardId,
     teamId,
@@ -207,8 +207,8 @@ export const createScoreSheetService = ({
     judgeId,
     rubricId = null
   }) => {
-    const [event, round, board, team, submission, judge] = await Promise.all([
-      eventModel.findById(eventId),
+    const [competition, round, board, team, submission, judge] = await Promise.all([
+      competitionModel.findById(competitionId),
       roundModel.findById(roundId),
       boardModel.findById(boardId),
       teamModel.findById(teamId),
@@ -216,7 +216,7 @@ export const createScoreSheetService = ({
       findJudgeById(judgeId)
     ])
 
-    if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+    if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
     if (!round) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Round not found'])
     if (!board) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Judging board not found'])
     if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
@@ -241,16 +241,16 @@ export const createScoreSheetService = ({
       throw new ApiError(ERROR_CODES.FORBIDDEN, ['Judge account must be ACTIVE and have the JUDGE role to score'])
     }
 
-    if (round.eventId?.toString() !== eventId.toString()) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round does not belong to the specified event'])
+    if (round.competitionId?.toString() !== competitionId.toString()) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round does not belong to the specified competition'])
     }
-    if (board.eventId?.toString() !== eventId.toString() || board.roundId?.toString() !== roundId.toString()) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Judging board does not belong to the specified event round'])
+    if (board.competitionId?.toString() !== competitionId.toString() || board.roundId?.toString() !== roundId.toString()) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Judging board does not belong to the specified competition round'])
     }
-    if (team.eventId?.toString() !== eventId.toString()) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified event'])
+    if (team.competitionId?.toString() !== competitionId.toString()) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified competition'])
     }
-    if (submission.eventId?.toString() !== eventId.toString() ||
+    if (submission.competitionId?.toString() !== competitionId.toString() ||
       submission.roundId?.toString() !== roundId.toString() ||
       submission.teamId?.toString() !== teamId.toString()) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Submission does not match the scoring context'])
@@ -275,7 +275,7 @@ export const createScoreSheetService = ({
     if (!rubric) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Rubric not found'])
 
     return {
-      event,
+      competition,
       round,
       board,
       team,
@@ -349,7 +349,7 @@ export const createScoreSheetService = ({
   }
 
   const ensureExistingScoreSheetCanBeChanged = async (scoreSheet) => {
-    const eventId = getIdString(scoreSheet.eventId)
+    const competitionId = getIdString(scoreSheet.competitionId)
     const roundId = getIdString(scoreSheet.roundId)
     const boardId = getIdString(scoreSheet.boardId)
     const teamId = getIdString(scoreSheet.teamId)
@@ -358,7 +358,7 @@ export const createScoreSheetService = ({
     const rubricId = getIdString(scoreSheet.rubricId)
 
     return await ensureJudgeContext({
-      eventId,
+      competitionId,
       roundId,
       boardId,
       teamId,
@@ -412,7 +412,7 @@ export const createScoreSheetService = ({
 
   const getScoreSheetById = async (id, actor = {}) => {
     const scoreSheet = await ensureScoreSheetExists(id)
-    if (!isPrivilegedEventActor(actor) && (!actorHasRole(actor, 'JUDGE') || !idsEqual(scoreSheet.judgeId, getActorId(actor)))) {
+    if (!isPrivilegedCompetitionActor(actor) && (!actorHasRole(actor, 'JUDGE') || !idsEqual(scoreSheet.judgeId, getActorId(actor)))) {
       throw new ApiError(ERROR_CODES.FORBIDDEN, ['You cannot access another judge score sheet'])
     }
     return normalizeScoreSheet(scoreSheet)
@@ -421,7 +421,7 @@ export const createScoreSheetService = ({
   const createScoreSheet = async (payload = {}, actor = {}) => {
     ensureObjectId(actor.id, 'judge id')
     const context = await ensureJudgeContext({
-      eventId: payload.eventId,
+      competitionId: payload.competitionId,
       roundId: payload.roundId,
       boardId: payload.boardId,
       teamId: payload.teamId,
@@ -446,7 +446,7 @@ export const createScoreSheetService = ({
     })
 
     const scoreSheet = await repository.createScoreSheet({
-      eventId: payload.eventId,
+      competitionId: payload.competitionId,
       roundId: payload.roundId,
       boardId: payload.boardId,
       teamId: payload.teamId,
@@ -551,7 +551,7 @@ export const createScoreSheetService = ({
       resourceType: 'ScoreSheet',
       resourceId: updatedScoreSheet._id,
       metadata: {
-        eventId: updatedScoreSheet.eventId?._id || updatedScoreSheet.eventId,
+        competitionId: updatedScoreSheet.competitionId?._id || updatedScoreSheet.competitionId,
         roundId: updatedScoreSheet.roundId?._id || updatedScoreSheet.roundId,
         teamId: updatedScoreSheet.teamId?._id || updatedScoreSheet.teamId,
         judgeId: updatedScoreSheet.judgeId?._id || updatedScoreSheet.judgeId,

@@ -4,7 +4,7 @@ import test from 'node:test'
 import { createRubricService } from '../src/modules/rubrics/rubric.service.js'
 
 const ids = {
-  event: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+  competition: 'aaaaaaaaaaaaaaaaaaaaaaaa',
   round: 'bbbbbbbbbbbbbbbbbbbbbbbb',
   rubric: 'cccccccccccccccccccccccc',
   criterion1: 'dddddddddddddddddddddddd',
@@ -28,7 +28,7 @@ test('updateCriterion and deleteCriterion recompute criteria weight total withou
     ids.rubric,
     {
       _id: ids.rubric,
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       title: 'Technical Rubric',
       totalScore: 100,
@@ -69,8 +69,8 @@ test('updateCriterion and deleteCriterion recompute criteria weight total withou
 
   const service = createRubricService({
     repository,
-    eventModel: createModel(new Map([[ids.event, { _id: ids.event }]])),
-    roundModel: createModel(new Map([[ids.round, { _id: ids.round, eventId: ids.event }]])),
+    competitionModel: createModel(new Map([[ids.competition, { _id: ids.competition }]])),
+    roundModel: createModel(new Map([[ids.round, { _id: ids.round, competitionId: ids.competition }]])),
     scoreSheetModel: countModel(0)
   })
 
@@ -91,7 +91,7 @@ test('active rubric requires criterion weights to match rubric scale', async () 
     ids.rubric,
     {
       _id: ids.rubric,
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       title: 'Active Rubric',
       totalScore: 100,
@@ -132,8 +132,8 @@ test('active rubric requires criterion weights to match rubric scale', async () 
 
   const service = createRubricService({
     repository,
-    eventModel: createModel(new Map([[ids.event, { _id: ids.event }]])),
-    roundModel: createModel(new Map([[ids.round, { _id: ids.round, eventId: ids.event }]])),
+    competitionModel: createModel(new Map([[ids.competition, { _id: ids.competition }]])),
+    roundModel: createModel(new Map([[ids.round, { _id: ids.round, competitionId: ids.competition }]])),
     scoreSheetModel: countModel(0)
   })
 
@@ -153,14 +153,14 @@ test('rubric cannot be created as active before criteria are configured', async 
 
   const service = createRubricService({
     repository,
-    eventModel: createModel(new Map([[ids.event, { _id: ids.event }]])),
-    roundModel: createModel(new Map([[ids.round, { _id: ids.round, eventId: ids.event }]])),
+    competitionModel: createModel(new Map([[ids.competition, { _id: ids.competition }]])),
+    roundModel: createModel(new Map([[ids.round, { _id: ids.round, competitionId: ids.competition }]])),
     scoreSheetModel: countModel(0)
   })
 
   await assert.rejects(
     service.createRubric({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       title: 'Active Rubric',
       totalScore: 100,
@@ -176,7 +176,7 @@ test('rubric criteria cannot change after score sheets exist', async () => {
     ids.rubric,
     {
       _id: ids.rubric,
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       title: 'Locked Rubric',
       totalScore: 30,
@@ -210,8 +210,8 @@ test('rubric criteria cannot change after score sheets exist', async () => {
 
   const service = createRubricService({
     repository,
-    eventModel: createModel(new Map([[ids.event, { _id: ids.event }]])),
-    roundModel: createModel(new Map([[ids.round, { _id: ids.round, eventId: ids.event }]])),
+    competitionModel: createModel(new Map([[ids.competition, { _id: ids.competition }]])),
+    roundModel: createModel(new Map([[ids.round, { _id: ids.round, competitionId: ids.competition }]])),
     scoreSheetModel: countModel(1)
   })
 

@@ -1,11 +1,11 @@
-import Event from '#models/event.model.js'
+import Competition from '#models/competition.model.js'
 import CheckInQrSession from '#models/checkInQrSession.model.js'
 import Participant from '#models/participant.model.js'
 import Team from '#models/team.model.js'
 import User from '#models/user.model.js'
 
 const participantPopulate = [
-  { path: 'eventId', select: 'title semester season year status startDate endDate maxTeamMembers minTeamMembers' },
+  { path: 'competitionId', select: 'title semester season year status startDate endDate maxTeamMembers minTeamMembers' },
   { path: 'userId', select: 'email fullName status studentId studentType schoolName' },
   { path: 'teamId', select: 'name chapterName projectName status trackId qualificationStatus' }
 ]
@@ -30,8 +30,8 @@ const findById = async (id) => {
   return await Participant.findById(id).populate(participantPopulate)
 }
 
-const findByEventAndUser = async ({ eventId, userId }) => {
-  return await Participant.findOne({ eventId, userId }).populate(participantPopulate)
+const findByCompetitionAndUser = async ({ competitionId, userId }) => {
+  return await Participant.findOne({ competitionId, userId }).populate(participantPopulate)
 }
 
 const updateById = async (id, data) => {
@@ -41,9 +41,9 @@ const updateById = async (id, data) => {
   }).populate(participantPopulate)
 }
 
-const upsertCheckInQrSession = async ({ eventId, tokenHash, expiresAt, createdBy }) => {
+const upsertCheckInQrSession = async ({ competitionId, tokenHash, expiresAt, createdBy }) => {
   return await CheckInQrSession.findOneAndUpdate(
-    { eventId },
+    { competitionId },
     { $set: { tokenHash, expiresAt, createdBy } },
     { new: true, upsert: true, runValidators: true }
   )
@@ -53,10 +53,10 @@ const findCheckInQrSessionByTokenHash = async (tokenHash) => {
   return await CheckInQrSession.findOne({ tokenHash }).select('+tokenHash')
 }
 
-const checkInParticipantByEventAndUser = async ({ eventId, userId, now }) => {
+const checkInParticipantByCompetitionAndUser = async ({ competitionId, userId, now }) => {
   return await Participant.findOneAndUpdate(
     {
-      eventId,
+      competitionId,
       userId,
       checkInStatus: 'NOT_CHECKED_IN'
     },
@@ -75,8 +75,8 @@ const deleteById = async (id) => {
   return await Participant.findByIdAndDelete(id)
 }
 
-const findEventById = async (id) => {
-  return await Event.findById(id)
+const findCompetitionById = async (id) => {
+  return await Competition.findById(id)
 }
 
 const findUserById = async (id) => {
@@ -87,9 +87,9 @@ const findTeamById = async (id) => {
   return await Team.findById(id)
 }
 
-const findConfirmedTeamIds = async ({ eventId } = {}) => {
+const findConfirmedTeamIds = async ({ competitionId } = {}) => {
   const filter = { status: 'CONFIRMED' }
-  if (eventId) filter.eventId = eventId
+  if (competitionId) filter.competitionId = competitionId
   return await Team.find(filter).distinct('_id')
 }
 
@@ -98,13 +98,13 @@ export const PARTICIPANT_REPOSITORY = {
   create,
   findAll,
   findById,
-  findByEventAndUser,
+  findByCompetitionAndUser,
   updateById,
   upsertCheckInQrSession,
   findCheckInQrSessionByTokenHash,
-  checkInParticipantByEventAndUser,
+  checkInParticipantByCompetitionAndUser,
   deleteById,
-  findEventById,
+  findCompetitionById,
   findUserById,
   findTeamById,
   findConfirmedTeamIds

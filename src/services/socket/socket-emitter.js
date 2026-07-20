@@ -12,8 +12,8 @@ export const setSocketServer = (io) => {
   activeIo = io
 }
 
-export const emitUserSocketEvent = (userId, event, payload) => {
+export const emitUserSocketCompetition = (userId, competition, payload) => {
   if (!activeIo || !userId) return false
-  activeIo.to(getUserRoom(userId)).emit(event, payload)
+  activeIo.to(getUserRoom(userId)).emit(competition, payload)
   return true
 }

@@ -45,7 +45,7 @@ const getTeamById = async (req, res, next) => {
 
 const getMyTeam = async (req, res, next) => {
   try {
-    const team = await TEAM_SERVICE.getMyTeamByEvent(req.validated.query.eventId, req.user)
+    const team = await TEAM_SERVICE.getMyTeamByCompetition(req.validated.query.competitionId, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get my team successfully',
@@ -235,14 +235,14 @@ const assignMentorsByBoard = async (req, res, next) => {
       entityType: 'Team',
       oldValue: null,
       newValue: {
-        eventId: result.eventId,
+        competitionId: result.competitionId,
         boardNumber: result.boardNumber,
         mentorIds: result.mentorIds,
         updatedCount: result.updatedCount,
         teamIds: result.teamIds
       },
       metadata: {
-        eventId: result.eventId,
+        competitionId: result.competitionId,
         boardNumber: result.boardNumber,
         mentorIds: result.mentorIds,
         updatedCount: result.updatedCount,
@@ -262,9 +262,9 @@ const assignMentorsByBoard = async (req, res, next) => {
   }
 }
 
-const getEventTeamCapacity = async (req, res, next) => {
+const getCompetitionTeamCapacity = async (req, res, next) => {
   try {
-    const capacity = await TEAM_SERVICE.getEventTeamCapacity(req.params.eventId, req.user)
+    const capacity = await TEAM_SERVICE.getCompetitionTeamCapacity(req.params.competitionId, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get team capacity successfully',
@@ -292,5 +292,5 @@ export const TEAM_CONTROLLER = {
   updateTeamPlacement,
   updateTeamMentors,
   assignMentorsByBoard,
-  getEventTeamCapacity
+  getCompetitionTeamCapacity
 }

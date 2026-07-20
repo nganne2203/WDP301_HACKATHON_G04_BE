@@ -2,14 +2,14 @@ import mongoose from 'mongoose'
 
 const { Schema } = mongoose
 
-const timelineEventSchema = new Schema(
+const timelineActivitySchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true },
     title: { type: String, required: true, trim: true },
     description: { type: String },
     startTime: { type: Date },
     endTime: { type: Date },
-    eventType: {
+    activityType: {
       type: String,
       enum: ['WORKSHOP', 'CHECK_IN', 'ROUND', 'RESULT_PUBLISHING', 'CEREMONY', 'OTHER'],
       default: 'OTHER'
@@ -23,9 +23,9 @@ const timelineEventSchema = new Schema(
   { timestamps: true }
 )
 
-timelineEventSchema.index({ eventId: 1, startTime: 1 })
-timelineEventSchema.index({ eventType: 1 })
+timelineActivitySchema.index({ competitionId: 1, startTime: 1 })
+timelineActivitySchema.index({ activityType: 1 })
 
-const TimelineEvent = mongoose.model('TimelineEvent', timelineEventSchema)
+const TimelineActivity = mongoose.model('TimelineActivity', timelineActivitySchema)
 
-export default TimelineEvent
+export default TimelineActivity

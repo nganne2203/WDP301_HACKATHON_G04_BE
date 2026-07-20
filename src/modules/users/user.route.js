@@ -100,7 +100,7 @@ const router = Router()
  *           uniqueItems: true
  *           items:
  *             type: string
- *             enum: [ADMIN, EVENT_COORDINATOR, COORDINATOR, JUDGE, MENTOR, SPEAKER, PARTICIPANT]
+ *             enum: [ADMIN, COMPETITION_COORDINATOR, COORDINATOR, JUDGE, MENTOR, SPEAKER, PARTICIPANT]
  *           example: [JUDGE]
  *         status:
  *           type: string
@@ -144,7 +144,7 @@ const router = Router()
  *           uniqueItems: true
  *           items:
  *             type: string
- *             enum: [ADMIN, EVENT_COORDINATOR, COORDINATOR, JUDGE, MENTOR, SPEAKER, PARTICIPANT]
+ *             enum: [ADMIN, COMPETITION_COORDINATOR, COORDINATOR, JUDGE, MENTOR, SPEAKER, PARTICIPANT]
  *           example: [PARTICIPANT, JUDGE]
  */
 

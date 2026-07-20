@@ -14,7 +14,7 @@ const listUsers = {
     status: Joi.string().valid('PENDING', 'ACTIVE', 'REJECTED', 'SUSPENDED'),
     search: Joi.string().trim().max(100),
     roles: Joi.alternatives().try(
-      Joi.array().items(Joi.string().trim().uppercase().valid('ADMIN', 'EVENT_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'PARTICIPANT')).min(1).unique(),
+      Joi.array().items(Joi.string().trim().uppercase().valid('ADMIN', 'COMPETITION_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'PARTICIPANT')).min(1).unique(),
       Joi.string().trim().min(1)
     )
   })
@@ -40,7 +40,7 @@ const createUser = {
     password: Joi.string().min(8).max(128).required(),
     fullName: Joi.string().trim().min(2).max(120).required(),
     roles: Joi.array()
-      .items(Joi.string().trim().uppercase().valid('ADMIN', 'EVENT_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'PARTICIPANT'))
+      .items(Joi.string().trim().uppercase().valid('ADMIN', 'COMPETITION_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'PARTICIPANT'))
       .min(1)
       .unique()
       .required(),
@@ -73,7 +73,7 @@ const updateUser = {
     email: Joi.string().email().trim().lowercase(),
     fullName: Joi.string().trim().min(2).max(120),
     roles: Joi.array()
-      .items(Joi.string().trim().uppercase().valid('ADMIN', 'EVENT_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'PARTICIPANT'))
+      .items(Joi.string().trim().uppercase().valid('ADMIN', 'COMPETITION_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'PARTICIPANT'))
       .min(1)
       .unique(),
     avatarUrl: Joi.string().uri().allow('', null),
@@ -97,7 +97,7 @@ const assignRoles = {
   params: idParam,
   body: Joi.object({
     roles: Joi.array()
-      .items(Joi.string().trim().uppercase().valid('ADMIN', 'EVENT_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'PARTICIPANT'))
+      .items(Joi.string().trim().uppercase().valid('ADMIN', 'COMPETITION_COORDINATOR', 'COORDINATOR', 'JUDGE', 'MENTOR', 'SPEAKER', 'PARTICIPANT'))
       .min(1)
       .unique()
       .required()

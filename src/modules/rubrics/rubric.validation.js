@@ -10,14 +10,14 @@ export const RUBRIC_VALIDATION = {
     query: Joi.object({
       page: Joi.number().integer().min(1).default(1),
       limit: Joi.number().integer().min(1).max(100).default(10),
-      eventId: objectId,
+      competitionId: objectId,
       roundId: objectId,
       status: rubricStatus
     })
   },
   createRubric: {
     body: Joi.object({
-      eventId: objectId.required(),
+      competitionId: objectId.required(),
       roundId: objectId.allow(null),
       title: Joi.string().trim().min(2).max(200).required(),
       description: Joi.string().trim().max(2000).allow('', null),

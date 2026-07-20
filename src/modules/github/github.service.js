@@ -11,7 +11,7 @@ import Team from '#models/team.model.js'
 import TeamInvitation from '#models/teamInvitation.model.js'
 import { actorHasRole, getIdString } from '#utils/domainAccessUtil.js'
 
-const buildEventConfigKey = (eventId) => `github.event.${eventId}.organization`
+const buildCompetitionConfigKey = (competitionId) => `github.competition.${competitionId}.organization`
 
 const GITHUB_API_BASE_URL = 'https://api.github.com'
 const GITHUB_API_VERSION = '2022-11-28'
@@ -30,11 +30,11 @@ const getInvitationEmail = (invitation = {}) => {
   return String(plainInvitation?.invitedEmail || plainInvitation?.invitedUserId?.email || '').trim().toLowerCase()
 }
 
-const normalizeConfig = (record, eventId) => {
+const normalizeConfig = (record, competitionId) => {
   const value = record?.value || {}
 
   return {
-    eventId: value.eventId || eventId,
+    competitionId: value.competitionId || competitionId,
     organizationName: value.organizationName || '',
     ownerUsername: value.ownerUsername || '',
     enabled: Boolean(value.enabled),
@@ -134,20 +134,20 @@ export const createGithubService = ({
     }
   }
 
-  const loadConfigRecord = async (eventId) => {
-    if (!eventId) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['eventId is required for GitHub configuration'])
+  const loadConfigRecord = async (competitionId) => {
+    if (!competitionId) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['competitionId is required for GitHub configuration'])
     }
 
-    return await repository.findConfigByKey(buildEventConfigKey(eventId))
+    return await repository.findConfigByKey(buildCompetitionConfigKey(competitionId))
   }
 
-  const getConfig = async (eventId) => {
-    return normalizeConfig(await loadConfigRecord(eventId), eventId)
+  const getConfig = async (competitionId) => {
+    return normalizeConfig(await loadConfigRecord(competitionId), competitionId)
   }
 
   const saveConfig = async (payload = {}, actor = {}) => {
-    const existingRecord = await loadConfigRecord(payload.eventId)
+    const existingRecord = await loadConfigRecord(payload.competitionId)
     const existingValue = existingRecord?.value || {}
     const nextToken = normalizeString(payload.githubToken)
     let tokenEncrypted = existingValue.tokenEncrypted
@@ -163,9 +163,9 @@ export const createGithubService = ({
     }
 
     const configRecord = await repository.upsertConfig({
-      key: buildEventConfigKey(payload.eventId),
+      key: buildCompetitionConfigKey(payload.competitionId),
       value: {
-        eventId: payload.eventId,
+        competitionId: payload.competitionId,
         organizationName: normalizeString(payload.organizationName),
         ownerUsername: normalizeString(payload.ownerUsername),
         tokenEncrypted,
@@ -179,9 +179,9 @@ export const createGithubService = ({
       actor,
       action: 'GITHUB_CONFIG_SAVE',
       resourceType: 'SystemConfiguration',
-      resourceId: payload.eventId,
+      resourceId: payload.competitionId,
       metadata: {
-        eventId: payload.eventId,
+        competitionId: payload.competitionId,
         organizationName: payload.organizationName,
         ownerUsername: payload.ownerUsername,
         enabled: Boolean(payload.enabled),
@@ -190,29 +190,29 @@ export const createGithubService = ({
       }
     })
 
-    return normalizeConfig(configRecord, payload.eventId)
+    return normalizeConfig(configRecord, payload.competitionId)
   }
 
-  const loadOperationalConfig = async ({ eventId, requireEnabled = true, requireOwner = false } = {}) => {
-    const record = await loadConfigRecord(eventId)
-    const safeConfig = normalizeConfig(record, eventId)
+  const loadOperationalConfig = async ({ competitionId, requireEnabled = true, requireOwner = false } = {}) => {
+    const record = await loadConfigRecord(competitionId)
+    const safeConfig = normalizeConfig(record, competitionId)
     const value = record?.value || {}
 
     if (requireEnabled && !safeConfig.enabled) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['GitHub integration is disabled for this event'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['GitHub integration is disabled for this competition'])
     }
 
     if (!safeConfig.organizationName) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['GitHub organization name is not configured for this event'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['GitHub organization name is not configured for this competition'])
     }
 
     if (requireOwner && !safeConfig.ownerUsername) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['GitHub owner username is not configured for this event'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['GitHub owner username is not configured for this competition'])
     }
 
     const encryptedToken = value.tokenEncrypted
     if (!encryptedToken) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['GitHub token is not configured for this event'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['GitHub token is not configured for this competition'])
     }
 
     let token
@@ -230,10 +230,10 @@ export const createGithubService = ({
     }
   }
 
-  const getTokenForN8nDispatch = async ({ eventId } = {}) => {
-    if (eventId) {
+  const getTokenForN8nDispatch = async ({ competitionId } = {}) => {
+    if (competitionId) {
       try {
-        const config = await loadOperationalConfig({ eventId })
+        const config = await loadOperationalConfig({ competitionId })
         if (config.token) return config.token
       } catch (error) {
         if (!env.github.token) throw error
@@ -364,9 +364,9 @@ export const createGithubService = ({
     }
   }
 
-  const updateInternalRepository = async ({ eventId, organizationName, repoName, updates }) => {
-    const linkedRepository = await repository.findRepositoryByEventAndRepoName({
-      eventId,
+  const updateInternalRepository = async ({ competitionId, organizationName, repoName, updates }) => {
+    const linkedRepository = await repository.findRepositoryByCompetitionAndRepoName({
+      competitionId,
       repoName,
       githubOwner: organizationName
     })
@@ -375,14 +375,14 @@ export const createGithubService = ({
     return await repository.updateRepositoryById(linkedRepository._id, updates)
   }
 
-  const registerRepositoryWebhook = async ({ eventId, repoName }, actor = {}) => {
-    const config = await loadOperationalConfig({ eventId })
+  const registerRepositoryWebhook = async ({ competitionId, repoName }, actor = {}) => {
+    const config = await loadOperationalConfig({ competitionId })
     const callbackUrl = buildWebhookCallbackUrl()
 
     if (!callbackUrl) {
       const errorMessage = 'Webhook callback URL is not configured'
       await updateInternalRepository({
-        eventId,
+        competitionId,
         organizationName: config.organizationName,
         repoName,
         updates: {
@@ -397,7 +397,7 @@ export const createGithubService = ({
     if (!env.github.webhookSecret) {
       const errorMessage = 'GITHUB_WEBHOOK_SECRET is not configured'
       await updateInternalRepository({
-        eventId,
+        competitionId,
         organizationName: config.organizationName,
         repoName,
         updates: {
@@ -412,7 +412,7 @@ export const createGithubService = ({
     const body = {
       name: 'web',
       active: true,
-      events: env.github.webhookEvents,
+      competitions: env.github.webhookCompetitions,
       config: {
         url: callbackUrl,
         content_type: 'json',
@@ -429,7 +429,7 @@ export const createGithubService = ({
     })
 
     await updateInternalRepository({
-      eventId,
+      competitionId,
       organizationName: config.organizationName,
       repoName,
       updates: {
@@ -442,13 +442,13 @@ export const createGithubService = ({
     await audit({
       actor,
       action: 'GITHUB_WEBHOOK_REGISTER',
-      resourceId: eventId,
+      resourceId: competitionId,
       metadata: {
-        eventId,
+        competitionId,
         organizationName: config.organizationName,
         repoName,
         callbackUrl,
-        events: env.github.webhookEvents,
+        competitions: env.github.webhookCompetitions,
         status,
         hookId: data?.id || null
       }
@@ -457,14 +457,14 @@ export const createGithubService = ({
     return {
       repoName,
       callbackUrl,
-      events: env.github.webhookEvents,
+      competitions: env.github.webhookCompetitions,
       hookId: data?.id || null,
       active: data?.active !== false
     }
   }
 
-  const testConnection = async ({ eventId }, actor = {}) => {
-    const config = await loadOperationalConfig({ eventId, requireEnabled: false })
+  const testConnection = async ({ competitionId }, actor = {}) => {
+    const config = await loadOperationalConfig({ competitionId, requireEnabled: false })
     const { data, status } = await requestGithub({
       method: 'GET',
       path: `/orgs/${encodeURIComponent(config.organizationName)}`,
@@ -474,9 +474,9 @@ export const createGithubService = ({
     await audit({
       actor,
       action: 'GITHUB_CONFIG_TEST',
-      resourceId: eventId,
+      resourceId: competitionId,
       metadata: {
-        eventId,
+        competitionId,
         organizationName: config.organizationName,
         status
       }
@@ -485,7 +485,7 @@ export const createGithubService = ({
     return {
       organizationName: data?.login || config.organizationName,
       ownerUsername: config.ownerUsername,
-      eventId,
+      competitionId,
       enabled: config.enabled,
       accessible: true,
       htmlUrl: data?.html_url,
@@ -494,14 +494,14 @@ export const createGithubService = ({
   }
 
   const createRepository = async (payload = {}, actor = {}) => {
-    const config = await loadOperationalConfig({ eventId: payload.eventId })
+    const config = await loadOperationalConfig({ competitionId: payload.competitionId })
     if (payload.teamId && repository.findTeamById) {
       const team = await repository.findTeamById(payload.teamId)
       if (!team) {
         throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
       }
-      if (getIdString(team.eventId) !== getIdString(payload.eventId)) {
-        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified event'])
+      if (getIdString(team.competitionId) !== getIdString(payload.competitionId)) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified competition'])
       }
       if (team.status && !REPOSITORY_ELIGIBLE_TEAM_STATUSES.includes(team.status)) {
         const reason = payload.overrideReason?.trim()
@@ -527,7 +527,7 @@ export const createGithubService = ({
     let linkedRepository = null
     if (payload.teamId) {
       linkedRepository = await repository.createRepositoryRecord({
-        eventId: payload.eventId,
+        competitionId: payload.competitionId,
         teamId: payload.teamId,
         roundId: payload.roundId,
         githubOwner: config.organizationName,
@@ -551,7 +551,7 @@ export const createGithubService = ({
           for (const username of githubUsernames) {
             try {
               await assignCollaborator({
-                eventId: payload.eventId,
+                competitionId: payload.competitionId,
                 repoName: data?.name || payload.repoName,
                 username,
                 permission: 'push'
@@ -576,7 +576,7 @@ export const createGithubService = ({
     let webhookRegistration = null
     try {
       webhookRegistration = await registerRepositoryWebhook({
-        eventId: payload.eventId,
+        competitionId: payload.competitionId,
         repoName: data?.name || payload.repoName
       }, actor)
     } catch (error) {
@@ -589,9 +589,9 @@ export const createGithubService = ({
     await audit({
       actor,
       action: 'GITHUB_REPOSITORY_CREATE',
-      resourceId: payload.eventId,
+      resourceId: payload.competitionId,
       metadata: {
-        eventId: payload.eventId,
+        competitionId: payload.competitionId,
         organizationName: config.organizationName,
         repoName: data?.name || payload.repoName,
         private: requestBody.private,
@@ -611,8 +611,8 @@ export const createGithubService = ({
     }
   }
 
-  const assignCollaborator = async ({ eventId, repoName, username, permission }, actor = {}) => {
-    const config = await loadOperationalConfig({ eventId })
+  const assignCollaborator = async ({ competitionId, repoName, username, permission }, actor = {}) => {
+    const config = await loadOperationalConfig({ competitionId })
     const { status } = await requestGithub({
       method: 'PUT',
       path: `/repos/${encodeURIComponent(config.organizationName)}/${encodeURIComponent(repoName)}/collaborators/${encodeURIComponent(username)}`,
@@ -623,9 +623,9 @@ export const createGithubService = ({
     await audit({
       actor,
       action: 'GITHUB_COLLABORATOR_ASSIGN',
-      resourceId: eventId,
+      resourceId: competitionId,
       metadata: {
-        eventId,
+        competitionId,
         organizationName: config.organizationName,
         repoName,
         username,
@@ -635,7 +635,7 @@ export const createGithubService = ({
     })
 
     await updateInternalRepository({
-      eventId,
+      competitionId,
       organizationName: config.organizationName,
       repoName,
       updates: {
@@ -651,7 +651,7 @@ export const createGithubService = ({
       })
       if (userObj) {
         await mongoose.model('Participant').findOneAndUpdate(
-          { eventId, userId: userObj._id },
+          { competitionId, userId: userObj._id },
           { $set: { githubAccessStatus: 'GRANTED' } }
         )
       }
@@ -670,8 +670,8 @@ export const createGithubService = ({
     }
   }
 
-  const revokeCollaborator = async ({ eventId, repoName, username }, actor = {}) => {
-    const config = await loadOperationalConfig({ eventId })
+  const revokeCollaborator = async ({ competitionId, repoName, username }, actor = {}) => {
+    const config = await loadOperationalConfig({ competitionId })
     await requestGithub({
       method: 'DELETE',
       path: `/repos/${encodeURIComponent(config.organizationName)}/${encodeURIComponent(repoName)}/collaborators/${encodeURIComponent(username)}`,
@@ -679,7 +679,7 @@ export const createGithubService = ({
     })
 
     await updateInternalRepository({
-      eventId,
+      competitionId,
       organizationName: config.organizationName,
       repoName,
       updates: {
@@ -694,7 +694,7 @@ export const createGithubService = ({
       })
       if (userObj) {
         await mongoose.model('Participant').findOneAndUpdate(
-          { eventId, userId: userObj._id },
+          { competitionId, userId: userObj._id },
           { $set: { githubAccessStatus: 'REVOKED' } }
         )
       }
@@ -708,9 +708,9 @@ export const createGithubService = ({
     await audit({
       actor,
       action: 'GITHUB_COLLABORATOR_REVOKE',
-      resourceId: eventId,
+      resourceId: competitionId,
       metadata: {
-        eventId,
+        competitionId,
         organizationName: config.organizationName,
         repoName,
         username
@@ -724,8 +724,8 @@ export const createGithubService = ({
     }
   }
 
-  const inviteOrganizationMember = async ({ eventId, email, role }, actor = {}) => {
-    const config = await loadOperationalConfig({ eventId })
+  const inviteOrganizationMember = async ({ competitionId, email, role }, actor = {}) => {
+    const config = await loadOperationalConfig({ competitionId })
     const { data, status } = await requestGithub({
       method: 'POST',
       path: `/orgs/${encodeURIComponent(config.organizationName)}/invitations`,
@@ -736,9 +736,9 @@ export const createGithubService = ({
     await audit({
       actor,
       action: 'GITHUB_ORG_MEMBER_INVITE',
-      resourceId: eventId,
+      resourceId: competitionId,
       metadata: {
-        eventId,
+        competitionId,
         organizationName: config.organizationName,
         email,
         role,
@@ -775,12 +775,12 @@ export const createGithubService = ({
     return members
   }
 
-  const revokeMembers = async ({ eventId, confirmationText }, actor = {}) => {
+  const revokeMembers = async ({ competitionId, confirmationText }, actor = {}) => {
     if (confirmationText !== 'REVOKE MEMBERS') {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Confirmation text must be REVOKE MEMBERS'])
     }
 
-    const config = await loadOperationalConfig({ eventId, requireOwner: true })
+    const config = await loadOperationalConfig({ competitionId, requireOwner: true })
     const members = await listOrganizationMembers({
       organizationName: config.organizationName,
       token: config.token
@@ -825,9 +825,9 @@ export const createGithubService = ({
     await audit({
       actor,
       action: 'GITHUB_ORG_MEMBERS_REVOKE',
-      resourceId: eventId,
+      resourceId: competitionId,
       metadata: {
-        eventId,
+        competitionId,
         organizationName: config.organizationName,
         removed,
         skipped,
@@ -839,9 +839,9 @@ export const createGithubService = ({
   }
 
   const bulkCreateRepositories = async (payload = {}, actor = {}) => {
-    await loadOperationalConfig({ eventId: payload.eventId })
-    const teams = await repository.findConfirmedTeamsByEvent(payload.eventId)
-    const existingRepos = await repository.findRepositoriesByEvent(payload.eventId)
+    await loadOperationalConfig({ competitionId: payload.competitionId })
+    const teams = await repository.findConfirmedTeamsByCompetition(payload.competitionId)
+    const existingRepos = await repository.findRepositoriesByCompetition(payload.competitionId)
     const existingTeamIds = new Set(existingRepos.map((r) => r.teamId.toString()))
 
     const teamsToCreate = teams.filter((team) => !existingTeamIds.has(team._id.toString()))
@@ -863,7 +863,7 @@ export const createGithubService = ({
 
       try {
         const repoResult = await createRepository({
-          eventId: payload.eventId,
+          competitionId: payload.competitionId,
           teamId: team._id.toString(),
           roundId: payload.roundId === 'none' ? null : payload.roundId,
           repoName,
@@ -890,9 +890,9 @@ export const createGithubService = ({
     await audit({
       actor,
       action: 'GITHUB_REPOSITORIES_BULK_CREATE',
-      resourceId: payload.eventId,
+      resourceId: payload.competitionId,
       metadata: {
-        eventId: payload.eventId,
+        competitionId: payload.competitionId,
         roundId: payload.roundId,
         totalTeamsChecked: teams.length,
         totalReposCreated: success.length,
@@ -910,8 +910,8 @@ export const createGithubService = ({
   }
 
   const bulkGrantAccess = async (payload = {}, actor = {}) => {
-    await loadOperationalConfig({ eventId: payload.eventId })
-    const repos = await repository.findRepositoriesByEvent(payload.eventId)
+    await loadOperationalConfig({ competitionId: payload.competitionId })
+    const repos = await repository.findRepositoriesByCompetition(payload.competitionId)
 
     const success = []
     const failed = []
@@ -934,7 +934,7 @@ export const createGithubService = ({
         for (const username of usernames) {
           try {
             await assignCollaborator({
-              eventId: payload.eventId,
+              competitionId: payload.competitionId,
               repoName,
               username,
               permission: 'push'
@@ -952,9 +952,9 @@ export const createGithubService = ({
     await audit({
       actor,
       action: 'GITHUB_COLLABORATORS_BULK_GRANT',
-      resourceId: payload.eventId,
+      resourceId: payload.competitionId,
       metadata: {
-        eventId: payload.eventId,
+        competitionId: payload.competitionId,
         successCount: success.length,
         failedCount: failed.length
       }
@@ -964,8 +964,8 @@ export const createGithubService = ({
   }
 
   const bulkRevokeAccess = async (payload = {}, actor = {}) => {
-    await loadOperationalConfig({ eventId: payload.eventId })
-    const repos = await repository.findRepositoriesByEvent(payload.eventId)
+    await loadOperationalConfig({ competitionId: payload.competitionId })
+    const repos = await repository.findRepositoriesByCompetition(payload.competitionId)
 
     const success = []
     const failed = []
@@ -979,7 +979,7 @@ export const createGithubService = ({
         for (const username of usernames) {
           try {
             await revokeCollaborator({
-              eventId: payload.eventId,
+              competitionId: payload.competitionId,
               repoName,
               username
             }, actor)
@@ -996,9 +996,9 @@ export const createGithubService = ({
     await audit({
       actor,
       action: 'GITHUB_COLLABORATORS_BULK_REVOKE',
-      resourceId: payload.eventId,
+      resourceId: payload.competitionId,
       metadata: {
-        eventId: payload.eventId,
+        competitionId: payload.competitionId,
         successCount: success.length,
         failedCount: failed.length
       }

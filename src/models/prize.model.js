@@ -4,7 +4,7 @@ const { Schema } = mongoose
 
 const prizeSchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true },
     title: { type: String, required: true, trim: true },
     description: { type: String },
     prizeType: {
@@ -21,7 +21,7 @@ const prizeSchema = new Schema(
   { timestamps: true }
 )
 
-prizeSchema.index({ eventId: 1 })
+prizeSchema.index({ competitionId: 1 })
 
 prizeSchema.pre('validate', function validatePrizeTarget(next) {
   if (this.prizeType === 'TEAM' && !this.teamId) {

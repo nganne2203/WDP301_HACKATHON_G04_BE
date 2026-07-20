@@ -14,7 +14,7 @@ router.use(authorizationMiddleware)
 
 router.get(
   '/',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(FINALIST_VALIDATION.listFinalists),
   FINALIST_CONTROLLER.listFinalists
 )

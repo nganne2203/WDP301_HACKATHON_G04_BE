@@ -148,12 +148,12 @@ export const createGithubWebhookService = ({
 
     const jobData = {
       jobType: JOB_TYPES.PROCESS_GITHUB_PUSH_EVENT,
-      deliveryEventId: delivery._id?.toString?.() || delivery.id,
+      deliveryCompetitionId: delivery._id?.toString?.() || delivery.id,
       deliveryId,
       eventType,
       repositoryId: linkedRepository?._id?.toString?.() || null,
       repositoryFullName,
-      eventId: linkedRepository?.eventId?.toString?.() || null,
+      competitionId: linkedRepository?.competitionId?.toString?.() || null,
       teamId: linkedRepository?.teamId?.toString?.() || null,
       roundId: linkedRepository?.roundId?.toString?.() || null,
       branch: parseBranch(payload.ref),
@@ -162,7 +162,7 @@ export const createGithubWebhookService = ({
       receivedAt: delivery.receivedAt
     }
 
-    await queueService.enqueueGithubPushEvent(jobData)
+    await queueService.enqueueGithubPushCompetition(jobData)
 
     await repository.updateDeliveryById(delivery._id, {
       status: 'QUEUED'

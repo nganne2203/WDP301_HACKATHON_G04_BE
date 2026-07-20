@@ -10,7 +10,7 @@ const scorePopulate = [{
 }]
 
 const scoreSheetPopulate = [
-  { path: 'eventId', select: 'title semester season year status competitionConfig' },
+  { path: 'competitionId', select: 'title semester season year status competitionConfig' },
   { path: 'roundId', select: 'name roundType status tieBreakRule rubricId' },
   { path: 'boardId', select: 'name boardNumber teamIds judgeIds status' },
   { path: 'teamId', select: 'name chapterName projectName boardNumber status' },

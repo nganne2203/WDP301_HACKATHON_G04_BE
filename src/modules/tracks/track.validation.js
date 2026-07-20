@@ -12,7 +12,7 @@ const listTracks = {
   query: Joi.object({
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10),
-    eventId: objectId,
+    competitionId: objectId,
     status: trackStatus,
     search: Joi.string().trim().max(100)
   })
@@ -20,7 +20,7 @@ const listTracks = {
 
 const createTrack = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     code: Joi.string().trim().uppercase().max(20),
     name: Joi.string().trim().min(2).max(120).required(),
     description: Joi.string().trim().max(1000).allow('', null),
@@ -36,7 +36,7 @@ const createTrack = {
 const updateTrack = {
   params: idParam,
   body: Joi.object({
-    eventId: objectId,
+    competitionId: objectId,
     code: Joi.string().trim().uppercase().max(20),
     name: Joi.string().trim().min(2).max(120),
     description: Joi.string().trim().max(1000).allow('', null),

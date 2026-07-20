@@ -70,7 +70,7 @@ test('handleWebhook accepts a valid push signature, persists delivery, and enque
   const { repository, deliveries, repositories } = createWebhookRepository()
   repositories.set('seal-org/team-alpha', {
     _id: '000000000000000000000111',
-    eventId: '000000000000000000000222',
+    competitionId: '000000000000000000000222',
     teamId: '000000000000000000000333',
     roundId: '000000000000000000000444',
     repositoryFullName: 'seal-org/team-alpha'
@@ -80,7 +80,7 @@ test('handleWebhook accepts a valid push signature, persists delivery, and enque
   const service = createGithubWebhookService({
     repository,
     queueService: {
-      enqueueGithubPushEvent: async (data) => {
+      enqueueGithubPushCompetition: async (data) => {
         jobs.push(data)
         return { id: data.deliveryId }
       }
@@ -118,7 +118,7 @@ test('handleWebhook links legacy repository records when repositoryFullName is a
         if (repositoryFullName !== 'seal-org/team-alpha') return null
         return {
           _id: '000000000000000000000111',
-          eventId: '000000000000000000000222',
+          competitionId: '000000000000000000000222',
           teamId: '000000000000000000000333',
           roundId: '000000000000000000000444',
           githubOwner: 'seal-org',
@@ -128,7 +128,7 @@ test('handleWebhook links legacy repository records when repositoryFullName is a
       updateRepositoryById: async () => null
     },
     queueService: {
-      enqueueGithubPushEvent: async (data) => {
+      enqueueGithubPushCompetition: async (data) => {
         jobs.push(data)
         return { id: data.deliveryId }
       }
@@ -159,7 +159,7 @@ test('handleWebhook rejects an invalid signature and persists a rejected deliver
   const service = createGithubWebhookService({
     repository,
     queueService: {
-      enqueueGithubPushEvent: async () => null
+      enqueueGithubPushCompetition: async () => null
     },
     webhookSecret: 'phase-5-secret'
   })
@@ -188,7 +188,7 @@ test('handleWebhook is idempotent for duplicate deliveryId', async () => {
   const service = createGithubWebhookService({
     repository,
     queueService: {
-      enqueueGithubPushEvent: async () => {
+      enqueueGithubPushCompetition: async () => {
         enqueueCount += 1
         return { id: 'delivery-dup' }
       }
@@ -220,13 +220,13 @@ test('handleWebhook is idempotent for duplicate deliveryId', async () => {
   assert.equal(enqueueCount, 1)
 })
 
-test('handleWebhook safely ignores non-push events', async () => {
+test('handleWebhook safely ignores non-push competitions', async () => {
   const { repository, deliveries } = createWebhookRepository()
   let enqueueCount = 0
   const service = createGithubWebhookService({
     repository,
     queueService: {
-      enqueueGithubPushEvent: async () => {
+      enqueueGithubPushCompetition: async () => {
         enqueueCount += 1
       }
     },
@@ -260,7 +260,7 @@ test('github webhook endpoint accepts a valid raw-body signature and returns 200
   const service = createGithubWebhookService({
     repository,
     queueService: {
-      enqueueGithubPushEvent: async (data) => {
+      enqueueGithubPushCompetition: async (data) => {
         jobs.push(data)
         return { id: data.deliveryId }
       }

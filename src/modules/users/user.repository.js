@@ -1,7 +1,7 @@
 import User from '#models/user.model.js'
 import Role from '#models/role.model.js'
 import Participant from '#models/participant.model.js'
-import '#models/event.model.js'
+import '#models/competition.model.js'
 import '#models/permission.model.js'
 
 const populateRoles = [
@@ -74,12 +74,12 @@ const findStartedJoinedParticipantByUserId = async (userId, now = new Date()) =>
     status: 'JOINED'
   })
     .populate({
-      path: 'eventId',
+      path: 'competitionId',
       match: { startDate: { $lte: now } },
       select: 'title startDate status'
     })
 
-  return participants.find((participant) => participant.eventId) || null
+  return participants.find((participant) => participant.competitionId) || null
 }
 
 const deleteById = async (id) => {

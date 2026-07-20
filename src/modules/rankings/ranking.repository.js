@@ -4,7 +4,7 @@ import RoundTeamPlacement from '#models/roundTeamPlacement.model.js'
 import ScoreSheet from '#models/scoreSheet.model.js'
 
 const rankingPopulate = [
-  { path: 'eventId', select: 'title semester season year status competitionConfig' },
+  { path: 'competitionId', select: 'title semester season year status competitionConfig' },
   { path: 'roundId', select: 'name roundType status tieBreakRule' },
   { path: 'trackId', select: 'code name status' },
   { path: 'teamId', select: 'name chapterName projectName boardNumber trackId status' },
@@ -47,9 +47,9 @@ const findRankingById = async (id) => {
   return await Ranking.findById(id).populate(rankingPopulate)
 }
 
-const findScoreSheetsForRanking = async ({ eventId, roundId }) => {
+const findScoreSheetsForRanking = async ({ competitionId, roundId }) => {
   return await ScoreSheet.find({
-    eventId,
+    competitionId,
     roundId,
     status: 'LOCKED'
   }).populate([
@@ -59,13 +59,13 @@ const findScoreSheetsForRanking = async ({ eventId, roundId }) => {
   ])
 }
 
-const findRoundTeamPlacements = async ({ eventId, roundId }) => {
-  return await RoundTeamPlacement.find({ eventId, roundId })
+const findRoundTeamPlacements = async ({ competitionId, roundId }) => {
+  return await RoundTeamPlacement.find({ competitionId, roundId })
 }
 
-const findBoardsForRanking = async ({ eventId, roundId }) => {
+const findBoardsForRanking = async ({ competitionId, roundId }) => {
   return await JudgingBoard.find({
-    eventId,
+    competitionId,
     roundId,
     teamIds: { $exists: true, $ne: [] },
     judgeIds: { $exists: true, $ne: [] }

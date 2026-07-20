@@ -4,7 +4,7 @@ import ChangedCodeContext from '#models/changedCodeContext.model.js'
 import Commit from '#models/commit.model.js'
 import CommitDiff from '#models/commitDiff.model.js'
 import Criterion from '#models/criterion.model.js'
-import Event from '#models/event.model.js'
+import Competition from '#models/competition.model.js'
 import ImpactDecision from '#models/impactDecision.model.js'
 import Repository from '#models/repository.model.js'
 import Round from '#models/round.model.js'
@@ -16,7 +16,7 @@ import Team from '#models/team.model.js'
 import TechnicalFinding from '#models/technicalFinding.model.js'
 
 const aiReviewPopulate = [
-  { path: 'eventId', select: 'title semester season year status competitionConfig' },
+  { path: 'competitionId', select: 'title semester season year status competitionConfig' },
   { path: 'teamId', select: 'name chapterName projectName status boardNumber placementSlot qualificationStatus' },
   { path: 'roundId', select: 'name roundType status rubricId promotionRule tieBreakRule' },
   { path: 'repositoryId', select: 'repositoryFullName githubOwner githubRepo defaultBranch latestCommitSha lastProcessedCommitSha' },
@@ -27,7 +27,7 @@ const aiReviewPopulate = [
 
 const findRepositoryById = async (id) => {
   return await Repository.findById(id)
-    .populate({ path: 'eventId', select: 'title semester season year status competitionConfig' })
+    .populate({ path: 'competitionId', select: 'title semester season year status competitionConfig' })
     .populate({ path: 'teamId', select: 'name chapterName projectName status boardNumber placementSlot qualificationStatus' })
     .populate({ path: 'roundId', select: 'name roundType status rubricId promotionRule tieBreakRule assignedJudgeIds assignedTeamIds' })
 }
@@ -38,13 +38,13 @@ const findTeamById = async (id) => {
 
 const findRepositoriesByTeamId = async (teamId) => {
   return await Repository.find({ teamId })
-    .populate({ path: 'eventId', select: 'title semester season year status competitionConfig' })
+    .populate({ path: 'competitionId', select: 'title semester season year status competitionConfig' })
     .populate({ path: 'teamId', select: 'name chapterName projectName status boardNumber placementSlot qualificationStatus' })
     .populate({ path: 'roundId', select: 'name roundType status rubricId promotionRule tieBreakRule' })
 }
 
-const findEventById = async (id) => {
-  return await Event.findById(id)
+const findCompetitionById = async (id) => {
+  return await Competition.findById(id)
 }
 
 const findRoundById = async (id) => {
@@ -191,7 +191,7 @@ export const AI_REVIEW_REPOSITORY = {
   findRepositoryById,
   findTeamById,
   findRepositoriesByTeamId,
-  findEventById,
+  findCompetitionById,
   findRoundById,
   findRubricById,
   findCriteriaByRubricId,

@@ -4,7 +4,7 @@ const { Schema } = mongoose
 
 const scoreSheetSchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true },
     roundId: { type: Schema.Types.ObjectId, ref: 'Round', required: true },
     boardId: { type: Schema.Types.ObjectId, ref: 'JudgingBoard' },
     teamId: { type: Schema.Types.ObjectId, ref: 'Team', required: true },
@@ -29,7 +29,7 @@ const scoreSheetSchema = new Schema(
 
 scoreSheetSchema.index({ roundId: 1, teamId: 1, judgeId: 1 }, { unique: true })
 scoreSheetSchema.index({ submissionId: 1, judgeId: 1 })
-scoreSheetSchema.index({ eventId: 1, roundId: 1 })
+scoreSheetSchema.index({ competitionId: 1, roundId: 1 })
 scoreSheetSchema.index({ status: 1 })
 
 const ScoreSheet = mongoose.model('ScoreSheet', scoreSheetSchema)

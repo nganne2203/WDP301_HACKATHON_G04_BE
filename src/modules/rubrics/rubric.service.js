@@ -5,7 +5,7 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
-import Event from '#models/event.model.js'
+import Competition from '#models/competition.model.js'
 import Round from '#models/round.model.js'
 import ScoreSheet from '#models/scoreSheet.model.js'
 import {
@@ -17,7 +17,7 @@ import {
 } from '#utils/scoringScale.js'
 
 const RUBRIC_FIELDS = [
-  'eventId',
+  'competitionId',
   'roundId',
   'title',
   'description',
@@ -65,13 +65,13 @@ const normalizeRubric = async (rubric, repository) => {
 
   return {
     id: plainRubric._id?.toString() || plainRubric.id,
-    eventId: plainRubric.eventId?._id?.toString?.() || plainRubric.eventId?.toString?.() || plainRubric.eventId,
+    competitionId: plainRubric.competitionId?._id?.toString?.() || plainRubric.competitionId?.toString?.() || plainRubric.competitionId,
     roundId: plainRubric.roundId?._id?.toString?.() || plainRubric.roundId?.toString?.() || plainRubric.roundId || null,
-    event: plainRubric.eventId && typeof plainRubric.eventId === 'object'
+    competition: plainRubric.competitionId && typeof plainRubric.competitionId === 'object'
       ? {
-        id: plainRubric.eventId._id?.toString() || plainRubric.eventId.id,
-        title: plainRubric.eventId.title,
-        status: plainRubric.eventId.status
+        id: plainRubric.competitionId._id?.toString() || plainRubric.competitionId.id,
+        title: plainRubric.competitionId.title,
+        status: plainRubric.competitionId.status
       }
       : null,
     round: plainRubric.roundId && typeof plainRubric.roundId === 'object'
@@ -96,7 +96,7 @@ const normalizeRubric = async (rubric, repository) => {
 
 const buildRubricFilter = (query = {}) => {
   const filter = {}
-  if (query.eventId) filter.eventId = query.eventId
+  if (query.competitionId) filter.competitionId = query.competitionId
   if (query.roundId) filter.roundId = query.roundId
   if (query.status) filter.status = query.status
   return filter
@@ -110,7 +110,7 @@ const ensureObjectId = (id, fieldName = 'id') => {
 
 export const createRubricService = ({
   repository = RUBRIC_REPOSITORY,
-  eventModel = Event,
+  competitionModel = Competition,
   roundModel = Round,
   scoreSheetModel = ScoreSheet
 } = {}) => {
@@ -128,21 +128,21 @@ export const createRubricService = ({
     return criterion
   }
 
-  const ensureContext = async ({ eventId, roundId = null }) => {
-    ensureObjectId(eventId, 'event id')
-    const event = await eventModel.findById(eventId)
-    if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+  const ensureContext = async ({ competitionId, roundId = null }) => {
+    ensureObjectId(competitionId, 'competition id')
+    const competition = await competitionModel.findById(competitionId)
+    if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
 
-    if (!roundId) return { event, round: null }
+    if (!roundId) return { competition, round: null }
 
     ensureObjectId(roundId, 'round id')
     const round = await roundModel.findById(roundId)
     if (!round) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Round not found'])
-    if (round.eventId?.toString() !== eventId.toString()) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round does not belong to the specified event'])
+    if (round.competitionId?.toString() !== competitionId.toString()) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round does not belong to the specified competition'])
     }
 
-    return { event, round }
+    return { competition, round }
   }
 
   const countScoreSheetsForRubric = async (rubricId) => {
@@ -226,7 +226,7 @@ export const createRubricService = ({
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric must be created as DRAFT and activated after criteria weights match the scale'])
     }
     await ensureContext({
-      eventId: safePayload.eventId,
+      competitionId: safePayload.competitionId,
       roundId: safePayload.roundId
     })
 

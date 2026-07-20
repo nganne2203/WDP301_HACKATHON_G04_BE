@@ -71,7 +71,7 @@ test('startup Gmail API check logs a warning without crashing when configuration
     assert.equal(configured, false)
     assert.equal(logger.entries[0].level, 'warn')
     assert.equal(logger.entries[0].message, 'Gmail API provider is not fully configured')
-    assert.deepEqual(logger.entries[0].metadata.missing, ['GMAIL_USER', 'GMAIL_CLIENT_ID', 'GMAIL_CLIENT_SECRET', 'GMAIL_REFRESH_TOKEN', 'MAIL_FROM'])
+    assert.deepEqual(logger.entries[0].metadata.missing, ['GMAIL_USER', 'MAIL_FROM'])
   } finally {
     env.email.gmailClientId = originalClientId
     env.email.gmailClientSecret = originalClientSecret

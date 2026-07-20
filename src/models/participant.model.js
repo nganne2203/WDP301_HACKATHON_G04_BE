@@ -4,7 +4,7 @@ const { Schema } = mongoose
 
 const participantSchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true },
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     teamId: { type: Schema.Types.ObjectId, ref: 'Team' },
     chapterName: { type: String, trim: true },
@@ -46,9 +46,9 @@ const participantSchema = new Schema(
   { timestamps: true }
 )
 
-participantSchema.index({ eventId: 1, userId: 1 }, { unique: true })
-participantSchema.index({ eventId: 1, teamId: 1 })
-participantSchema.index({ eventId: 1, chapterName: 1 })
+participantSchema.index({ competitionId: 1, userId: 1 }, { unique: true })
+participantSchema.index({ competitionId: 1, teamId: 1 })
+participantSchema.index({ competitionId: 1, chapterName: 1 })
 participantSchema.index({ checkInStatus: 1 })
 participantSchema.index({ githubAccessStatus: 1 })
 participantSchema.index(

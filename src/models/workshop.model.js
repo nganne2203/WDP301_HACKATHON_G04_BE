@@ -4,8 +4,8 @@ const { Schema } = mongoose
 
 const workshopSchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
-    timelineEventId: { type: Schema.Types.ObjectId, ref: 'TimelineEvent' },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true },
+    timelineActivityId: { type: Schema.Types.ObjectId, ref: 'TimelineActivity' },
     title: { type: String, required: true, trim: true },
     description: { type: String },
     presenterId: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -19,7 +19,7 @@ const workshopSchema = new Schema(
     googleMeet: {
       enabled: { type: Boolean, default: false },
       meetLink: { type: String },
-      calendarEventId: { type: String },
+      calendarCompetitionId: { type: String },
       htmlLink: { type: String },
       organizerUserId: { type: Schema.Types.ObjectId, ref: 'User' },
       organizerEmail: { type: String, trim: true, lowercase: true },
@@ -37,9 +37,9 @@ const workshopSchema = new Schema(
   { timestamps: true }
 )
 
-workshopSchema.index({ eventId: 1, startTime: 1 })
+workshopSchema.index({ competitionId: 1, startTime: 1 })
 workshopSchema.index({ presenterId: 1 })
-workshopSchema.index({ 'googleMeet.calendarEventId': 1 })
+workshopSchema.index({ 'googleMeet.calendarCompetitionId': 1 })
 workshopSchema.index({ status: 1 })
 
 const Workshop = mongoose.model('Workshop', workshopSchema)

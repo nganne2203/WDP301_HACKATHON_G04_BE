@@ -5,7 +5,7 @@ import ImpactDecision from '#models/impactDecision.model.js'
 import StaticAnalysisResult from '#models/staticAnalysisResult.model.js'
 
 const repositoryPopulate = [
-  { path: 'eventId', select: 'title semester season year status competitionConfig' },
+  { path: 'competitionId', select: 'title semester season year status competitionConfig' },
   { path: 'teamId', select: 'name chapterName projectName status trackId boardNumber placementSlot' },
   { path: 'roundId', select: 'name roundType status trackId' }
 ]

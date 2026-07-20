@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
 
-import Event from '#models/event.model.js'
+import Competition from '#models/competition.model.js'
 import Participant from '#models/participant.model.js'
 import Role from '#models/role.model.js'
 import Team from '#models/team.model.js'
@@ -23,7 +23,7 @@ const populateRoles = [
 const ACTIVE_TEAM_STATUSES = ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED']
 
 const teamPopulate = [
-  { path: 'eventId', select: 'title status registrationStart registrationEnd registrationClosedAt registrationCloseReason minTeamMembers maxTeamMembers maxTeams totalFinalistSlots competitionConfig' },
+  { path: 'competitionId', select: 'title status registrationStart registrationEnd registrationClosedAt registrationCloseReason minTeamMembers maxTeamMembers maxTeams totalFinalistSlots competitionConfig' },
   { path: 'trackId', select: 'code name type maxTeams status' },
   { path: 'leaderId', select: 'email fullName githubUsername status roles', populate: populateRoles[0] },
   { path: 'memberIds', select: 'email fullName githubUsername status roles', populate: populateRoles[0] },
@@ -46,13 +46,13 @@ const createSession = async () => {
   return await mongoose.startSession()
 }
 
-const findEventById = async (id, { session } = {}) => {
-  return await withSession(Event.findById(id), session)
+const findCompetitionById = async (id, { session } = {}) => {
+  return await withSession(Competition.findById(id), session)
 }
 
-const updateEventById = async (id, data, { session } = {}) => {
+const updateCompetitionById = async (id, data, { session } = {}) => {
   return await withSession(
-    Event.findByIdAndUpdate(id, data, {
+    Competition.findByIdAndUpdate(id, data, {
       new: true,
       runValidators: true
     }),
@@ -60,9 +60,9 @@ const updateEventById = async (id, data, { session } = {}) => {
   )
 }
 
-const findTracksByEvent = async (eventId, { session } = {}) => {
+const findTracksByCompetition = async (competitionId, { session } = {}) => {
   return await withSession(
-    Track.find({ eventId }).sort({ code: 1, name: 1, createdAt: 1 }),
+    Track.find({ competitionId }).sort({ code: 1, name: 1, createdAt: 1 }),
     session
   )
 }
@@ -90,14 +90,14 @@ const findTeamById = async (id, { session } = {}) => {
   return await withSession(Team.findById(id).populate(teamPopulate), session)
 }
 
-const findTeamByEventAndName = async ({ eventId, name }, { session } = {}) => {
+const findTeamByCompetitionAndName = async ({ competitionId, name }, { session } = {}) => {
   const trimmedName = String(name || '').trim()
   const normalizedName = normalizeTeamName(trimmedName)
-  if (!eventId || !normalizedName) return null
+  if (!competitionId || !normalizedName) return null
 
   return await withSession(
     Team.findOne({
-      eventId,
+      competitionId,
       status: { $in: ACTIVE_TEAM_STATUSES },
       $or: [
         { normalizedName },
@@ -108,17 +108,17 @@ const findTeamByEventAndName = async ({ eventId, name }, { session } = {}) => {
   )
 }
 
-const findTeamByLeaderAndEvent = async ({ eventId, leaderId }, { session } = {}) => {
+const findTeamByLeaderAndCompetition = async ({ competitionId, leaderId }, { session } = {}) => {
   return await withSession(
-    Team.findOne({ eventId, leaderId, status: { $in: ACTIVE_TEAM_STATUSES } }).populate(teamPopulate),
+    Team.findOne({ competitionId, leaderId, status: { $in: ACTIVE_TEAM_STATUSES } }).populate(teamPopulate),
     session
   )
 }
 
-const findTeamForUserInEvent = async ({ eventId, userId }, { session } = {}) => {
+const findTeamForUserInCompetition = async ({ competitionId, userId }, { session } = {}) => {
   const team = await withSession(
     Team.findOne({
-      eventId,
+      competitionId,
       status: { $in: ACTIVE_TEAM_STATUSES },
       $or: [
         { leaderId: userId },
@@ -132,7 +132,7 @@ const findTeamForUserInEvent = async ({ eventId, userId }, { session } = {}) => 
 
   const participant = await withSession(
     Participant.findOne({
-      eventId,
+      competitionId,
       userId,
       status: { $in: ['INVITED', 'JOINED'] }
     }),
@@ -171,14 +171,14 @@ const findParticipantsByTeam = async (teamId, { session } = {}) => {
   )
 }
 
-const findParticipantByEventAndUser = async ({ eventId, userId }, { session } = {}) => {
-  return await withSession(Participant.findOne({ eventId, userId }), session)
+const findParticipantByCompetitionAndUser = async ({ competitionId, userId }, { session } = {}) => {
+  return await withSession(Participant.findOne({ competitionId, userId }), session)
 }
 
-const upsertParticipant = async ({ eventId, userId, data }, { session } = {}) => {
+const upsertParticipant = async ({ competitionId, userId, data }, { session } = {}) => {
   return await withSession(
     Participant.findOneAndUpdate(
-      { eventId, userId },
+      { competitionId, userId },
       { $set: data },
       { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true }
     ),
@@ -200,10 +200,10 @@ const findUsersByIds = async (ids = [], { session } = {}) => {
   )
 }
 
-const updateParticipantByEventAndUser = async ({ eventId, userId, data }, { session } = {}) => {
+const updateParticipantByCompetitionAndUser = async ({ competitionId, userId, data }, { session } = {}) => {
   return await withSession(
     Participant.findOneAndUpdate(
-      { eventId, userId },
+      { competitionId, userId },
       { $set: data },
       { new: true, runValidators: true }
     ),
@@ -283,22 +283,22 @@ const findInvitationsByTeam = async (teamId, { session } = {}) => {
   )
 }
 
-const findActiveTeamIds = async ({ eventId } = {}, { session } = {}) => {
+const findActiveTeamIds = async ({ competitionId } = {}, { session } = {}) => {
   const filter = { status: { $in: ACTIVE_TEAM_STATUSES } }
-  if (eventId) filter.eventId = eventId
+  if (competitionId) filter.competitionId = competitionId
 
   return await withSession(Team.find(filter).distinct('_id'), session)
 }
 
-const findBlockingInvitation = async ({ eventId, email, userId, excludeInvitationId }, { session } = {}) => {
+const findBlockingInvitation = async ({ competitionId, email, userId, excludeInvitationId }, { session } = {}) => {
   const or = [{ invitedEmail: String(email).trim().toLowerCase() }]
   if (userId) or.push({ invitedUserId: userId })
 
-  const activeTeamIds = await findActiveTeamIds({ eventId }, { session })
+  const activeTeamIds = await findActiveTeamIds({ competitionId }, { session })
   if (activeTeamIds.length === 0) return null
 
   const filter = {
-    eventId,
+    competitionId,
     teamId: { $in: activeTeamIds },
     status: { $in: ['PENDING', 'ACCEPTED'] },
     $or: or
@@ -362,22 +362,22 @@ const updateInvitations = async (filter, data, { session } = {}) => {
 
 export const TEAM_REPOSITORY = {
   createSession,
-  findEventById,
-  updateEventById,
-  findTracksByEvent,
+  findCompetitionById,
+  updateCompetitionById,
+  findTracksByCompetition,
   findTrackById,
   countTeams,
   findTeams,
   findTeamById,
-  findTeamByEventAndName,
-  findTeamByLeaderAndEvent,
-  findTeamForUserInEvent,
+  findTeamByCompetitionAndName,
+  findTeamByLeaderAndCompetition,
+  findTeamForUserInCompetition,
   createTeam,
   updateTeamById,
   findParticipantsByTeam,
-  findParticipantByEventAndUser,
+  findParticipantByCompetitionAndUser,
   upsertParticipant,
-  updateParticipantByEventAndUser,
+  updateParticipantByCompetitionAndUser,
   updateParticipants,
   findUserById,
   findUsersByIds,

@@ -7,8 +7,8 @@ import { WORKSHOP_SERVICE } from '../src/modules/workshops/workshop.service.js'
 
 const WORKSHOP_ID = '000000000000000000000101'
 const AUTHOR_ID = '000000000000000000000201'
-const EVENT_ID = '000000000000000000000501'
-const OTHER_EVENT_ID = '000000000000000000000502'
+const COMPETITION_ID = '000000000000000000000501'
+const OTHER_COMPETITION_ID = '000000000000000000000502'
 
 const patchRepository = (overrides) => {
   const originals = {}
@@ -24,19 +24,19 @@ const patchRepository = (overrides) => {
   }
 }
 
-test('listWorkshops scopes participant visibility to joined or open-registration events and escapes search regex', async () => {
+test('listWorkshops scopes participant visibility to joined or open-registration competitions and escapes search regex', async () => {
   let capturedFilter = null
   const restore = patchRepository({
-    findEventIdsForParticipant: async (userId) => {
+    findCompetitionIdsForParticipant: async (userId) => {
       assert.equal(userId, AUTHOR_ID)
-      return [EVENT_ID]
+      return [COMPETITION_ID]
     },
-    findOpenRegistrationEventIds: async () => [OTHER_EVENT_ID],
+    findOpenRegistrationCompetitionIds: async () => [OTHER_COMPETITION_ID],
     findWorkshops: async ({ filter }) => {
       capturedFilter = filter
       return [{
         _id: WORKSHOP_ID,
-        eventId: { _id: EVENT_ID, title: 'Joined Event', status: 'ONGOING' },
+        competitionId: { _id: COMPETITION_ID, title: 'Joined Competition', status: 'ONGOING' },
         title: 'Regex Safety',
         status: 'SCHEDULED',
         startTime: new Date('2026-07-01T08:00:00.000Z'),
@@ -52,7 +52,7 @@ test('listWorkshops scopes participant visibility to joined or open-registration
       { id: AUTHOR_ID, roles: ['PARTICIPANT'] }
     )
 
-    assert.deepEqual(capturedFilter.eventId.$in, [EVENT_ID, OTHER_EVENT_ID])
+    assert.deepEqual(capturedFilter.competitionId.$in, [COMPETITION_ID, OTHER_COMPETITION_ID])
     assert.equal(capturedFilter.$or[0].title.test('literal [ search'), true)
     assert.equal(result.workshops.length, 1)
   } finally {
@@ -64,7 +64,7 @@ test('getWorkshopById hides draft workshops from participants', async () => {
   const restore = patchRepository({
     findWorkshopById: async () => ({
       _id: WORKSHOP_ID,
-      eventId: { _id: EVENT_ID, title: 'Draft Event', status: 'DRAFT' },
+      competitionId: { _id: COMPETITION_ID, title: 'Draft Competition', status: 'DRAFT' },
       title: 'Private Workshop',
       status: 'SCHEDULED',
       startTime: new Date('2026-07-01T08:00:00.000Z'),
@@ -82,11 +82,11 @@ test('getWorkshopById hides draft workshops from participants', async () => {
   }
 })
 
-test('createQuestion rejects users who are not joined participants of the workshop event', async () => {
+test('createQuestion rejects users who are not joined participants of the workshop competition', async () => {
   const restore = patchRepository({
     findWorkshopById: async () => ({
       _id: WORKSHOP_ID,
-      eventId: { _id: EVENT_ID, title: 'Joined Event', status: 'ONGOING' },
+      competitionId: { _id: COMPETITION_ID, title: 'Joined Competition', status: 'ONGOING' },
       title: 'Testing Workshop',
       status: 'LIVE',
       startTime: new Date(Date.now() - 60 * 1000),
@@ -119,13 +119,13 @@ test('voteQuestion rejects votes after question window closes', async () => {
     }),
     findWorkshopById: async () => ({
       _id: WORKSHOP_ID,
-      eventId: { _id: EVENT_ID, title: 'Joined Event', status: 'ONGOING' },
+      competitionId: { _id: COMPETITION_ID, title: 'Joined Competition', status: 'ONGOING' },
       title: 'Testing Workshop',
       status: 'COMPLETED',
       startTime: new Date('2026-07-01T08:00:00.000Z'),
       endTime: new Date('2026-07-01T10:00:00.000Z')
     }),
-    findJoinedParticipant: async () => ({ _id: '000000000000000000000701', eventId: EVENT_ID, userId: AUTHOR_ID, status: 'JOINED' }),
+    findJoinedParticipant: async () => ({ _id: '000000000000000000000701', competitionId: COMPETITION_ID, userId: AUTHOR_ID, status: 'JOINED' }),
     voteQuestion: async () => {
       throw new Error('should not vote after workshop question window closes')
     }
@@ -141,10 +141,10 @@ test('voteQuestion rejects votes after question window closes', async () => {
   }
 })
 
-test('createWorkshop rejects schedules outside the event window and non-scheduled initial status', async () => {
+test('createWorkshop rejects schedules outside the competition window and non-scheduled initial status', async () => {
   const restore = patchRepository({
-    findEventById: async () => ({
-      _id: EVENT_ID,
+    findCompetitionById: async () => ({
+      _id: COMPETITION_ID,
       startDate: new Date('2026-07-01T00:00:00.000Z'),
       endDate: new Date('2026-07-02T00:00:00.000Z')
     }),
@@ -156,18 +156,18 @@ test('createWorkshop rejects schedules outside the event window and non-schedule
   try {
     await assert.rejects(
       () => WORKSHOP_SERVICE.createWorkshop({
-        eventId: EVENT_ID,
+        competitionId: COMPETITION_ID,
         title: 'Too early',
         startTime: '2026-06-30T23:00:00.000Z',
         endTime: '2026-07-01T01:00:00.000Z'
       }),
       error => error instanceof ApiError &&
-        error.errors.includes('Workshop startTime must be within the event date window')
+        error.errors.includes('Workshop startTime must be within the competition date window')
     )
 
     await assert.rejects(
       () => WORKSHOP_SERVICE.createWorkshop({
-        eventId: EVENT_ID,
+        competitionId: COMPETITION_ID,
         title: 'Already complete',
         startTime: '2026-07-01T08:00:00.000Z',
         endTime: '2026-07-01T09:00:00.000Z',
@@ -185,14 +185,14 @@ test('updateWorkshop enforces status transition order', async () => {
   const restore = patchRepository({
     findWorkshopById: async () => ({
       _id: WORKSHOP_ID,
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       title: 'Scheduled Workshop',
       status: 'SCHEDULED',
       startTime: new Date('2026-07-01T08:00:00.000Z'),
       endTime: new Date('2026-07-01T10:00:00.000Z')
     }),
-    findEventById: async () => ({
-      _id: EVENT_ID,
+    findCompetitionById: async () => ({
+      _id: COMPETITION_ID,
       startDate: new Date('2026-07-01T00:00:00.000Z'),
       endDate: new Date('2026-07-02T00:00:00.000Z')
     }),

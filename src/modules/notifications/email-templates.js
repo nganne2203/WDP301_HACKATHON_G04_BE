@@ -176,7 +176,7 @@ const eventInvitation = ({ fullName, eventTitle, message, registrationUrl }) => 
   subject: `Invitation to ${eventTitle || 'SEAL Hackathon'}`,
   fullName,
   heading: `You are invited to ${eventTitle || 'SEAL Hackathon'}`,
-  message: message || 'The organizing team has invited you to register for this hackathon event.',
+  message: message || 'The organizing team has invited you to register for this hackathon competition.',
   actionLabel: 'Register',
   actionUrl: registrationUrl
 })
@@ -285,7 +285,7 @@ const teamMemberDeclined = ({ fullName, eventTitle, teamName, declinedEmail }) =
 export const EMAIL_TEMPLATE_KEYS = {
   ACCOUNT_APPROVED: 'ACCOUNT_APPROVED',
   ACCOUNT_REJECTED: 'ACCOUNT_REJECTED',
-  EVENT_INVITATION: 'EVENT_INVITATION',
+  COMPETITION_INVITATION: 'COMPETITION_INVITATION',
   TEAM_INVITATION: 'TEAM_INVITATION',
   TEMPORARY_ACCOUNT: 'TEMPORARY_ACCOUNT',
   TEAM_CONFIRMATION_SUCCESS: 'TEAM_CONFIRMATION_SUCCESS',
@@ -298,7 +298,7 @@ export const EMAIL_TEMPLATE_KEYS = {
 const TEMPLATES = {
   [EMAIL_TEMPLATE_KEYS.ACCOUNT_APPROVED]: accountApproved,
   [EMAIL_TEMPLATE_KEYS.ACCOUNT_REJECTED]: accountRejected,
-  [EMAIL_TEMPLATE_KEYS.EVENT_INVITATION]: eventInvitation,
+  [EMAIL_TEMPLATE_KEYS.COMPETITION_INVITATION]: eventInvitation,
   [EMAIL_TEMPLATE_KEYS.TEAM_INVITATION]: teamInvitation,
   [EMAIL_TEMPLATE_KEYS.TEMPORARY_ACCOUNT]: temporaryAccount,
   [EMAIL_TEMPLATE_KEYS.TEAM_CONFIRMATION_SUCCESS]: teamConfirmationSuccess,

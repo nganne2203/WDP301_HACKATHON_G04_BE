@@ -160,12 +160,12 @@ const buildAuthenticatedCalendarClient = async (organizerUserId) => {
   }
 }
 
-const extractMeetLink = (calendarEvent) => {
-  return calendarEvent.hangoutLink ||
-    calendarEvent.conferenceData?.entryPoints?.find((entryPoint) => entryPoint.entryPointType === 'video')?.uri
+const extractMeetLink = (calendarCompetition) => {
+  return calendarCompetition.hangoutLink ||
+    calendarCompetition.conferenceData?.entryPoints?.find((entryPoint) => entryPoint.entryPointType === 'video')?.uri
 }
 
-const createGoogleMeetEvent = async ({
+const createGoogleMeetCompetition = async ({
   organizerUserId,
   title,
   description,
@@ -175,7 +175,7 @@ const createGoogleMeetEvent = async ({
 }) => {
   const { calendar, organizerEmail } = await buildAuthenticatedCalendarClient(organizerUserId)
 
-  const response = await calendar.events.insert({
+  const response = await calendar.competitions.insert({
     calendarId: 'primary',
     conferenceDataVersion: 1,
     requestBody: {
@@ -201,16 +201,16 @@ const createGoogleMeetEvent = async ({
     }
   })
 
-  const calendarEvent = response.data
-  const meetLink = extractMeetLink(calendarEvent)
+  const calendarCompetition = response.data
+  const meetLink = extractMeetLink(calendarCompetition)
   if (!meetLink) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Google Calendar did not return a Meet link'])
   }
 
   return {
     meetLink,
-    calendarEventId: calendarEvent.id,
-    htmlLink: calendarEvent.htmlLink,
+    calendarCompetitionId: calendarCompetition.id,
+    htmlLink: calendarCompetition.htmlLink,
     organizerEmail
   }
 }
@@ -218,5 +218,5 @@ const createGoogleMeetEvent = async ({
 export const GOOGLE_SERVICE = {
   getGoogleConnectUrl,
   connectGoogleCalendar,
-  createGoogleMeetEvent
+  createGoogleMeetCompetition
 }

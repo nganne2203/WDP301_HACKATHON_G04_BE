@@ -4,7 +4,7 @@ const { Schema } = mongoose
 
 const rubricSchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true },
     roundId: { type: Schema.Types.ObjectId, ref: 'Round' },
     title: { type: String, required: true, trim: true },
     description: { type: String },
@@ -20,8 +20,8 @@ const rubricSchema = new Schema(
   { timestamps: true }
 )
 
-rubricSchema.index({ eventId: 1 })
-rubricSchema.index({ eventId: 1, roundId: 1, status: 1 })
+rubricSchema.index({ competitionId: 1 })
+rubricSchema.index({ competitionId: 1, roundId: 1, status: 1 })
 
 const Rubric = mongoose.model('Rubric', rubricSchema)
 

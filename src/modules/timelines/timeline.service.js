@@ -1,7 +1,7 @@
 import mongoose from 'mongoose'
 
 import { TIMELINE_REPOSITORY } from './timeline.repository.js'
-import { EVENT_SERVICE } from '#modules/events/event.service.js'
+import { COMPETITION_SERVICE } from '#modules/competitions/competition.service.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
@@ -9,11 +9,11 @@ import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
 import Workshop from '#models/workshop.model.js'
 import {
-  applyEventVisibilityScope,
-  ensureCanViewEventChild
-} from '#utils/eventVisibilityUtil.js'
+  applyCompetitionVisibilityScope,
+  ensureCanViewCompetitionChild
+} from '#utils/competitionVisibilityUtil.js'
 
-const TIMELINE_FIELDS = ['eventId', 'title', 'description', 'startTime', 'endTime', 'eventType', 'status']
+const TIMELINE_FIELDS = ['competitionId', 'title', 'description', 'startTime', 'endTime', 'activityType', 'status']
 const TIMELINE_STATUS_TRANSITIONS = {
   SCHEDULED: ['ONGOING', 'CANCELLED'],
   ONGOING: ['COMPLETED', 'CANCELLED'],
@@ -35,16 +35,16 @@ const ensureDateRange = (payload = {}) => {
   }
 }
 
-const ensureTimelineWithinEventWindow = ({ event, startTime, endTime }) => {
-  if (!event || !startTime || !endTime) return
+const ensureTimelineWithinCompetitionWindow = ({ competition, startTime, endTime }) => {
+  if (!competition || !startTime || !endTime) return
   const timelineStart = new Date(startTime)
   const timelineEnd = new Date(endTime)
 
-  if (event.startDate && timelineStart < new Date(event.startDate)) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Timeline startTime must be within the event date window'])
+  if (competition.startDate && timelineStart < new Date(competition.startDate)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Timeline startTime must be within the competition date window'])
   }
-  if (event.endDate && timelineEnd > new Date(event.endDate)) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Timeline endTime must be within the event date window'])
+  if (competition.endDate && timelineEnd > new Date(competition.endDate)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Timeline endTime must be within the competition date window'])
   }
 }
 
@@ -52,7 +52,7 @@ const ensureTimelineStatusTransition = ({ fromStatus, toStatus, isCreate = false
   if (!toStatus || fromStatus === toStatus) return
   if (isCreate) {
     if (toStatus !== 'SCHEDULED') {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Timeline events must be created in SCHEDULED status'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Timeline competitions must be created in SCHEDULED status'])
     }
     return
   }
@@ -66,12 +66,12 @@ const ensureTimelineStatusTransition = ({ fromStatus, toStatus, isCreate = false
 const buildTimelineFilter = (query = {}) => {
   const filter = {}
 
-  if (query.eventId) {
-    ensureObjectId(query.eventId, 'event id')
-    filter.eventId = query.eventId
+  if (query.competitionId) {
+    ensureObjectId(query.competitionId, 'competition id')
+    filter.competitionId = query.competitionId
   }
 
-  if (query.eventType) filter.eventType = query.eventType
+  if (query.activityType) filter.activityType = query.activityType
   if (query.status) filter.status = query.status
 
   if (query.search) {
@@ -87,17 +87,17 @@ const buildTimelineFilter = (query = {}) => {
   return filter
 }
 
-const normalizeEvent = (event) => {
-  if (!event) return null
-  if (typeof event === 'string' || event instanceof mongoose.Types.ObjectId) return { id: event.toString() }
+const normalizeCompetition = (competition) => {
+  if (!competition) return null
+  if (typeof competition === 'string' || competition instanceof mongoose.Types.ObjectId) return { id: competition.toString() }
 
   return {
-    id: event._id?.toString() || event.id,
-    title: event.title,
-    semester: event.semester,
-    season: event.season,
-    year: event.year,
-    status: event.status
+    id: competition._id?.toString() || competition.id,
+    title: competition.title,
+    semester: competition.semester,
+    season: competition.season,
+    year: competition.year,
+    status: competition.status
   }
 }
 
@@ -115,13 +115,13 @@ const normalizeTimeline = (timeline) => {
 
   return {
     id: plainTimeline._id?.toString() || plainTimeline.id,
-    event: normalizeEvent(plainTimeline.eventId),
-    eventId: plainTimeline.eventId?._id?.toString?.() || plainTimeline.eventId?.toString?.() || plainTimeline.eventId,
+    competition: normalizeCompetition(plainTimeline.competitionId),
+    competitionId: plainTimeline.competitionId?._id?.toString?.() || plainTimeline.competitionId?.toString?.() || plainTimeline.competitionId,
     title: plainTimeline.title,
     description: plainTimeline.description,
     startTime: plainTimeline.startTime,
     endTime: plainTimeline.endTime,
-    eventType: plainTimeline.eventType,
+    activityType: plainTimeline.activityType,
     status: plainTimeline.status,
     createdAt: plainTimeline.createdAt,
     updatedAt: plainTimeline.updatedAt
@@ -130,7 +130,7 @@ const normalizeTimeline = (timeline) => {
 
 export const createTimelineService = ({
   repository = TIMELINE_REPOSITORY,
-  eventService = EVENT_SERVICE
+  competitionService = COMPETITION_SERVICE
 } = {}) => {
   const ensureTimelineExists = async (id) => {
     ensureObjectId(id)
@@ -141,7 +141,7 @@ export const createTimelineService = ({
 
   const listTimelines = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
-    const filter = await applyEventVisibilityScope({
+    const filter = await applyCompetitionVisibilityScope({
       filter: buildTimelineFilter(query),
       actor,
       repository
@@ -166,7 +166,7 @@ export const createTimelineService = ({
 
   const getTimelineById = async (id, actor = {}) => {
     const timeline = await ensureTimelineExists(id)
-    await ensureCanViewEventChild({
+    await ensureCanViewCompetitionChild({
       resource: timeline,
       actor,
       repository,
@@ -177,20 +177,20 @@ export const createTimelineService = ({
 
   const ensureTimelineCanBeDeleted = async (timeline) => {
     if (timeline.status !== 'SCHEDULED') {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only SCHEDULED timeline events can be deleted'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only SCHEDULED timeline competitions can be deleted'])
     }
 
-    const linkedWorkshopCount = await countDocuments(Workshop, { timelineEventId: timeline._id || timeline.id })
+    const linkedWorkshopCount = await countDocuments(Workshop, { timelineActivityId: timeline._id || timeline.id })
     if (linkedWorkshopCount > 0) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Cannot delete timeline event while workshops are linked to it'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Cannot delete timeline competition while workshops are linked to it'])
     }
   }
 
   const createTimeline = async (payload = {}) => {
     ensureDateRange(payload)
-    const event = await eventService.getRawEventById(payload.eventId)
-    ensureTimelineWithinEventWindow({
-      event,
+    const competition = await competitionService.getRawCompetitionById(payload.competitionId)
+    ensureTimelineWithinCompetitionWindow({
+      competition,
       startTime: payload.startTime,
       endTime: payload.endTime
     })
@@ -207,18 +207,18 @@ export const createTimelineService = ({
     const existingTimeline = await ensureTimelineExists(id)
     const safePayload = pickSafeFields(payload, TIMELINE_FIELDS)
 
-    if (safePayload.eventId) {
-      await eventService.getRawEventById(safePayload.eventId)
+    if (safePayload.competitionId) {
+      await competitionService.getRawCompetitionById(safePayload.competitionId)
     }
-    const eventId = safePayload.eventId || existingTimeline.eventId?._id?.toString?.() || existingTimeline.eventId?.toString?.()
-    const event = await eventService.getRawEventById(eventId)
+    const competitionId = safePayload.competitionId || existingTimeline.competitionId?._id?.toString?.() || existingTimeline.competitionId?.toString?.()
+    const competition = await competitionService.getRawCompetitionById(competitionId)
 
     const nextSchedule = {
       startTime: safePayload.startTime ?? existingTimeline.startTime,
       endTime: safePayload.endTime ?? existingTimeline.endTime
     }
     ensureDateRange(nextSchedule)
-    ensureTimelineWithinEventWindow({ event, ...nextSchedule })
+    ensureTimelineWithinCompetitionWindow({ competition, ...nextSchedule })
     ensureTimelineStatusTransition({
       fromStatus: existingTimeline.status || 'SCHEDULED',
       toStatus: safePayload.status

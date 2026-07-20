@@ -1,16 +1,16 @@
-import Event from '#models/event.model.js'
+import Competition from '#models/competition.model.js'
 import Participant from '#models/participant.model.js'
 
 const count = async (filter = {}) => {
-  return await Event.countDocuments(filter)
+  return await Competition.countDocuments(filter)
 }
 
 const create = async (data) => {
-  return await Event.create(data)
+  return await Competition.create(data)
 }
 
 const findAll = async ({ filter = {}, skip = 0, limit = 10, sort = { startDate: -1, createdAt: -1 } } = {}) => {
-  return await Event.find(filter)
+  return await Competition.find(filter)
     .populate({ path: 'createdBy', select: 'fullName email' })
     .sort(sort)
     .skip(skip)
@@ -18,15 +18,15 @@ const findAll = async ({ filter = {}, skip = 0, limit = 10, sort = { startDate: 
 }
 
 const findById = async (id) => {
-  return await Event.findById(id).populate({ path: 'createdBy', select: 'fullName email' })
+  return await Competition.findById(id).populate({ path: 'createdBy', select: 'fullName email' })
 }
 
-const findEventIdsForParticipant = async (userId) => {
-  return await Participant.find({ userId }).distinct('eventId')
+const findCompetitionIdsForParticipant = async (userId) => {
+  return await Participant.find({ userId }).distinct('competitionId')
 }
 
-const findOpenRegistrationEventIds = async (now = new Date()) => {
-  return await Event.find({
+const findOpenRegistrationCompetitionIds = async (now = new Date()) => {
+  return await Competition.find({
     status: 'OPEN_REGISTRATION',
     $and: [
       { $or: [{ registrationStart: { $exists: false } }, { registrationStart: null }, { registrationStart: { $lte: now } }] },
@@ -36,23 +36,23 @@ const findOpenRegistrationEventIds = async (now = new Date()) => {
 }
 
 const updateById = async (id, data) => {
-  return await Event.findByIdAndUpdate(id, data, {
+  return await Competition.findByIdAndUpdate(id, data, {
     new: true,
     runValidators: true
   }).populate({ path: 'createdBy', select: 'fullName email' })
 }
 
 const deleteById = async (id) => {
-  return await Event.findByIdAndDelete(id)
+  return await Competition.findByIdAndDelete(id)
 }
 
-export const EVENT_REPOSITORY = {
+export const COMPETITION_REPOSITORY = {
   count,
   create,
   findAll,
   findById,
-  findEventIdsForParticipant,
-  findOpenRegistrationEventIds,
+  findCompetitionIdsForParticipant,
+  findOpenRegistrationCompetitionIds,
   updateById,
   deleteById
 }

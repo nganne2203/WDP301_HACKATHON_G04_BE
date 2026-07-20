@@ -94,9 +94,9 @@ seal-be/
 │   │   ├── user.model.js
 │   │   ├── role.model.js
 │   │   ├── permission.model.js
-│   │   ├── event.model.js
+│   │   ├── competition.model.js
 │   │   ├── participant.model.js
-│   │   ├── timelineEvent.model.js
+│   │   ├── timelineActivity.model.js
 │   │   ├── workshop.model.js
 │   │   ├── workshopQuestion.model.js
 │   │   ├── workshopRating.model.js
@@ -148,12 +148,12 @@ seal-be/
 │   │   │   ├── role.repository.js
 │   │   │   └── role.validation.js
 │   │   │
-│   │   ├── events/
-│   │   │   ├── event.route.js
-│   │   │   ├── event.controller.js
-│   │   │   ├── event.service.js
-│   │   │   ├── event.repository.js
-│   │   │   └── event.validation.js
+│   │   ├── competitions/
+│   │   │   ├── competition.route.js
+│   │   │   ├── competition.controller.js
+│   │   │   ├── competition.service.js
+│   │   │   ├── competition.repository.js
+│   │   │   └── competition.validation.js
 │   │   │
 │   │   ├── timelines/
 │   │   │   ├── timeline.route.js
@@ -491,7 +491,7 @@ Authenticated requests use this authorization flow:
 3. `USER_SERVICE.getPermissionCodes(user)` merges and deduplicates permission codes from every assigned role.
 4. The middleware stores `req.user = { id, email, roles, role, permissions }`.
 5. Routes call `permissionMiddleware(PERMISSIONS.PERMISSION_CODE)`.
-6. Controllers and services handle business rules such as ownership, event state, or submission state. They should not check role names for access control.
+6. Controllers and services handle business rules such as ownership, competition state, or submission state. They should not check role names for access control.
 
 Current route examples:
 
@@ -499,14 +499,14 @@ Current route examples:
 router.get(
   "/",
   authorizationMiddleware,
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   eventController.listEvents
 );
 
 router.post(
   "/",
   authorizationMiddleware,
-  permissionMiddleware(PERMISSIONS.EVENT_CREATE),
+  permissionMiddleware(PERMISSIONS.COMPETITION_CREATE),
   eventController.createEvent
 );
 
@@ -529,7 +529,7 @@ const express = require("express");
 
 const authRoutes = require("../modules/auth/auth.route");
 const userRoutes = require("../modules/users/user.route");
-const eventRoutes = require("../modules/events/event.route");
+const competitionRoutes = require("../modules/competitions/competition.route");
 const timelineRoutes = require("../modules/timelines/timeline.route");
 const workshopRoutes = require("../modules/workshops/workshop.route");
 const teamRoutes = require("../modules/teams/team.route");
@@ -550,7 +550,7 @@ const router = express.Router();
 
 router.use("/auth", authRoutes);
 router.use("/users", userRoutes);
-router.use("/events", eventRoutes);
+router.use("/competitions", competitionRoutes);
 router.use("/timelines", timelineRoutes);
 router.use("/workshops", workshopRoutes);
 router.use("/teams", teamRoutes);
@@ -596,7 +596,7 @@ Handles:
 - Google Calendar account connection
 - encrypted Google token storage
 - access token refresh
-- Google Calendar event creation
+- Google Calendar competition creation
 - Google Meet link creation for workshops
 
 ---
@@ -626,14 +626,14 @@ Roles are administrative containers. Runtime authorization is performed with per
 
 ---
 
-### 11.5 Events Module
+### 11.5 Competitions Module
 
 Handles:
 
-- hackathon event creation
-- event update
-- event status
-- event lifecycle
+- hackathon competition creation
+- competition update
+- competition status
+- competition lifecycle
 
 ---
 
@@ -683,7 +683,7 @@ Responsibilities:
 - store repository URL
 - store GitHub repository ID
 - map repository to team
-- map repository to event
+- map repository to competition
 - track repository status
 
 ---
@@ -705,13 +705,13 @@ Responsibilities:
 
 ### 11.11 Webhooks Module
 
-Handles incoming webhook events.
+Handles incoming webhook competitions.
 
 Responsibilities:
 
 - receive GitHub webhook
 - verify webhook signature
-- store webhook event logs
+- store webhook competition logs
 - trigger commit synchronization
 - trigger AI review if needed
 
@@ -780,7 +780,7 @@ Sensitive data should be encrypted before saving to the database.
 
 ### 11.16 Media Module
 
-Handles Supabase-backed event media upload, gallery access, tracking, moderation, and statistics.
+Handles Supabase-backed competition media upload, gallery access, tracking, moderation, and statistics.
 
 Responsibilities:
 
@@ -797,7 +797,7 @@ Routes:
 
 - `POST /api/media/upload`
 - `GET /api/media/my-history`
-- `GET /api/events/:id/gallery`
+- `GET /api/competitions/:id/gallery`
 - `GET /api/media/:mediaId/view-url`
 - `DELETE /api/media/:mediaId`
 - `GET /api/admin/media`
@@ -817,9 +817,9 @@ Main models:
 User
 Role
 Permission
-Event
+Competition
 Participant
-TimelineEvent
+TimelineActivity
 Workshop
 Track
 Round
@@ -848,10 +848,10 @@ SystemConfig
 
 For SEAL Hackathon Fall 2025, the database models represent the official competition rules as follows:
 
-- `Permission` stores the authorization actions used by routes, such as `EVENT_CREATE`, `TRACK_VIEW`, `USER_ROLE_ASSIGN`, `SCORE_CREATE`, and `RESULT_PUBLISH`.
-- `Role` stores permission groups only. Seeded roles include `ADMIN`, `EVENT_COORDINATOR`, `COORDINATOR`, `JUDGE`, `MENTOR`, and `PARTICIPANT`.
+- `Permission` stores the authorization actions used by routes, such as `COMPETITION_CREATE`, `TRACK_VIEW`, `USER_ROLE_ASSIGN`, `SCORE_CREATE`, and `RESULT_PUBLISH`.
+- `Role` stores permission groups only. Seeded roles include `ADMIN`, `COMPETITION_COORDINATOR`, `COORDINATOR`, `JUDGE`, `MENTOR`, and `PARTICIPANT`.
 - `User.roles` stores assigned role references. Services resolve and deduplicate permissions from all assigned roles before JWT generation and request authorization.
-- `Event` stores the hackathon season, year, theme, registration window, event schedule, team size rule, and finalist slot rule.
+- `Competition` stores the hackathon season, year, theme, registration window, competition schedule, team size rule, and finalist slot rule.
 - `Track` represents the preliminary competition groups. Fall 2025 has:
   - `Bảng A`: AI cho Thu thập Yêu cầu & Thiết kế.
   - `Bảng B`: AI cho Phát triển, Kiểm thử & Vận hành.
@@ -886,11 +886,11 @@ GET    /api/google/callback
 GET    /api/users
 PATCH  /api/users/:id/approve
 
-POST   /api/events
-GET    /api/events
-GET    /api/events/:id
-PATCH  /api/events/:id
-DELETE /api/events/:id
+POST   /api/competitions
+GET    /api/competitions
+GET    /api/competitions/:id
+PATCH  /api/competitions/:id
+DELETE /api/competitions/:id
 
 POST   /api/teams
 GET    /api/teams/:id
@@ -911,7 +911,7 @@ POST   /api/ai-reviews/:id/retry
 
 POST   /api/workshops/:id/google-meet
 POST   /api/scoring/submit
-GET    /api/rankings/event/:eventId
+GET    /api/rankings/competition/:competitionId
 ```
 
 ---
@@ -935,7 +935,7 @@ user.validation.js
 
 ```txt
 user.model.js
-event.model.js
+competition.model.js
 repository.model.js
 aiReview.model.js
 ```

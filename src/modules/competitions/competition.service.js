@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
 
-import { EVENT_REPOSITORY } from './event.repository.js'
+import { COMPETITION_REPOSITORY } from './competition.repository.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
@@ -18,12 +18,12 @@ import Team from '#models/team.model.js'
 import Repository from '#models/repository.model.js'
 import Ranking from '#models/ranking.model.js'
 import Workshop from '#models/workshop.model.js'
-import TimelineEvent from '#models/timelineEvent.model.js'
+import TimelineActivity from '#models/timelineActivity.model.js'
 import Track from '#models/track.model.js'
 import { isActiveJudge } from '#utils/domainAccessUtil.js'
 
-const EVENT_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED']
-const EVENT_TRANSITIONS = {
+const COMPETITION_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED']
+const COMPETITION_TRANSITIONS = {
   DRAFT: ['OPEN_REGISTRATION'],
   OPEN_REGISTRATION: ['REGISTRATION_CLOSED'],
   REGISTRATION_CLOSED: ['ONGOING'],
@@ -35,7 +35,7 @@ const EVENT_TRANSITIONS = {
 const RANKING_SCOPES = ['TEAM']
 const UNSUPPORTED_RANKING_SCOPES = ['CHAPTER', 'INDIVIDUAL']
 const FINALIST_SELECTION_MODES = ['FIXED_PER_BOARD', 'TOP_PER_BOARD_WITH_WILDCARD', 'OVERALL_SCORE', 'CUSTOM']
-const EVENT_FIELDS = [
+const COMPETITION_FIELDS = [
   'title',
   'description',
   'semester',
@@ -55,9 +55,9 @@ const EVENT_FIELDS = [
   'totalFinalistSlots',
   'status'
 ]
-const DRAFT_VIEWER_ROLES = new Set(['ADMIN', 'EVENT_COORDINATOR', 'COORDINATOR'])
+const DRAFT_VIEWER_ROLES = new Set(['ADMIN', 'COMPETITION_COORDINATOR', 'COORDINATOR'])
 
-const canViewDraftEvents = (actor = {}) => {
+const canViewDraftCompetitions = (actor = {}) => {
   const roles = Array.isArray(actor.roles) ? actor.roles : [actor.role]
   return roles.some(role => DRAFT_VIEWER_ROLES.has(typeof role === 'string' ? role : role?.code))
 }
@@ -71,14 +71,14 @@ const isParticipantOnly = (actor = {}) => {
   return roles.length > 0 && roles.every(role => role === 'PARTICIPANT' || role === 'USER')
 }
 
-const isRegistrationOpen = (event, now = new Date()) => {
-  if (event?.status !== 'OPEN_REGISTRATION') return false
-  if (event.registrationStart && now < new Date(event.registrationStart)) return false
-  if (event.registrationEnd && now > new Date(event.registrationEnd)) return false
+const isRegistrationOpen = (competition, now = new Date()) => {
+  if (competition?.status !== 'OPEN_REGISTRATION') return false
+  if (competition.registrationStart && now < new Date(competition.registrationStart)) return false
+  if (competition.registrationEnd && now > new Date(competition.registrationEnd)) return false
   return true
 }
 
-const ensureObjectId = (id, fieldName = 'event id') => {
+const ensureObjectId = (id, fieldName = 'competition id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Invalid ${fieldName}`])
   }
@@ -150,8 +150,8 @@ const normalizeRankingScopes = (scopes = []) => {
   return uniqueScopes.length > 0 ? uniqueScopes : ['TEAM']
 }
 
-const buildCompetitionConfig = (payload = {}, existingEvent = null) => {
-  const existingConfig = existingEvent?.competitionConfig || {}
+const buildCompetitionConfig = (payload = {}, existingCompetition = null) => {
+  const existingConfig = existingCompetition?.competitionConfig || {}
   const incomingConfig = payload.competitionConfig || {}
 
   const boardCount = incomingConfig.boardCount ?? incomingConfig.trackCount ?? existingConfig.boardCount ?? existingConfig.trackCount
@@ -159,11 +159,11 @@ const buildCompetitionConfig = (payload = {}, existingEvent = null) => {
   const finalistsPerBoard = incomingConfig.finalistsPerBoard
     ?? payload.finalistSlotsPerTrack
     ?? existingConfig.finalistsPerBoard
-    ?? existingEvent?.finalistSlotsPerTrack
+    ?? existingCompetition?.finalistSlotsPerTrack
   const finalistCount = incomingConfig.finalistCount
     ?? payload.totalFinalistSlots
     ?? existingConfig.finalistCount
-    ?? existingEvent?.totalFinalistSlots
+    ?? existingCompetition?.totalFinalistSlots
 
   const competitionConfig = {
     boardCount,
@@ -215,26 +215,26 @@ const ensureCompetitionRule = (competitionConfig = {}) => {
   }
 }
 
-const syncLegacyEventFields = (safePayload = {}, competitionConfig = {}, existingEvent = null) => {
+const syncLegacyCompetitionFields = (safePayload = {}, competitionConfig = {}, existingCompetition = null) => {
   const syncedPayload = { ...safePayload }
 
   if (competitionConfig.finalistsPerBoard !== undefined) {
     syncedPayload.finalistSlotsPerTrack = competitionConfig.finalistsPerBoard
-  } else if (syncedPayload.finalistSlotsPerTrack === undefined && existingEvent?.finalistSlotsPerTrack !== undefined) {
-    syncedPayload.finalistSlotsPerTrack = existingEvent.finalistSlotsPerTrack
+  } else if (syncedPayload.finalistSlotsPerTrack === undefined && existingCompetition?.finalistSlotsPerTrack !== undefined) {
+    syncedPayload.finalistSlotsPerTrack = existingCompetition.finalistSlotsPerTrack
   }
 
   if (competitionConfig.finalistCount !== undefined) {
     syncedPayload.totalFinalistSlots = competitionConfig.finalistCount
-  } else if (syncedPayload.totalFinalistSlots === undefined && existingEvent?.totalFinalistSlots !== undefined) {
-    syncedPayload.totalFinalistSlots = existingEvent.totalFinalistSlots
+  } else if (syncedPayload.totalFinalistSlots === undefined && existingCompetition?.totalFinalistSlots !== undefined) {
+    syncedPayload.totalFinalistSlots = existingCompetition.totalFinalistSlots
   }
 
   syncedPayload.competitionConfig = competitionConfig
   return syncedPayload
 }
 
-const buildEventFilter = (query = {}) => {
+const buildCompetitionFilter = (query = {}) => {
   const filter = {}
 
   if (query.status) {
@@ -278,44 +278,44 @@ const normalizeCreator = (creator) => {
   }
 }
 
-const normalizeEvent = (event, stats = {}) => {
-  if (!event) return null
+const normalizeCompetition = (competition, stats = {}) => {
+  if (!competition) return null
 
-  const plainEvent = typeof event.toObject === 'function'
-    ? event.toObject({ getters: true, virtuals: false })
-    : event
+  const plainCompetition = typeof competition.toObject === 'function'
+    ? competition.toObject({ getters: true, virtuals: false })
+    : competition
 
   return {
-    id: plainEvent._id?.toString() || plainEvent.id,
-    title: plainEvent.title,
-    description: plainEvent.description,
-    semester: plainEvent.semester,
-    seriesName: plainEvent.seriesName,
-    season: plainEvent.season,
-    year: plainEvent.year,
-    theme: plainEvent.theme,
-    registrationStart: plainEvent.registrationStart,
-    registrationEnd: plainEvent.registrationEnd,
-    registrationClosedAt: plainEvent.registrationClosedAt,
-    registrationCloseReason: plainEvent.registrationCloseReason,
-    startDate: plainEvent.startDate,
-    endDate: plainEvent.endDate,
-    maxTeams: plainEvent.maxTeams,
-    minTeamMembers: plainEvent.minTeamMembers,
-    maxTeamMembers: plainEvent.maxTeamMembers,
-    competitionConfig: plainEvent.competitionConfig || null,
-    finalistSlotsPerTrack: plainEvent.finalistSlotsPerTrack,
-    totalFinalistSlots: plainEvent.totalFinalistSlots,
-    roundCount: stats.roundCount ?? plainEvent.roundCount ?? 0,
-    status: plainEvent.status,
-    createdBy: normalizeCreator(plainEvent.createdBy),
-    createdAt: plainEvent.createdAt,
-    updatedAt: plainEvent.updatedAt
+    id: plainCompetition._id?.toString() || plainCompetition.id,
+    title: plainCompetition.title,
+    description: plainCompetition.description,
+    semester: plainCompetition.semester,
+    seriesName: plainCompetition.seriesName,
+    season: plainCompetition.season,
+    year: plainCompetition.year,
+    theme: plainCompetition.theme,
+    registrationStart: plainCompetition.registrationStart,
+    registrationEnd: plainCompetition.registrationEnd,
+    registrationClosedAt: plainCompetition.registrationClosedAt,
+    registrationCloseReason: plainCompetition.registrationCloseReason,
+    startDate: plainCompetition.startDate,
+    endDate: plainCompetition.endDate,
+    maxTeams: plainCompetition.maxTeams,
+    minTeamMembers: plainCompetition.minTeamMembers,
+    maxTeamMembers: plainCompetition.maxTeamMembers,
+    competitionConfig: plainCompetition.competitionConfig || null,
+    finalistSlotsPerTrack: plainCompetition.finalistSlotsPerTrack,
+    totalFinalistSlots: plainCompetition.totalFinalistSlots,
+    roundCount: stats.roundCount ?? plainCompetition.roundCount ?? 0,
+    status: plainCompetition.status,
+    createdBy: normalizeCreator(plainCompetition.createdBy),
+    createdAt: plainCompetition.createdAt,
+    updatedAt: plainCompetition.updatedAt
   }
 }
 
-const createEventService = ({
-  repository = EVENT_REPOSITORY,
+const createCompetitionService = ({
+  repository = COMPETITION_REPOSITORY,
   notificationService = NOTIFICATION_SERVICE,
   teamService = TEAM_SERVICE,
   auditLogRepository = AUDIT_LOG_REPOSITORY,
@@ -326,44 +326,44 @@ const createEventService = ({
   repositoryModel = Repository,
   rankingModel = Ranking,
   workshopModel = Workshop,
-  timelineModel = TimelineEvent,
+  timelineModel = TimelineActivity,
   trackModel = Track,
   userModel = User,
   nowProvider = () => new Date()
 } = {}) => {
-  const ensureEventExists = async (id) => {
+  const ensureCompetitionExists = async (id) => {
     ensureObjectId(id)
 
-    const event = await repository.findById(id)
-    if (!event) {
-      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+    const competition = await repository.findById(id)
+    if (!competition) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
     }
 
-    return event
+    return competition
   }
 
-  const getEventId = (event) => event?._id?.toString?.() || event?.id?.toString?.()
+  const getCompetitionId = (competition) => competition?._id?.toString?.() || competition?.id?.toString?.()
 
-  const buildRoundCountMap = async (events = []) => {
-    const eventIds = events
-      .map(event => event?._id || event?.id)
+  const buildRoundCountMap = async (competitions = []) => {
+    const competitionIds = competitions
+      .map(competition => competition?._id || competition?.id)
       .filter(Boolean)
 
-    if (eventIds.length === 0 || !roundModel) return new Map()
+    if (competitionIds.length === 0 || !roundModel) return new Map()
 
     if (typeof roundModel.aggregate === 'function') {
       const counts = await roundModel.aggregate([
-        { $match: { eventId: { $in: eventIds } } },
-        { $group: { _id: '$eventId', count: { $sum: 1 } } }
+        { $match: { competitionId: { $in: competitionIds } } },
+        { $group: { _id: '$competitionId', count: { $sum: 1 } } }
       ])
 
       return new Map(counts.map(item => [item._id?.toString?.() || item._id?.toString(), item.count]))
     }
 
     if (typeof roundModel.countDocuments === 'function') {
-      const counts = await Promise.all(eventIds.map(async (eventId) => [
-        eventId?.toString?.() || String(eventId),
-        await roundModel.countDocuments({ eventId })
+      const counts = await Promise.all(competitionIds.map(async (competitionId) => [
+        competitionId?.toString?.() || String(competitionId),
+        await roundModel.countDocuments({ competitionId })
       ]))
 
       return new Map(counts)
@@ -372,35 +372,35 @@ const createEventService = ({
     return new Map()
   }
 
-  const normalizeEventWithRoundCount = async (event) => {
-    const roundCountMap = await buildRoundCountMap([event])
-    return normalizeEvent(event, { roundCount: roundCountMap.get(getEventId(event)) ?? 0 })
+  const normalizeCompetitionWithRoundCount = async (competition) => {
+    const roundCountMap = await buildRoundCountMap([competition])
+    return normalizeCompetition(competition, { roundCount: roundCountMap.get(getCompetitionId(competition)) ?? 0 })
   }
 
-  const listEvents = async (query = {}, actor = {}) => {
+  const listCompetitions = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
-    const filter = buildEventFilter(query)
-    if (!canViewDraftEvents(actor)) {
+    const filter = buildCompetitionFilter(query)
+    if (!canViewDraftCompetitions(actor)) {
       filter.status = query.status === 'DRAFT' ? { $in: [] } : { $ne: 'DRAFT' }
     }
     if (isParticipantOnly(actor)) {
-      const [participantEventIds, openRegistrationEventIds] = await Promise.all([
-        repository.findEventIdsForParticipant(actor.id),
-        repository.findOpenRegistrationEventIds()
+      const [participantCompetitionIds, openRegistrationCompetitionIds] = await Promise.all([
+        repository.findCompetitionIdsForParticipant(actor.id),
+        repository.findOpenRegistrationCompetitionIds()
       ])
-      filter._id = { $in: [...new Set([...participantEventIds, ...openRegistrationEventIds].map(id => id.toString()))] }
+      filter._id = { $in: [...new Set([...participantCompetitionIds, ...openRegistrationCompetitionIds].map(id => id.toString()))] }
     }
     const skip = (page - 1) * limit
 
-    const [events, totalItems] = await Promise.all([
+    const [competitions, totalItems] = await Promise.all([
       repository.findAll({ filter, skip, limit }),
       repository.count(filter)
     ])
 
-    const roundCountMap = await buildRoundCountMap(events)
+    const roundCountMap = await buildRoundCountMap(competitions)
 
     return {
-      events: events.map(event => normalizeEvent(event, { roundCount: roundCountMap.get(getEventId(event)) ?? 0 })),
+      competitions: competitions.map(competition => normalizeCompetition(competition, { roundCount: roundCountMap.get(getCompetitionId(competition)) ?? 0 })),
       pagination: {
         currentPage: page,
         totalPages: Math.ceil(totalItems / limit) || 1,
@@ -410,48 +410,48 @@ const createEventService = ({
     }
   }
 
-  const getEventById = async (id, actor = {}) => {
-    const event = await ensureEventExists(id)
-    if (event.status === 'DRAFT' && !canViewDraftEvents(actor)) {
-      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+  const getCompetitionById = async (id, actor = {}) => {
+    const competition = await ensureCompetitionExists(id)
+    if (competition.status === 'DRAFT' && !canViewDraftCompetitions(actor)) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
     }
     if (isParticipantOnly(actor)) {
-      const participantEventIds = await repository.findEventIdsForParticipant(actor.id)
-      const isParticipant = participantEventIds.some(eventId => eventId.toString() === event._id.toString())
-      if (!isParticipant && !isRegistrationOpen(event)) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+      const participantCompetitionIds = await repository.findCompetitionIdsForParticipant(actor.id)
+      const isParticipant = participantCompetitionIds.some(competitionId => competitionId.toString() === competition._id.toString())
+      if (!isParticipant && !isRegistrationOpen(competition)) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
     }
-    return await normalizeEventWithRoundCount(event)
+    return await normalizeCompetitionWithRoundCount(competition)
   }
 
-  const getRawEventById = async (id) => {
-    return await ensureEventExists(id)
+  const getRawCompetitionById = async (id) => {
+    return await ensureCompetitionExists(id)
   }
 
-  const ensureValidEventTransition = (event, nextStatus) => {
-    if (event.status === nextStatus) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Event is already ${nextStatus}`])
+  const ensureValidCompetitionTransition = (competition, nextStatus) => {
+    if (competition.status === nextStatus) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Competition is already ${nextStatus}`])
     }
 
-    const allowedStatuses = EVENT_TRANSITIONS[event.status] || []
+    const allowedStatuses = COMPETITION_TRANSITIONS[competition.status] || []
     if (!allowedStatuses.includes(nextStatus)) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Invalid event status transition from ${event.status} to ${nextStatus}`])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Invalid competition status transition from ${competition.status} to ${nextStatus}`])
     }
   }
 
-  const ensureManualTransitionWindow = (event, nextStatus) => {
+  const ensureManualTransitionWindow = (competition, nextStatus) => {
     const now = nowProvider()
 
     if (nextStatus === 'OPEN_REGISTRATION') {
-      if (event.registrationStart && now < new Date(event.registrationStart)) {
+      if (competition.registrationStart && now < new Date(competition.registrationStart)) {
         throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Registration cannot be opened before registrationStart'])
       }
-      if (event.registrationEnd && now > new Date(event.registrationEnd)) {
+      if (competition.registrationEnd && now > new Date(competition.registrationEnd)) {
         throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Registration cannot be opened after registrationEnd'])
       }
     }
 
-    if (nextStatus === 'ONGOING' && event.startDate && now < new Date(event.startDate)) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Event cannot start before startDate'])
+    if (nextStatus === 'ONGOING' && competition.startDate && now < new Date(competition.startDate)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Competition cannot start before startDate'])
     }
   }
 
@@ -476,35 +476,35 @@ const createEventService = ({
     return await model.countDocuments(filter)
   }
 
-  const ensureEventCanBeDeleted = async (event) => {
-    if (event.status !== 'DRAFT') {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only unused DRAFT events can be deleted; archive the event through the lifecycle workflow instead'])
+  const ensureCompetitionCanBeDeleted = async (competition) => {
+    if (competition.status !== 'DRAFT') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only unused DRAFT competitions can be deleted; archive the competition through the lifecycle workflow instead'])
     }
 
-    const eventId = event._id || event.id
+    const competitionId = competition._id || competition.id
     const dependencyChecks = [
-      ['rounds', countDocuments(roundModel, { eventId })],
-      ['judging boards', countDocuments(boardModel, { eventId })],
-      ['tracks', countDocuments(trackModel, { eventId })],
-      ['timelines', countDocuments(timelineModel, { eventId })],
-      ['workshops', countDocuments(workshopModel, { eventId })],
-      ['teams', countDocuments(teamModel, { eventId })],
-      ['submissions', countDocuments(submissionModel, { eventId })],
-      ['rankings', countDocuments(rankingModel, { eventId })],
-      ['repositories', countDocuments(repositoryModel, { eventId })]
+      ['rounds', countDocuments(roundModel, { competitionId })],
+      ['judging boards', countDocuments(boardModel, { competitionId })],
+      ['tracks', countDocuments(trackModel, { competitionId })],
+      ['timelines', countDocuments(timelineModel, { competitionId })],
+      ['workshops', countDocuments(workshopModel, { competitionId })],
+      ['teams', countDocuments(teamModel, { competitionId })],
+      ['submissions', countDocuments(submissionModel, { competitionId })],
+      ['rankings', countDocuments(rankingModel, { competitionId })],
+      ['repositories', countDocuments(repositoryModel, { competitionId })]
     ]
 
     const counts = await Promise.all(dependencyChecks.map(async ([name, promise]) => [name, await promise]))
     const blockingDependencies = counts.filter(([, count]) => count > 0).map(([name]) => name)
     if (blockingDependencies.length > 0) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Cannot delete event with existing ${blockingDependencies.join(', ')}`])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Cannot delete competition with existing ${blockingDependencies.join(', ')}`])
     }
   }
 
-  const findScoringBoards = async ({ eventId, roundId }) => {
+  const findScoringBoards = async ({ competitionId, roundId }) => {
     if (boardModel.find) {
       return await boardModel.find({
-        eventId,
+        competitionId,
         roundId,
         status: 'SCORING',
         judgeIds: { $exists: true, $ne: [] },
@@ -513,7 +513,7 @@ const createEventService = ({
     }
 
     const board = await boardModel.findOne({
-      eventId,
+      competitionId,
       roundId,
       status: 'SCORING',
       judgeIds: { $exists: true, $ne: [] },
@@ -522,31 +522,31 @@ const createEventService = ({
     return board ? [board] : []
   }
 
-  const ensureScoringReady = async (eventId) => {
+  const ensureScoringReady = async (competitionId) => {
     const scoringRound = await roundModel.findOne({
-      eventId,
+      competitionId,
       status: 'SCORING',
       rubricId: { $exists: true, $ne: null }
     })
 
     if (!scoringRound) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['At least one round with an active rubric must be in SCORING before the event can enter SCORING'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['At least one round with an active rubric must be in SCORING before the competition can enter SCORING'])
     }
 
     const [scoringBoards, scorableSubmission] = await Promise.all([
-      findScoringBoards({ eventId, roundId: scoringRound._id }),
+      findScoringBoards({ competitionId, roundId: scoringRound._id }),
       submissionModel.findOne({
-        eventId,
+        competitionId,
         roundId: scoringRound._id,
         status: { $in: ['SUBMITTED', 'ACCEPTED'] }
       })
     ])
 
     if (scoringBoards.length === 0) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['At least one judging board must be in SCORING before the event can enter SCORING'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['At least one judging board must be in SCORING before the competition can enter SCORING'])
     }
     if (!scorableSubmission) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['At least one submitted or accepted submission is required before the event can enter SCORING'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['At least one submitted or accepted submission is required before the competition can enter SCORING'])
     }
 
     for (const board of scoringBoards) {
@@ -554,14 +554,14 @@ const createEventService = ({
     }
   }
 
-  const createEventStatusAudit = async ({ actor, event, fromStatus, toStatus }) => {
+  const createCompetitionStatusAudit = async ({ actor, competition, fromStatus, toStatus }) => {
     if (!auditLogRepository?.create) return
 
     await auditLogRepository.create({
       userId: actor?.id,
-      action: 'EVENT_STATUS_CHANGED',
-      resourceType: 'Event',
-      resourceId: event._id || event.id,
+      action: 'COMPETITION_STATUS_CHANGED',
+      resourceType: 'Competition',
+      resourceId: competition._id || competition.id,
       metadata: {
         fromStatus,
         toStatus,
@@ -570,20 +570,20 @@ const createEventService = ({
     })
   }
 
-  const createEvent = async (payload = {}, actor = {}) => {
+  const createCompetition = async (payload = {}, actor = {}) => {
     ensureDateRange(payload)
     ensureLifecycleDates(payload)
     ensureTeamRule(payload)
 
-    const safePayload = pickSafeFields(payload, EVENT_FIELDS)
+    const safePayload = pickSafeFields(payload, COMPETITION_FIELDS)
     if (safePayload.status && safePayload.status !== 'DRAFT') {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Events must be created in DRAFT status and moved through the lifecycle workflow'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Competitions must be created in DRAFT status and moved through the lifecycle workflow'])
     }
     const competitionConfig = buildCompetitionConfig(payload)
     ensureCompetitionRule(competitionConfig)
-    const normalizedPayload = syncLegacyEventFields(safePayload, competitionConfig)
+    const normalizedPayload = syncLegacyCompetitionFields(safePayload, competitionConfig)
 
-    const event = await repository.create({
+    const competition = await repository.create({
       ...normalizedPayload,
       status: 'DRAFT',
       ...(normalizedPayload.status === 'OPEN_REGISTRATION'
@@ -595,53 +595,53 @@ const createEventService = ({
       createdBy: actor.id
     })
 
-    return await normalizeEventWithRoundCount(await repository.findById(event._id))
+    return await normalizeCompetitionWithRoundCount(await repository.findById(competition._id))
   }
 
-  const updateEvent = async (id, payload = {}) => {
-    const existingEvent = await ensureEventExists(id)
-    const safePayload = pickSafeFields(payload, EVENT_FIELDS)
-    if (safePayload.status && safePayload.status !== existingEvent.status) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Use the event status workflow endpoint to change event status'])
+  const updateCompetition = async (id, payload = {}) => {
+    const existingCompetition = await ensureCompetitionExists(id)
+    const safePayload = pickSafeFields(payload, COMPETITION_FIELDS)
+    if (safePayload.status && safePayload.status !== existingCompetition.status) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Use the competition status workflow endpoint to change competition status'])
     }
     delete safePayload.status
 
-    const competitionConfig = buildCompetitionConfig(payload, existingEvent)
+    const competitionConfig = buildCompetitionConfig(payload, existingCompetition)
 
     ensureDateRange({
-      registrationStart: safePayload.registrationStart ?? existingEvent.registrationStart,
-      registrationEnd: safePayload.registrationEnd ?? existingEvent.registrationEnd,
-      startDate: safePayload.startDate ?? existingEvent.startDate,
-      endDate: safePayload.endDate ?? existingEvent.endDate
+      registrationStart: safePayload.registrationStart ?? existingCompetition.registrationStart,
+      registrationEnd: safePayload.registrationEnd ?? existingCompetition.registrationEnd,
+      startDate: safePayload.startDate ?? existingCompetition.startDate,
+      endDate: safePayload.endDate ?? existingCompetition.endDate
     })
     ensureLifecycleDates({
-      registrationStart: safePayload.registrationStart ?? existingEvent.registrationStart,
-      registrationEnd: safePayload.registrationEnd ?? existingEvent.registrationEnd,
-      startDate: safePayload.startDate ?? existingEvent.startDate,
-      endDate: safePayload.endDate ?? existingEvent.endDate
+      registrationStart: safePayload.registrationStart ?? existingCompetition.registrationStart,
+      registrationEnd: safePayload.registrationEnd ?? existingCompetition.registrationEnd,
+      startDate: safePayload.startDate ?? existingCompetition.startDate,
+      endDate: safePayload.endDate ?? existingCompetition.endDate
     })
     ensureTeamRule({
-      minTeamMembers: safePayload.minTeamMembers ?? existingEvent.minTeamMembers,
-      maxTeamMembers: safePayload.maxTeamMembers ?? existingEvent.maxTeamMembers
+      minTeamMembers: safePayload.minTeamMembers ?? existingCompetition.minTeamMembers,
+      maxTeamMembers: safePayload.maxTeamMembers ?? existingCompetition.maxTeamMembers
     })
     ensureCompetitionRule(competitionConfig)
 
-    const normalizedPayload = syncLegacyEventFields(safePayload, competitionConfig, existingEvent)
-    const event = await repository.updateById(id, normalizedPayload)
+    const normalizedPayload = syncLegacyCompetitionFields(safePayload, competitionConfig, existingCompetition)
+    const competition = await repository.updateById(id, normalizedPayload)
 
-    return await normalizeEventWithRoundCount(event)
+    return await normalizeCompetitionWithRoundCount(competition)
   }
 
-  const updateEventStatus = async (id, status, actor = {}) => {
-    if (!EVENT_STATUSES.includes(status)) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Invalid event status'])
+  const updateCompetitionStatus = async (id, status, actor = {}) => {
+    if (!COMPETITION_STATUSES.includes(status)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Invalid competition status'])
     }
 
     ensureObjectId(id)
-    const existingEvent = await ensureEventExists(id)
+    const existingCompetition = await ensureCompetitionExists(id)
     if (!env.workflow.relaxedDemoRules) {
-      ensureValidEventTransition(existingEvent, status)
-      ensureManualTransitionWindow(existingEvent, status)
+      ensureValidCompetitionTransition(existingCompetition, status)
+      ensureManualTransitionWindow(existingCompetition, status)
     }
     if (status === 'SCORING' && !env.workflow.relaxedDemoRules) {
       await ensureScoringReady(id)
@@ -656,39 +656,39 @@ const createEventService = ({
       updatePayload.registrationCloseReason = 'MANUALLY_CLOSED'
     }
 
-    const event = await repository.updateById(id, updatePayload)
-    if (!event) {
-      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+    const competition = await repository.updateById(id, updatePayload)
+    if (!competition) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
     }
 
-    if (status === 'REGISTRATION_CLOSED' && existingEvent.status !== 'REGISTRATION_CLOSED') {
+    if (status === 'REGISTRATION_CLOSED' && existingCompetition.status !== 'REGISTRATION_CLOSED') {
       await teamService.rejectUnconfirmedTeamsForRegistrationClosure({
-        event,
+        competition,
         reason: TEAM_REJECTION_REASONS.REGISTRATION_CLOSED
       })
     }
 
-    await createEventStatusAudit({
+    await createCompetitionStatusAudit({
       actor,
-      event,
-      fromStatus: existingEvent.status,
+      competition,
+      fromStatus: existingCompetition.status,
       toStatus: status
     })
 
-    return await normalizeEventWithRoundCount(event)
+    return await normalizeCompetitionWithRoundCount(competition)
   }
 
-  const deleteEvent = async (id) => {
-    const event = await ensureEventExists(id)
-    await ensureEventCanBeDeleted(event)
+  const deleteCompetition = async (id) => {
+    const competition = await ensureCompetitionExists(id)
+    await ensureCompetitionCanBeDeleted(competition)
     await repository.deleteById(id)
   }
 
   const sendInvitations = async (id, payload = {}, actor = {}) => {
-    const event = await ensureEventExists(id)
+    const competition = await ensureCompetitionExists(id)
 
-    return await notificationService.sendEventInvitations({
-      event,
+    return await notificationService.sendCompetitionInvitations({
+      competition,
       emails: payload.emails || [],
       message: payload.message,
       actor
@@ -696,27 +696,27 @@ const createEventService = ({
   }
 
   return {
-    listEvents,
-    getEventById,
-    getRawEventById,
-    createEvent,
-    updateEvent,
-    updateEventStatus,
-    deleteEvent,
+    listCompetitions,
+    getCompetitionById,
+    getRawCompetitionById,
+    createCompetition,
+    updateCompetition,
+    updateCompetitionStatus,
+    deleteCompetition,
     sendInvitations
   }
 }
 
-export const EVENT_SERVICE = {
-  EVENT_STATUSES,
-  EVENT_TRANSITIONS,
-  ...createEventService(),
-  normalizeEvent
+export const COMPETITION_SERVICE = {
+  COMPETITION_STATUSES,
+  COMPETITION_TRANSITIONS,
+  ...createCompetitionService(),
+  normalizeCompetition
 }
 
 export {
   buildCompetitionConfig,
-  createEventService,
+  createCompetitionService,
   ensureCompetitionRule,
-  syncLegacyEventFields
+  syncLegacyCompetitionFields
 }

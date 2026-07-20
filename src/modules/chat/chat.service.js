@@ -7,8 +7,8 @@ import { env } from '#configs/environment.js'
 
 const MESSAGE_TYPES = ['text', 'image', 'file']
 const ACTIVE_CHAT_TEAM_STATUSES = ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED']
-const READABLE_CHAT_EVENT_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED']
-const WRITABLE_CHAT_EVENT_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING']
+const READABLE_CHAT_COMPETITION_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED']
+const WRITABLE_CHAT_COMPETITION_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING']
 
 const getId = (value) => {
   return value?._id?.toString?.() || value?.id || value?.toString?.()
@@ -56,15 +56,15 @@ const ensureTeamChatActive = (team) => {
   }
 }
 
-const getTeamEventStatus = (team) => {
-  return team?.eventId?.status || team?.event?.status || null
+const getTeamCompetitionStatus = (team) => {
+  return team?.competitionId?.status || team?.competition?.status || null
 }
 
 const ensureTeamChatVisible = (team) => {
   ensureTeamChatActive(team)
   if (env.workflow.relaxedDemoRules) return
-  const eventStatus = getTeamEventStatus(team)
-  if (eventStatus && !READABLE_CHAT_EVENT_STATUSES.includes(eventStatus)) {
+  const competitionStatus = getTeamCompetitionStatus(team)
+  if (competitionStatus && !READABLE_CHAT_COMPETITION_STATUSES.includes(competitionStatus)) {
     throw new ApiError(ERROR_CODES.NOT_FOUND, ['Chat room not found'])
   }
 }
@@ -72,9 +72,9 @@ const ensureTeamChatVisible = (team) => {
 const ensureTeamChatWritable = (team) => {
   ensureTeamChatVisible(team)
   if (env.workflow.relaxedDemoRules) return
-  const eventStatus = getTeamEventStatus(team)
-  if (eventStatus && !WRITABLE_CHAT_EVENT_STATUSES.includes(eventStatus)) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Chat room is read-only after event completion'])
+  const competitionStatus = getTeamCompetitionStatus(team)
+  if (competitionStatus && !WRITABLE_CHAT_COMPETITION_STATUSES.includes(competitionStatus)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Chat room is read-only after competition completion'])
   }
 }
 
@@ -125,11 +125,11 @@ const normalizeTeam = (team) => {
 
   return {
     id: getId(team),
-    eventId: getId(team.eventId),
+    competitionId: getId(team.competitionId),
     name: team.name,
     projectName: team.projectName || null,
     status: team.status,
-    eventStatus: getTeamEventStatus(team) || null
+    competitionStatus: getTeamCompetitionStatus(team) || null
   }
 }
 
