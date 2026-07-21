@@ -22,8 +22,8 @@ import User from '#models/user.model.js'
 import { RUBRIC_REPOSITORY } from '#modules/rubrics/rubric.repository.js'
 import { env } from '#configs/environment.js'
 import {
-  ALLOWED_SCORE_SCALES,
-  getRubricScale,
+  ALLOWED_TOTAL_WEIGHTS,
+  getRubricTotalWeight,
   hasAtMostTwoDecimals,
   roundToTwoDecimals,
   sumCriterionWeights
@@ -286,9 +286,9 @@ export const createScoreSheetService = ({
   }
 
   const validateRubricScale = ({ rubric, criteria = [] }) => {
-    const scale = getRubricScale(rubric)
+    const scale = getRubricTotalWeight(rubric)
     if (!scale) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Rubric totalScore must be one of ${ALLOWED_SCORE_SCALES.join(', ')}`])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Rubric totalScore must be one of ${ALLOWED_TOTAL_WEIGHTS.join(', ')}`])
     }
 
     const totalWeight = sumCriterionWeights(criteria)

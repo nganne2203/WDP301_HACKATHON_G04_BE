@@ -159,7 +159,7 @@ test('timeline validates competition window and status transitions', async () =>
       endTime: '2026-07-01T01:00:00.000Z'
     }),
     error => error instanceof ApiError &&
-      error.errors.includes('Timeline endTime must be within the competition date window')
+      error.errors.includes('Timeline startTime must be within the competition date window')
   )
 
   await assert.rejects(

@@ -232,7 +232,7 @@ Các luồng team, lời mời, giới hạn thành viên, check-in của team `
 - **Mức độ:** P1/Nghi vấn.
 - **Hiện trạng:** cần policy rõ hơn để ngăn sửa/xóa criterion khi đã có score sheet; trạng thái DRAFT/ACTIVE/ARCHIVED chưa tạo khóa bất biến đầy đủ ở mọi thao tác.
 - **Hậu quả:** điểm cũ không còn khớp tiêu chí/weight mới.
-- **Đề xuất:** snapshot rubric vào round khi mở scoring hoặc khóa ACTIVE rubric ngay khi có score; muốn đổi phải tạo version mới.
+- **Đề xuất:** snapshot rubric vào round khi mở scoring hoặc khóa ACTIVE rubric ngay khi có score; muốn đổi phải tạo rubric mới.
 
 ### BE-30 — Chưa tự động đóng chat khi kết thúc competition
 

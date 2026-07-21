@@ -158,7 +158,7 @@ test('createWorkshop rejects schedules outside the competition window and non-sc
       () => WORKSHOP_SERVICE.createWorkshop({
         competitionId: COMPETITION_ID,
         title: 'Too early',
-        startTime: '2026-06-30T23:00:00.000Z',
+        startTime: '2026-06-30T16:00:00.000Z',
         endTime: '2026-07-01T01:00:00.000Z'
       }),
       error => error instanceof ApiError &&

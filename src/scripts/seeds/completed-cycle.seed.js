@@ -53,6 +53,8 @@ const TRACK_DEFINITIONS = [
     code: 'A',
     name: 'Requirement & Architecture',
     description: 'Domain analysis, requirements, RAG architecture, and solution design.',
+    topic: 'Domain analysis and RAG solution architecture',
+    problemStatement: 'Design a domain-specific RAG solution that turns a complex knowledge base into grounded, actionable answers. Define the target users, information needs, data sources, retrieval strategy, and architecture.',
     examDriveUrl: 'https://drive.google.com/drive/folders/1SEALSpring2026TrackA',
     judges: ['Demo Judge A1', 'Demo Judge A2'],
     teams: [
@@ -65,6 +67,8 @@ const TRACK_DEFINITIONS = [
     code: 'B',
     name: 'Coding, Testing & Deployment',
     description: 'Implementation, testing, execution, reporting, and deployment of the RAG solution.',
+    topic: 'Implementation, evaluation, and deployment of RAG systems',
+    problemStatement: 'Implement and deploy a reliable domain-specific RAG product. Demonstrate test coverage, retrieval and response evaluation, observability, and a reproducible deployment workflow.',
     examDriveUrl: 'https://drive.google.com/drive/folders/1SEALSpring2026TrackB',
     judges: ['Demo Judge B1', 'Demo Judge B2'],
     teams: [
@@ -77,6 +81,8 @@ const TRACK_DEFINITIONS = [
     code: 'C',
     name: 'AI RAG Product & Experience',
     description: 'Domain-specific RAG product quality, interaction experience, and practical impact.',
+    topic: 'User experience and practical impact of AI RAG products',
+    problemStatement: 'Deliver a usable domain-specific RAG product that helps users complete meaningful tasks. Show clear interaction flows, grounded answers, responsible AI behavior, and measurable practical value.',
     examDriveUrl: 'https://drive.google.com/drive/folders/1SEALSpring2026TrackC',
     judges: ['Demo Judge C1', 'Demo Judge C2'],
     teams: [
@@ -137,7 +143,6 @@ const seedRubric = async ({ competitionId, title, createdBy, definitions }) => {
     description: 'Official judge-only rubric for the completed-cycle showcase.',
     totalScore: 100,
     criterionMaxScore: 10,
-    version: 1,
     status: 'ACTIVE',
     createdBy
   })
@@ -282,7 +287,6 @@ export const seedCompletedCycleShowcase = async ({
   })
 
   const timelineDefinitions = [
-    ['Registration period', 'OTHER', 'COMPLETED', '2026-03-16T08:00:00+07:00', '2026-04-05T23:59:59+07:00'],
     ['The RAG Revolution Workshop', 'WORKSHOP', 'COMPLETED', '2026-04-09T20:00:00+07:00', '2026-04-09T21:30:00+07:00'],
     ['Opening, track draw and team meeting', 'CEREMONY', 'COMPLETED', '2026-04-11T14:00:00+07:00', '2026-04-11T17:00:00+07:00'],
     ['Competition-day check-in', 'CHECK_IN', 'COMPLETED', '2026-04-12T05:30:00+07:00', '2026-04-12T07:00:00+07:00'],
@@ -302,27 +306,30 @@ export const seedCompletedCycleShowcase = async ({
       endTime: at(endTime)
     })
   }))
+  await TimelineActivity.deleteOne({ competitionId: competition._id, title: 'Registration period' })
 
   const workshop = await upsertOne(Workshop, { competitionId: competition._id, title: 'The RAG Revolution: Transforming Complex Data into Actionable Domain Insights' }, {
     competitionId: competition._id,
-    timelineActivityId: timelines[1]._id,
+    timelineActivityId: timelines[0]._id,
     title: 'The RAG Revolution: Transforming Complex Data into Actionable Domain Insights',
     description: 'Official online training on domain-specific datasets, retrieval, grounding, agentic RAG, evaluation, and actionable domain insights.',
     presenterId: speakerUser._id,
     speakerInfo: { name: speakerUser.fullName, title: 'Program Speaker', email: speakerUser.email },
     meetLink: 'https://meet.google.com/seal-spring-2026',
-    startTime: timelines[1].startTime,
-    endTime: timelines[1].endTime,
+    startTime: timelines[0].startTime,
+    endTime: timelines[0].endTime,
     questionnaire: ['How should a team evaluate retrieval quality?', 'How can a RAG system reduce hallucinations?'],
     status: 'COMPLETED'
   })
 
-  const tracks = await Promise.all(TRACK_DEFINITIONS.map(({ code, name, description, teams }) => {
+  const tracks = await Promise.all(TRACK_DEFINITIONS.map(({ code, name, description, topic, problemStatement, teams }) => {
     return upsertOne(Track, { competitionId: competition._id, code }, {
       competitionId: competition._id,
       code,
       name: `Board ${code} — ${name}`,
       description,
+      topic,
+      problemStatement,
       type: 'PRELIMINARY_GROUP',
       teamIds: [],
       maxTeams: teams.length,

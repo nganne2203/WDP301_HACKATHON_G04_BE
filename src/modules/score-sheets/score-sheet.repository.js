@@ -16,7 +16,7 @@ const scoreSheetPopulate = [
   { path: 'teamId', select: 'name chapterName projectName boardNumber status' },
   { path: 'submissionId', select: 'status submittedAt repositoryId demoUrl reportUrl presentationUrl' },
   { path: 'judgeId', select: 'fullName email status roles', populate: { path: 'roles', select: 'name code' } },
-  { path: 'rubricId', select: 'title totalScore status version' },
+  { path: 'rubricId', select: 'title totalScore status' },
   ...scorePopulate
 ]
 

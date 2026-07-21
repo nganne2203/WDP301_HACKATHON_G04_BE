@@ -4,6 +4,7 @@ import { WORKSHOP_REPOSITORY } from './workshop.repository.js'
 import { GOOGLE_SERVICE } from '#modules/google/google.service.js'
 import { PERMISSIONS } from '#constants/permissions.js'
 import ApiError from '#utils/ApiError.js'
+import { isWithinCompetitionDateWindow } from '#utils/competitionDateWindow.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
@@ -54,13 +55,10 @@ const ensureWorkshopTimeRange = (payload = {}) => {
 
 const ensureWorkshopWithinCompetitionWindow = ({ competition, startTime, endTime }) => {
   if (!competition || !startTime || !endTime) return
-  const workshopStart = new Date(startTime)
-  const workshopEnd = new Date(endTime)
-
-  if (competition.startDate && workshopStart < new Date(competition.startDate)) {
+  if (!isWithinCompetitionDateWindow({ competition, value: startTime })) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Workshop startTime must be within the competition date window'])
   }
-  if (competition.endDate && workshopEnd > new Date(competition.endDate)) {
+  if (!isWithinCompetitionDateWindow({ competition, value: endTime })) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Workshop endTime must be within the competition date window'])
   }
 }

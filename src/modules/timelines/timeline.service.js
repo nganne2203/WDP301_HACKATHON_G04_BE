@@ -3,6 +3,7 @@ import mongoose from 'mongoose'
 import { TIMELINE_REPOSITORY } from './timeline.repository.js'
 import { COMPETITION_SERVICE } from '#modules/competitions/competition.service.js'
 import ApiError from '#utils/ApiError.js'
+import { isWithinCompetitionDateWindow } from '#utils/competitionDateWindow.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
@@ -37,13 +38,10 @@ const ensureDateRange = (payload = {}) => {
 
 const ensureTimelineWithinCompetitionWindow = ({ competition, startTime, endTime }) => {
   if (!competition || !startTime || !endTime) return
-  const timelineStart = new Date(startTime)
-  const timelineEnd = new Date(endTime)
-
-  if (competition.startDate && timelineStart < new Date(competition.startDate)) {
+  if (!isWithinCompetitionDateWindow({ competition, value: startTime })) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Timeline startTime must be within the competition date window'])
   }
-  if (competition.endDate && timelineEnd > new Date(competition.endDate)) {
+  if (!isWithinCompetitionDateWindow({ competition, value: endTime })) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Timeline endTime must be within the competition date window'])
   }
 }

@@ -9,8 +9,10 @@ import Competition from '#models/competition.model.js'
 import Round from '#models/round.model.js'
 import ScoreSheet from '#models/scoreSheet.model.js'
 import {
-  ALLOWED_SCORE_SCALES,
-  getRubricScale,
+  ALLOWED_SCORING_COEFFICIENTS,
+  ALLOWED_TOTAL_WEIGHTS,
+  getRubricTotalWeight,
+  isAllowedScoringCoefficient,
   roundToTwoDecimals,
   sumCriterionWeights
 } from '#utils/scoringScale.js'
@@ -22,7 +24,6 @@ const RUBRIC_FIELDS = [
   'description',
   'totalScore',
   'criterionMaxScore',
-  'version',
   'status'
 ]
 
@@ -31,7 +32,6 @@ const RUBRIC_UPDATE_FIELDS = [
   'description',
   'totalScore',
   'criterionMaxScore',
-  'version',
   'status'
 ]
 
@@ -88,7 +88,6 @@ const normalizeRubric = async (rubric, repository) => {
     totalScore: plainRubric.totalScore,
     criterionMaxScore: plainRubric.criterionMaxScore || 10,
     criteriaWeightTotal: sumCriterionWeights(criteria),
-    version: plainRubric.version,
     status: plainRubric.status,
     criteria: criteria.map(normalizeCriterion),
     createdAt: plainRubric.createdAt,
@@ -155,7 +154,7 @@ export const createRubricService = ({
   const ensureRubricMutable = async (rubric) => {
     const scoreSheetCount = await countScoreSheetsForRubric(rubric._id || rubric.id)
     if (scoreSheetCount > 0) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric cannot be changed after score sheets have been created; create a new rubric version instead'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric cannot be changed after score sheets have been created; create a new rubric instead'])
     }
   }
 
@@ -175,11 +174,17 @@ export const createRubricService = ({
   }
 
   const ensureRubricScale = (rubric = {}) => {
-    const scale = getRubricScale(rubric)
+    const scale = getRubricTotalWeight(rubric)
     if (!scale) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Rubric totalScore must be one of ${ALLOWED_SCORE_SCALES.join(', ')}`])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Rubric totalScore must be one of ${ALLOWED_TOTAL_WEIGHTS.join(', ')}`])
     }
     return scale
+  }
+
+  const ensureScoringCoefficient = (value) => {
+    if (!isAllowedScoringCoefficient(value)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Rubric criterionMaxScore must be one of ${ALLOWED_SCORING_COEFFICIENTS.join(', ')}`])
+    }
   }
 
   const ensureCriteriaFitRubricScale = ({ rubric, criteria = [], requireExact = false }) => {
@@ -225,7 +230,7 @@ export const createRubricService = ({
     safePayload.totalScore = safePayload.totalScore ?? 100
     safePayload.criterionMaxScore = safePayload.criterionMaxScore ?? 10
     ensureRubricScale({ totalScore: safePayload.totalScore })
-    ensureRubricScale({ totalScore: safePayload.criterionMaxScore })
+    ensureScoringCoefficient(safePayload.criterionMaxScore)
     if (safePayload.status !== 'DRAFT') {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric must be created as DRAFT; configure criterion coefficients before changing its status'])
     }
@@ -253,7 +258,7 @@ export const createRubricService = ({
       ...existingRubricPlain,
       ...safePayload
     }
-    ensureRubricScale({ totalScore: candidateRubric.criterionMaxScore })
+    ensureScoringCoefficient(candidateRubric.criterionMaxScore)
     ensureCriteriaFitRubricScale({
       rubric: candidateRubric,
       criteria: await repository.findCriteriaByRubricId(existingRubric._id || existingRubric.id),

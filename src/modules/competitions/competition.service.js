@@ -21,6 +21,7 @@ import Workshop from '#models/workshop.model.js'
 import TimelineActivity from '#models/timelineActivity.model.js'
 import Track from '#models/track.model.js'
 import { isActiveJudge } from '#utils/domainAccessUtil.js'
+import { isWithinCompetitionDateWindow } from '#utils/competitionDateWindow.js'
 
 const COMPETITION_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED']
 const COMPETITION_TRANSITIONS = {
@@ -344,6 +345,39 @@ const createCompetitionService = ({
 
   const getCompetitionId = (competition) => competition?._id?.toString?.() || competition?.id?.toString?.()
 
+  const ensureCompetitionWindowContainsScheduledItems = async ({ competitionId, competition }) => {
+    const schedules = [
+      {
+        label: 'Round',
+        model: roundModel,
+        fields: ['startTime', 'endTime', 'submissionOpenAt', 'submissionCloseAt', 'submissionDeadline', 'publishTime']
+      },
+      {
+        label: 'Timeline activity',
+        model: timelineModel,
+        fields: ['startTime', 'endTime']
+      },
+      {
+        label: 'Workshop',
+        model: workshopModel,
+        fields: ['startTime', 'endTime']
+      }
+    ]
+
+    for (const { label, model, fields } of schedules) {
+      if (typeof model?.find !== 'function') continue
+      const items = await model.find({ competitionId }).select(fields.join(' ')).lean()
+      for (const item of items) {
+        for (const field of fields) {
+          if (!item[field]) continue
+          if (!isWithinCompetitionDateWindow({ competition, value: item[field] })) {
+            throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Competition date window cannot exclude an existing ${label.toLowerCase()} ${field}`])
+          }
+        }
+      }
+    }
+  }
+
   const buildRoundCountMap = async (competitions = []) => {
     const competitionIds = competitions
       .map(competition => competition?._id || competition?.id)
@@ -625,6 +659,16 @@ const createCompetitionService = ({
       maxTeamMembers: safePayload.maxTeamMembers ?? existingCompetition.maxTeamMembers
     })
     ensureCompetitionRule(competitionConfig)
+
+    if (safePayload.startDate !== undefined || safePayload.endDate !== undefined) {
+      await ensureCompetitionWindowContainsScheduledItems({
+        competitionId: getCompetitionId(existingCompetition),
+        competition: {
+          startDate: safePayload.startDate ?? existingCompetition.startDate,
+          endDate: safePayload.endDate ?? existingCompetition.endDate
+        }
+      })
+    }
 
     const normalizedPayload = syncLegacyCompetitionFields(safePayload, competitionConfig, existingCompetition)
     const competition = await repository.updateById(id, normalizedPayload)

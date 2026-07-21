@@ -460,7 +460,7 @@ Round bắt đầu ở `DRAFT`. Không mở round khi chưa có team/rubric/boar
 3. Kiểm tra tổng điểm và cách dùng weight.
 4. Chạy thử một phiếu điểm mẫu.
 5. Chuyển ACTIVE trước scoring.
-6. Sau khi có điểm, không sửa criterion/weight; nếu cần, tạo version mới và reset score có phê duyệt.
+6. Sau khi có điểm, không sửa criterion/weight; nếu cần thay đổi, tạo rubric mới và reset score có phê duyệt.
 
 AI review không được tự cộng vào rubric judge trừ khi thể lệ được thiết kế và mã nguồn được thay đổi có kiểm soát.
 
@@ -632,7 +632,7 @@ Ma trận trên mô tả nghiệp vụ mong muốn. Một số endpoint hiện r
 7. Chỉ member team được tạo/sửa/nộp submission của team đó.
 8. Chỉ judge ACTIVE được gán board và chấm team thuộc board.
 9. Score sheet đã submit/locked là bất biến.
-10. Rubric đã dùng chấm không được sửa; thay đổi phải version hóa.
+10. Rubric đã dùng chấm không được sửa; thay đổi phải dùng một rubric mới.
 11. AI review chỉ là tham khảo, không tự tạo điểm official.
 12. Ranking chỉ được công bố khi đủ phiếu, giải quyết tie và được phê duyệt.
 13. Media pending không xuất hiện trong gallery công khai.

@@ -187,6 +187,7 @@ const seedRequiredData = async () => {
     mentorUser,
     speakerUser
   })
+  await Rubric.collection.updateMany({}, { $unset: { version: '' } })
 }
 
 const run = async () => {

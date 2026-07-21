@@ -242,12 +242,12 @@ test('rubric criteria cannot change after score sheets exist', async () => {
   await assert.rejects(
     service.updateCriterion(ids.rubric, ids.criterion1, { maxScore: 8 }),
     error => error instanceof Error &&
-      error.errors.includes('Rubric cannot be changed after score sheets have been created; create a new rubric version instead')
+      error.errors.includes('Rubric cannot be changed after score sheets have been created; create a new rubric instead')
   )
 
   await assert.rejects(
     service.deleteCriterion(ids.rubric, ids.criterion1),
     error => error instanceof Error &&
-      error.errors.includes('Rubric cannot be changed after score sheets have been created; create a new rubric version instead')
+      error.errors.includes('Rubric cannot be changed after score sheets have been created; create a new rubric instead')
   )
 })

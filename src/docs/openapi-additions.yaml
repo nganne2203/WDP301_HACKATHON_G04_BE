@@ -526,14 +526,13 @@ components:
           nullable: true
         totalScore:
           type: number
+          enum: [10, 100]
           description: Total weight. The sum of all criterion weights must equal this value before the rubric leaves DRAFT.
         criterionMaxScore:
           type: number
           enum: [4, 10, 100]
           default: 10
           description: Scoring coefficient automatically applied to every criterion in this rubric.
-        version:
-          type: integer
         status:
           type: string
           enum: [DRAFT, ACTIVE, ARCHIVED]
@@ -547,13 +546,12 @@ components:
           nullable: true
         totalScore:
           type: number
+          enum: [10, 100]
           description: Total weight. The sum of all criterion weights must equal this value before the rubric leaves DRAFT.
         criterionMaxScore:
           type: number
           enum: [4, 10, 100]
           description: Changing this also updates every criterion that has not been scored.
-        version:
-          type: integer
         status:
           type: string
           enum: [DRAFT, ACTIVE, ARCHIVED]
@@ -2239,7 +2237,7 @@ paths:
     patch:
       summary: Update rubric metadata
       description: |
-        Update rubric title, description, version, or lifecycle status without changing criteria rows.
+        Update rubric title, description, total weight, scoring coefficient, or lifecycle status without changing criteria rows.
       tags: [Rubrics]
       security:
         - BearerAuth: []

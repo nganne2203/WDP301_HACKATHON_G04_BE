@@ -2,7 +2,8 @@ import Joi from 'joi'
 
 const objectId = Joi.string().hex().length(24)
 const rubricStatus = Joi.string().trim().uppercase().valid('DRAFT', 'ACTIVE', 'ARCHIVED')
-const scoreScale = Joi.number().valid(4, 10, 100)
+const totalWeight = Joi.number().valid(10, 100)
+const scoringCoefficient = Joi.number().valid(4, 10, 100)
 const coefficientNumber = Joi.number().integer().positive()
 
 export const RUBRIC_VALIDATION = {
@@ -21,9 +22,8 @@ export const RUBRIC_VALIDATION = {
       roundId: objectId.allow(null),
       title: Joi.string().trim().min(2).max(200).required(),
       description: Joi.string().trim().max(2000).allow('', null),
-      totalScore: scoreScale.default(100),
-      criterionMaxScore: scoreScale.default(10),
-      version: Joi.number().integer().min(1).default(1),
+      totalScore: totalWeight.default(100),
+      criterionMaxScore: scoringCoefficient.default(10),
       status: rubricStatus.default('DRAFT')
     })
   },
@@ -34,9 +34,8 @@ export const RUBRIC_VALIDATION = {
     body: Joi.object({
       title: Joi.string().trim().min(2).max(200),
       description: Joi.string().trim().max(2000).allow('', null),
-      totalScore: scoreScale,
-      criterionMaxScore: scoreScale,
-      version: Joi.number().integer().min(1),
+      totalScore: totalWeight,
+      criterionMaxScore: scoringCoefficient,
       status: rubricStatus
     }).min(1)
   },

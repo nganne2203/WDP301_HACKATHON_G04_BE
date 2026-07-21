@@ -13,6 +13,7 @@ import Track from '#models/track.model.js'
 import User from '#models/user.model.js'
 import Submission from '#models/submission.model.js'
 import ScoreSheet from '#models/scoreSheet.model.js'
+import { isWithinCompetitionDateWindow } from '#utils/competitionDateWindow.js'
 import Ranking from '#models/ranking.model.js'
 import { JUDGING_BOARD_REPOSITORY } from '#modules/judging-boards/judging-board.repository.js'
 import { actorHasRole, getActorId, isActiveJudge, isParticipantOnlyActor, isPrivilegedCompetitionActor } from '#utils/domainAccessUtil.js'
@@ -42,7 +43,6 @@ const ROUND_FIELDS = [
 ]
 
 const ROUND_ASSIGNABLE_TEAM_STATUSES = ['CONFIRMED']
-const COMPETITION_TIME_ZONE = 'Asia/Ho_Chi_Minh'
 
 const ensureObjectId = (id, fieldName = 'round id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -83,40 +83,19 @@ const ensureDateOrder = (payload = {}) => {
   }
 }
 
-const formatDateKeyInCompetitionTimeZone = (value) => {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: COMPETITION_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).formatToParts(date)
-
-  const lookup = Object.fromEntries(parts.map(part => [part.type, part.value]))
-  return `${lookup.year}-${lookup.month}-${lookup.day}`
-}
-
 const ensureRoundWindowWithinCompetition = (competition, payload = {}) => {
-  const eventStartKey = formatDateKeyInCompetitionTimeZone(competition?.startDate)
-  const eventEndKey = formatDateKeyInCompetitionTimeZone(competition?.endDate)
   const fields = [
     ['startTime', 'Round start time'],
-    ['endTime', 'Round end time']
+    ['endTime', 'Round end time'],
+    ['submissionOpenAt', 'Round submission open time'],
+    ['submissionCloseAt', 'Round submission close time'],
+    ['submissionDeadline', 'Round submission deadline'],
+    ['publishTime', 'Round publish time']
   ]
 
   for (const [field, label] of fields) {
     if (!payload[field]) continue
-    const roundKey = formatDateKeyInCompetitionTimeZone(payload[field])
-    if (!roundKey) continue
-
-    if (eventStartKey && roundKey < eventStartKey) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`${label} must be within the competition date range`])
-    }
-
-    if (eventEndKey && roundKey > eventEndKey) {
+    if (!isWithinCompetitionDateWindow({ competition, value: payload[field] })) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, [`${label} must be within the competition date range`])
     }
   }
