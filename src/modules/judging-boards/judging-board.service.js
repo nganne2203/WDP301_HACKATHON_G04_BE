@@ -243,7 +243,7 @@ const shuffleItems = (items, randomFn = Math.random) => {
   return copied
 }
 
-const distributeTeamsAcrossBoards = ({ teams = [], boardCount, randomFn = Math.random }) => {
+const distributeTeamsAcrossBoards = ({ teams = [], boardCount }) => {
   const boards = Array.from({ length: boardCount }, () => [])
   // Keep the split balanced and predictable. Any remainder is assigned to
   // the first boards, so 25 teams across 3 boards becomes 9 / 8 / 8.
@@ -405,16 +405,32 @@ export const createJudgingBoardService = ({
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Competition competitionConfig.boardCount is required for board randomization'])
     }
 
-    // Preliminary boards are one judging stage. Older seed data may contain
-    // one preliminary round per track; combine those rounds so randomization
-    // distributes the complete competition lineup across the configured boards.
+    // Preliminary boards are one judging stage. Include every configured track
+    // in that stage, then draw from all confirmed teams in those tracks.
+    const isFinalRound = round.roundType === 'FINAL'
     const stageRounds = round.roundType === 'PRELIMINARY'
-      ? await Round.find({ competitionId: competition._id, roundType: 'PRELIMINARY' }).select('_id assignedTeamIds')
+      ? await Round.find({ competitionId: competition._id, roundType: 'PRELIMINARY' }).select('_id trackId')
       : [round]
-    const assignedTeamIds = [...new Set(stageRounds.flatMap(item => (item.assignedTeamIds || []).map(value => value.toString())))]
-    const roundTeams = await Team.find({
-      _id: { $in: assignedTeamIds }
-    }).sort({ createdAt: 1, name: 1 })
+    const teamFilter = { competitionId: competition._id }
+
+    if (!isFinalRound) {
+      const stageTrackIds = [...new Set(stageRounds
+        .map(item => item.trackId?.toString?.() || item.trackId)
+        .filter(Boolean))]
+      const stageHasAllTracksRound = stageRounds.some(item => !item.trackId)
+      if (!stageHasAllTracksRound && stageTrackIds.length > 0) {
+        teamFilter.trackId = { $in: stageTrackIds }
+      }
+    } else {
+      // Final rounds receive only the finalists selected from preliminary rounds.
+      const preliminaryRounds = await Round.find({ competitionId: competition._id, roundType: 'PRELIMINARY' }).select('promotedTeamIds')
+      const finalistIds = [...new Set(preliminaryRounds.flatMap(item =>
+        (item.promotedTeamIds || []).map(value => value.toString())
+      ))]
+      teamFilter._id = { $in: finalistIds }
+    }
+
+    const roundTeams = await Team.find(teamFilter).sort({ createdAt: 1, name: 1 })
 
     const eligibleTeams = roundTeams.filter(team => ELIGIBLE_TEAM_STATUSES.has(team.status))
     const ineligibleTeams = roundTeams.filter(team => !ELIGIBLE_TEAM_STATUSES.has(team.status))
@@ -468,8 +484,7 @@ export const createJudgingBoardService = ({
       const shuffledTeams = randomize ? shuffleItems(context.eligibleTeams, randomFn) : [...context.eligibleTeams]
       const distributedTeams = distributeTeamsAcrossBoards({
         teams: shuffledTeams,
-        boardCount: context.boardCount,
-        randomFn
+        boardCount: context.boardCount
       })
       boardPlans = Array.from({ length: context.boardCount }, (_, index) => {
         const boardNumber = index + 1
@@ -548,6 +563,10 @@ export const createJudgingBoardService = ({
       }
     }
 
+    // The round mirrors the confirmed board lineup for read-only display and
+    // participant access. Coordinators cannot manually alter this list.
+    await Round.findByIdAndUpdate(roundId, { assignedTeamIds: [...eligibleIds] })
+
     await Team.updateMany(
       { _id: { $in: [...eligibleIds] } },
       { $unset: { boardNumber: 1, placementSlot: 1 } }
@@ -619,7 +638,7 @@ export const createJudgingBoardService = ({
 
     return {
       competition: normalizeCompetition(result.competition),
-      round: normalizeRound(result.round),
+      round: normalizeRound(await Round.findById(roundId)),
       boardCount: result.boardCount,
       confirmedTeamCount: result.eligibleTeams.length,
       boards: confirmedBoards

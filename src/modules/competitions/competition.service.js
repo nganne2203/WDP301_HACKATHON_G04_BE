@@ -161,10 +161,14 @@ const buildCompetitionConfig = (payload = {}, existingCompetition = null) => {
     ?? payload.finalistSlotsPerTrack
     ?? existingConfig.finalistsPerBoard
     ?? existingCompetition?.finalistSlotsPerTrack
-  const finalistCount = incomingConfig.finalistCount
+  const suppliedFinalistCount = incomingConfig.finalistCount
     ?? payload.totalFinalistSlots
     ?? existingConfig.finalistCount
     ?? existingCompetition?.totalFinalistSlots
+  // The total is derived so the stored rule cannot disagree with its board quotas.
+  const finalistCount = boardCount && finalistsPerBoard
+    ? Number(boardCount) * Number(finalistsPerBoard)
+    : suppliedFinalistCount
 
   const competitionConfig = {
     boardCount,
@@ -173,7 +177,6 @@ const buildCompetitionConfig = (payload = {}, existingCompetition = null) => {
     finalistCount,
     finalistsPerBoard,
     finalistSelectionMode: incomingConfig.finalistSelectionMode ?? existingConfig.finalistSelectionMode ?? 'FIXED_PER_BOARD',
-    fillRemainingFinalistsByOverallScore: incomingConfig.fillRemainingFinalistsByOverallScore ?? existingConfig.fillRemainingFinalistsByOverallScore ?? false,
     rankingScopes: normalizeRankingScopes(incomingConfig.rankingScopes ?? existingConfig.rankingScopes),
     tieBreakRule: incomingConfig.tieBreakRule ?? existingConfig.tieBreakRule,
     tieBreakDurationMinutes: incomingConfig.tieBreakDurationMinutes ?? existingConfig.tieBreakDurationMinutes
@@ -188,7 +191,6 @@ const ensureCompetitionRule = (competitionConfig = {}) => {
   const {
     boardCount,
     trackCount,
-    finalistCount,
     finalistsPerBoard,
     finalistSelectionMode,
     tieBreakDurationMinutes
@@ -202,13 +204,8 @@ const ensureCompetitionRule = (competitionConfig = {}) => {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Invalid competitionConfig.finalistSelectionMode'])
   }
 
-  if (finalistsPerBoard && finalistCount && finalistsPerBoard > finalistCount) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['competitionConfig.finalistsPerBoard must be less than or equal to competitionConfig.finalistCount'])
-  }
-
-  if (finalistSelectionMode === 'FIXED_PER_BOARD' && boardCount && finalistsPerBoard && finalistCount &&
-    (boardCount * finalistsPerBoard) !== finalistCount) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['competitionConfig.finalistCount must equal boardCount * finalistsPerBoard for FIXED_PER_BOARD mode'])
+  if (competitionConfig.maxTeamsPerBoard && finalistsPerBoard && finalistsPerBoard > competitionConfig.maxTeamsPerBoard) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['competitionConfig.finalistsPerBoard cannot exceed competitionConfig.maxTeamsPerBoard'])
   }
 
   if (tieBreakDurationMinutes && !competitionConfig.tieBreakRule) {

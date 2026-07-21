@@ -200,7 +200,7 @@ test('participant can only list and retrieve competitions they joined or can reg
   )
 })
 
-test('updateCompetition rejects invalid fixed-per-board finalist math', async () => {
+test('updateCompetition derives finalist count from board quotas', async () => {
   const service = createService()
 
   const created = await service.createCompetition({
@@ -213,19 +213,17 @@ test('updateCompetition rejects invalid fixed-per-board finalist math', async ()
     }
   }, { id: '000000000000000000000099' })
 
-  await assert.rejects(
-    service.updateCompetition(created.id, {
-      competitionConfig: {
-        boardCount: 3,
-        finalistCount: 10,
-        finalistsPerBoard: 2,
-        finalistSelectionMode: 'FIXED_PER_BOARD'
-      }
-    }),
-    (error) => error instanceof ApiError &&
-      error.code === 'BAD_REQUEST' &&
-      error.errors.includes('competitionConfig.finalistCount must equal boardCount * finalistsPerBoard for FIXED_PER_BOARD mode')
-  )
+  const updated = await service.updateCompetition(created.id, {
+    competitionConfig: {
+      boardCount: 3,
+      finalistCount: 10,
+      finalistsPerBoard: 2,
+      finalistSelectionMode: 'FIXED_PER_BOARD'
+    }
+  })
+
+  assert.equal(updated.competitionConfig.finalistCount, 6)
+  assert.equal(updated.totalFinalistSlots, 6)
 })
 
 test('updateCompetitionStatus rejects unconfirmed teams when registration closes', async () => {

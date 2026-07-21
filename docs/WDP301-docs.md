@@ -1227,6 +1227,7 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 **Round**
 - Stores preliminary and final rounds.
 - Key fields: `competitionId`, `trackId`, `name`, `roundType`, `assignedTeamIds`, `promotedTeamIds`, `maxPromotedTeams`, `startTime`, `endTime`, `submissionDeadline`, `publishTime`, `assignedJudgeIds`, `rubricId`, `promotionRule`, `tieBreakRule`, `tieBreakDurationMinutes`, `status`.
+- `assignedTeamIds` is read-only in Round APIs: it is written only after the coordinator confirms the randomized judging-board lineup. Preliminary draws use all `CONFIRMED` teams in the competition's configured round tracks; final draws use teams promoted from preliminary rounds.
 - Tie-break policy: final rounds can store a penalty evaluation or 10-minute mini-test rule so tied finalist teams can be ranked without duplicate ranks.
 
 **JudgingBoard**

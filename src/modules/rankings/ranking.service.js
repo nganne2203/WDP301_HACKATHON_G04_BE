@@ -620,17 +620,6 @@ export const createRankingService = ({
       selected = normalizedRankings.slice(0, finalistCount)
     }
 
-    if (config.fillRemainingFinalistsByOverallScore && selected.length < finalistCount) {
-      const selectedIds = new Set(selected.map(item => item.teamId))
-      for (const ranking of normalizedRankings) {
-        if (selected.length >= finalistCount) break
-        if (!selectedIds.has(ranking.teamId)) {
-          selected.push(ranking)
-          selectedIds.add(ranking.teamId)
-        }
-      }
-    }
-
     ensureExactFinalistCount({
       selectedCount: selected.length,
       finalistCount,

@@ -13,7 +13,6 @@ const competitionConfigSchema = new Schema(
       type: String,
       enum: ['FIXED_PER_BOARD', 'TOP_PER_BOARD_WITH_WILDCARD', 'OVERALL_SCORE', 'CUSTOM']
     },
-    fillRemainingFinalistsByOverallScore: { type: Boolean, default: false },
     rankingScopes: [{
       type: String,
       enum: ['TEAM', 'CHAPTER', 'INDIVIDUAL']

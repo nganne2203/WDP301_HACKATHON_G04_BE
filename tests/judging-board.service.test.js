@@ -15,6 +15,7 @@ test('previewRandomizedBoards only includes eligible teams and builds board A/B 
 
   const originalCompetitionFindById = CompetitionModel.findById
   const originalRoundFindById = RoundModel.findById
+  const originalRoundFind = RoundModel.find
   const originalTeamFind = TeamModel.find
 
   const storedBoards = new Map()
@@ -56,7 +57,10 @@ test('previewRandomizedBoards only includes eligible teams and builds board A/B 
   RoundModel.findById = async () => ({
     _id: '000000000000000000000201',
     competitionId: '000000000000000000000101',
-    assignedTeamIds: ['000000000000000000000301', '000000000000000000000302', '000000000000000000000303']
+    roundType: 'PRELIMINARY'
+  })
+  RoundModel.find = () => ({
+    select: async () => [{ _id: '000000000000000000000201', trackId: null }]
   })
   TeamModel.find = () => ({
     sort: async () => [
@@ -83,6 +87,7 @@ test('previewRandomizedBoards only includes eligible teams and builds board A/B 
   } finally {
     CompetitionModel.findById = originalCompetitionFindById
     RoundModel.findById = originalRoundFindById
+    RoundModel.find = originalRoundFind
     TeamModel.find = originalTeamFind
   }
 })
@@ -98,6 +103,7 @@ test('confirmRandomizedBoards persists boardNumber and placementSlot only after 
 
   const originalCompetitionFindById = CompetitionModel.findById
   const originalRoundFindById = RoundModel.findById
+  const originalRoundFindByIdAndUpdate = RoundModel.findByIdAndUpdate
   const originalTeamFind = TeamModel.find
   const originalUpdateMany = TeamModel.updateMany
   const originalFindByIdAndUpdate = TeamModel.findByIdAndUpdate
@@ -145,6 +151,7 @@ test('confirmRandomizedBoards persists boardNumber and placementSlot only after 
     competitionId: '000000000000000000000101',
     assignedTeamIds: ['000000000000000000000301', '000000000000000000000302']
   })
+  RoundModel.findByIdAndUpdate = async () => null
   TeamModel.find = () => ({
     sort: async () => [...teamState.values()]
   })
@@ -176,6 +183,7 @@ test('confirmRandomizedBoards persists boardNumber and placementSlot only after 
   } finally {
     CompetitionModel.findById = originalCompetitionFindById
     RoundModel.findById = originalRoundFindById
+    RoundModel.findByIdAndUpdate = originalRoundFindByIdAndUpdate
     TeamModel.find = originalTeamFind
     TeamModel.updateMany = originalUpdateMany
     TeamModel.findByIdAndUpdate = originalFindByIdAndUpdate

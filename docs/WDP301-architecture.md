@@ -858,7 +858,7 @@ For SEAL Hackathon Fall 2025, the database models represent the official competi
 - Teams are assigned into preliminary groups through both:
   - `Team.trackId`, which stores each team's selected/drawn group.
   - `Track.teamIds`, which stores the explicit team list for each group for fast board/ranking reads.
-- `Round.assignedTeamIds` stores teams participating in a round, and `Round.promotedTeamIds` stores teams promoted from preliminary rounds into the final.
+- `Round.assignedTeamIds` stores the confirmed board lineup and is managed only by judging-board randomization; `Round.promotedTeamIds` stores teams promoted from preliminary rounds into the final.
 - `JudgingBoard.teamIds` stores the teams judged by a board in a given round and group.
 - `Score` stores official judge-entered rubric scores only. AI review artifacts are stored separately and never become ranking input.
 - `Ranking.rankingType` supports the three official ranking tables:

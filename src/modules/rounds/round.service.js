@@ -25,7 +25,6 @@ const ROUND_FIELDS = [
   'roundType',
   'problemStatement',
   'examDriveUrl',
-  'assignedTeamIds',
   'promotedTeamIds',
   'maxPromotedTeams',
   'startTime',
@@ -479,11 +478,6 @@ export const createRoundService = ({
     await ensureTeamsBelongToRoundContext({
       competitionId: competition._id,
       trackId: payload.trackId,
-      teamIds: payload.assignedTeamIds || []
-    })
-    await ensureTeamsBelongToRoundContext({
-      competitionId: competition._id,
-      trackId: payload.trackId,
       teamIds: payload.promotedTeamIds || []
     })
     ensurePromotionRuleConsistency(payload)
@@ -518,9 +512,6 @@ export const createRoundService = ({
     })
 
     if (safePayload.assignedJudgeIds) await ensureUsersExist(safePayload.assignedJudgeIds)
-    if (safePayload.assignedTeamIds) {
-      await ensureTeamsBelongToRoundContext({ competitionId, trackId, teamIds: safePayload.assignedTeamIds })
-    }
     if (safePayload.promotedTeamIds) {
       await ensureTeamsBelongToRoundContext({ competitionId, trackId, teamIds: safePayload.promotedTeamIds })
     }

@@ -275,7 +275,6 @@ export const seedCompletedCycleShowcase = async ({
       finalistCount: 6,
       finalistsPerBoard: 2,
       finalistSelectionMode: 'FIXED_PER_BOARD',
-      fillRemainingFinalistsByOverallScore: false,
       rankingScopes: ['TEAM'],
       tieBreakRule: 'Penalty evaluation through judge questions or a 10-minute mini test.',
       tieBreakDurationMinutes: 10

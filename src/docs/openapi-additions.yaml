@@ -611,10 +611,6 @@ components:
         roundType:
           type: string
           enum: [PRELIMINARY, FINAL]
-        assignedTeamIds:
-          type: array
-          items:
-            type: string
         promotedTeamIds:
           type: array
           items:

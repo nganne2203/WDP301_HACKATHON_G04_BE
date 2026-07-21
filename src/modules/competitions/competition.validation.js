@@ -13,7 +13,6 @@ const competitionConfig = Joi.object({
   finalistCount: Joi.number().integer().min(1),
   finalistsPerBoard: Joi.number().integer().min(1),
   finalistSelectionMode,
-  fillRemainingFinalistsByOverallScore: Joi.boolean(),
   rankingScopes: Joi.array().items(rankingScope).min(1).unique(),
   tieBreakRule: Joi.string().trim().max(500).allow('', null),
   tieBreakDurationMinutes: Joi.number().integer().min(1)
