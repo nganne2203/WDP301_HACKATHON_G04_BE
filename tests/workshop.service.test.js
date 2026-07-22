@@ -4,11 +4,13 @@ import test from 'node:test'
 import ApiError from '../src/utils/ApiError.js'
 import { WORKSHOP_REPOSITORY } from '../src/modules/workshops/workshop.repository.js'
 import { WORKSHOP_SERVICE } from '../src/modules/workshops/workshop.service.js'
+import { NOTIFICATION_SERVICE } from '../src/modules/notifications/notification.service.js'
 
 const WORKSHOP_ID = '000000000000000000000101'
 const AUTHOR_ID = '000000000000000000000201'
 const COMPETITION_ID = '000000000000000000000501'
 const OTHER_COMPETITION_ID = '000000000000000000000502'
+const PRESENTER_ID = '000000000000000000000801'
 
 const patchRepository = (overrides) => {
   const originals = {}
@@ -178,6 +180,116 @@ test('createWorkshop rejects schedules outside the competition window and non-sc
     )
   } finally {
     restore()
+  }
+})
+
+test('createWorkshop notifies an assigned speaker by in-app notification and email', async () => {
+  const notifications = []
+  const originalNotifyUser = NOTIFICATION_SERVICE.notifyUser
+  NOTIFICATION_SERVICE.notifyUser = async (payload) => {
+    notifications.push(payload)
+    return { notification: {}, email: {}, errors: [] }
+  }
+
+  const presenter = {
+    _id: PRESENTER_ID,
+    fullName: 'Speaker One',
+    email: 'speaker@example.com'
+  }
+  const competition = {
+    _id: COMPETITION_ID,
+    title: 'SEAL Hackathon',
+    startDate: new Date('2026-07-01T00:00:00.000Z'),
+    endDate: new Date('2026-07-02T00:00:00.000Z')
+  }
+  const workshop = {
+    _id: WORKSHOP_ID,
+    competitionId: competition,
+    presenterId: presenter,
+    title: 'AI Workshop',
+    status: 'SCHEDULED',
+    startTime: new Date('2026-07-01T08:00:00.000Z'),
+    endTime: new Date('2026-07-01T10:00:00.000Z')
+  }
+
+  const restore = patchRepository({
+    findCompetitionById: async () => competition,
+    createWorkshop: async () => ({ _id: WORKSHOP_ID }),
+    findWorkshopById: async () => workshop
+  })
+
+  try {
+    await WORKSHOP_SERVICE.createWorkshop({
+      competitionId: COMPETITION_ID,
+      presenterId: PRESENTER_ID,
+      title: 'AI Workshop',
+      startTime: workshop.startTime,
+      endTime: workshop.endTime
+    })
+
+    assert.equal(notifications.length, 1)
+    assert.equal(notifications[0].user.email, 'speaker@example.com')
+    assert.deepEqual(notifications[0].channels, ['IN_APP', 'EMAIL'])
+    assert.equal(notifications[0].metadata.action, 'WORKSHOP_SPEAKER_ASSIGNED')
+  } finally {
+    restore()
+    NOTIFICATION_SERVICE.notifyUser = originalNotifyUser
+  }
+})
+
+test('updateWorkshop notifies only when a new speaker is assigned', async () => {
+  const notifications = []
+  const originalNotifyUser = NOTIFICATION_SERVICE.notifyUser
+  NOTIFICATION_SERVICE.notifyUser = async (payload) => {
+    notifications.push(payload)
+    return { notification: {}, email: {}, errors: [] }
+  }
+
+  const competition = {
+    _id: COMPETITION_ID,
+    title: 'SEAL Hackathon',
+    startDate: new Date('2026-07-01T00:00:00.000Z'),
+    endDate: new Date('2026-07-02T00:00:00.000Z')
+  }
+  const existingWorkshop = {
+    _id: WORKSHOP_ID,
+    competitionId: competition,
+    presenterId: { _id: PRESENTER_ID, fullName: 'Speaker One', email: 'speaker@example.com' },
+    title: 'AI Workshop',
+    status: 'SCHEDULED',
+    startTime: new Date('2026-07-01T08:00:00.000Z'),
+    endTime: new Date('2026-07-01T10:00:00.000Z')
+  }
+  let nextWorkshop = existingWorkshop
+
+  const restore = patchRepository({
+    findWorkshopById: async () => existingWorkshop,
+    findCompetitionById: async () => competition,
+    updateWorkshopById: async () => nextWorkshop
+  })
+
+  try {
+    await WORKSHOP_SERVICE.updateWorkshop(WORKSHOP_ID, { title: 'Updated title' })
+    assert.equal(notifications.length, 0)
+
+    nextWorkshop = {
+      ...existingWorkshop,
+      presenterId: {
+        _id: '000000000000000000000802',
+        fullName: 'Speaker Two',
+        email: 'speaker.two@example.com'
+      }
+    }
+    await WORKSHOP_SERVICE.updateWorkshop(WORKSHOP_ID, {
+      presenterId: '000000000000000000000802'
+    })
+
+    assert.equal(notifications.length, 1)
+    assert.equal(notifications[0].user.email, 'speaker.two@example.com')
+    assert.deepEqual(notifications[0].channels, ['IN_APP', 'EMAIL'])
+  } finally {
+    restore()
+    NOTIFICATION_SERVICE.notifyUser = originalNotifyUser
   }
 })
 

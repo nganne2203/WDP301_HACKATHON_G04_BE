@@ -1164,6 +1164,7 @@ const createInvitationForEmail = async ({
         type: 'SYSTEM',
         title: 'Team invitation',
         message: `${leader.fullName || leader.email} invited you to join ${team.name} for ${competition.title}.`,
+        dedupeKey: `team-invitation:${getId(invitation)}:${getId(invitedUser)}`,
         metadata: {
           action: 'TEAM_INVITATION_CONFIRM',
           competitionId: getId(competition),
@@ -1311,6 +1312,7 @@ const rejectOpenTeams = async ({ repository, competition, reason, excludeTeamId 
           type: 'SYSTEM',
           title: 'Team registration rejected',
           message: buildTeamRejectedMessage(rejectedTeam, reason),
+          dedupeKey: `team-registration-rejected:${getId(rejectedTeam)}:${getId(user)}`,
           emailTemplate: EMAIL_TEMPLATE_KEYS.TEAM_REJECTED,
           emailContext: {
             eventTitle: competition.title,
@@ -1318,9 +1320,11 @@ const rejectOpenTeams = async ({ repository, competition, reason, excludeTeamId 
             rejectionReason: reason
           },
           metadata: {
+            action: 'TEAM_REGISTRATION_REJECTED',
             competitionId: getId(competition),
             teamId: getId(rejectedTeam),
-            reason
+            reason,
+            targetPath: '/participant/team'
           }
         }
       })
@@ -2019,15 +2023,18 @@ export const createTeamService = ({
             type: 'SYSTEM',
             title: 'Team membership confirmed',
             message: `You joined ${updatedTeam.name}.`,
+            dedupeKey: `team-membership-confirmed:${getId(acceptedInvitation)}:${getId(invitedUser)}`,
             emailTemplate: EMAIL_TEMPLATE_KEYS.TEAM_CONFIRMATION_SUCCESS,
             emailContext: {
               eventTitle: competition.title,
               teamName: updatedTeam.name
             },
             metadata: {
+              action: 'TEAM_MEMBERSHIP_CONFIRMED',
               competitionId: getId(competition),
               teamId: getId(updatedTeam),
-              invitationId: getId(acceptedInvitation)
+              invitationId: getId(acceptedInvitation),
+              targetPath: '/participant/team'
             },
             channels: accountCreated ? ['IN_APP'] : undefined
           }
@@ -2095,6 +2102,7 @@ export const createTeamService = ({
               type: 'SYSTEM',
               title: 'Team invitation declined',
               message: `${invitation.invitedEmail} declined the invitation to join ${team?.name || 'your team'}.`,
+              dedupeKey: `team-invitation-declined:${getId(declinedInvitation)}:${getId(leader)}`,
               emailTemplate: EMAIL_TEMPLATE_KEYS.TEAM_MEMBER_DECLINED,
               emailContext: {
                 eventTitle: competition?.title,
@@ -2102,9 +2110,11 @@ export const createTeamService = ({
                 declinedEmail: invitation.invitedEmail
               },
               metadata: {
+                action: 'TEAM_INVITATION_DECLINED',
                 competitionId: getId(competition),
                 teamId: getId(team),
-                invitationId: getId(declinedInvitation)
+                invitationId: getId(declinedInvitation),
+                targetPath: '/participant/team'
               }
             }
           })
