@@ -54,7 +54,10 @@ const userSchema = new Schema(
     avatarUrl: { type: String },
     phone: { type: String },
     bio: { type: String },
-    githubUsername: { type: String, trim: true }
+    githubUsername: { type: String, trim: true },
+    pushToken: { type: String, trim: true },
+    pushPlatform: { type: String, enum: ['android', 'ios'] },
+    pushTokenUpdatedAt: { type: Date }
   },
   { timestamps: true }
 )

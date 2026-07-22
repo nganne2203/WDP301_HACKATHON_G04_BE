@@ -9,12 +9,15 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { LOGGER } from '#utils/logger.js'
 import { emitUserSocketCompetition, SOCKET_NOTIFICATION_EVENTS } from '#services/socket/socket-emitter.js'
+import User from '#models/user.model.js'
 
 const NOTIFICATION_TYPES = ['DEADLINE', 'WORKSHOP', 'RESULT', 'FEEDBACK', 'SYSTEM']
 const CHANNELS = {
   IN_APP: 'IN_APP',
-  EMAIL: 'EMAIL'
+  EMAIL: 'EMAIL',
+  PUSH: 'PUSH'
 }
+const EXPO_PUSH_ENDPOINT = 'https://exp.host/--/api/v2/push/send'
 
 const getId = (value) => {
   return value?._id?.toString?.() || value?.id || value?.toString?.()
@@ -91,11 +94,115 @@ const buildRegistrationUrl = (competitionId, logger = LOGGER) => {
 export const createNotificationService = ({
   repository = NOTIFICATION_REPOSITORY,
   emailService = EMAIL_SERVICE,
+  userModel = User,
+  fetchImpl = globalThis.fetch,
   socketEmitter = {
     emitToUser: emitUserSocketCompetition
   },
   logger = LOGGER
 } = {}) => {
+  const clearInvalidPushToken = async ({ userId, token }) => {
+    await userModel.updateOne(
+      { _id: userId, pushToken: token },
+      { $unset: { pushToken: 1, pushPlatform: 1, pushTokenUpdatedAt: 1 } }
+    )
+  }
+
+  const sendPushNotification = async ({ userId, title, message, data }) => {
+    if (!userId || typeof fetchImpl !== 'function') {
+      return { sent: false, status: 'SKIPPED', reason: 'Push delivery is unavailable' }
+    }
+
+    const pushUser = await userModel.findById(userId).select('pushToken pushPlatform').lean()
+    if (!pushUser?.pushToken) {
+      return { sent: false, status: 'SKIPPED', reason: 'User has no registered push token' }
+    }
+
+    const response = await fetchImpl(EXPO_PUSH_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Accept-Encoding': 'gzip, deflate',
+        'Content-Type': 'application/json'
+      },
+      signal: AbortSignal.timeout(5000),
+      body: JSON.stringify({
+        to: pushUser.pushToken,
+        sound: 'default',
+        channelId: 'business-updates',
+        title,
+        body: message,
+        data
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`Expo Push Service returned HTTP ${response.status}`)
+    }
+
+    const responseBody = await response.json()
+    const ticket = Array.isArray(responseBody?.data) ? responseBody.data[0] : responseBody?.data
+
+    if (ticket?.status === 'error') {
+      if (ticket?.details?.error === 'DeviceNotRegistered') {
+        await clearInvalidPushToken({ userId, token: pushUser.pushToken })
+      }
+
+      return {
+        sent: false,
+        status: 'FAILED',
+        reason: ticket.message || ticket.details?.error || 'Expo rejected the push notification'
+      }
+    }
+
+    return {
+      sent: true,
+      status: 'SENT',
+      ticketId: ticket?.id,
+      platform: pushUser.pushPlatform
+    }
+  }
+
+  const registerPushToken = async ({ userId, token, platform }) => {
+    ensureObjectId(userId, 'user id')
+    const user = await userModel.findByIdAndUpdate(
+      userId,
+      {
+        $set: {
+          pushToken: token,
+          pushPlatform: platform,
+          pushTokenUpdatedAt: new Date()
+        }
+      },
+      { new: true, runValidators: true }
+    ).select('pushPlatform pushTokenUpdatedAt')
+
+    if (!user) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['User not found'])
+    }
+
+    return {
+      registered: true,
+      platform: user.pushPlatform,
+      updatedAt: user.pushTokenUpdatedAt
+    }
+  }
+
+  const unregisterPushToken = async (userId) => {
+    ensureObjectId(userId, 'user id')
+    const user = await userModel.findByIdAndUpdate(
+      userId,
+      { $unset: { pushToken: 1, pushPlatform: 1, pushTokenUpdatedAt: 1 } },
+      { new: true }
+    ).select('_id')
+
+    if (!user) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['User not found'])
+    }
+
+    return { unregistered: true }
+  }
+
   const createInAppNotification = async ({ userId, title, message, type, metadata, dedupeKey }) => {
     if (dedupeKey && repository.findByDedupeKey) {
       const existingNotification = await repository.findByDedupeKey(dedupeKey)
@@ -152,8 +259,10 @@ export const createNotificationService = ({
     const result = {
       notification: null,
       email: null,
+      push: null,
       errors: []
     }
+    let inAppCreated = false
 
     if (!NOTIFICATION_TYPES.includes(type)) {
       result.errors.push(`Unsupported notification type: ${type}`)
@@ -171,6 +280,7 @@ export const createNotificationService = ({
           metadata
         })
         result.notification = inAppResult.notification
+        inAppCreated = inAppResult.created
 
         if (inAppResult.created) {
           socketEmitter.emitToUser?.(
@@ -185,6 +295,34 @@ export const createNotificationService = ({
           title,
           error: error.message
         })
+        result.errors.push(error.message)
+      }
+    }
+
+    const shouldSendPush = channels.includes(CHANNELS.PUSH) ||
+      (channels.includes(CHANNELS.IN_APP) && inAppCreated)
+
+    if (shouldSendPush && userId) {
+      try {
+        result.push = await sendPushNotification({
+          userId,
+          title,
+          message,
+          data: {
+            notificationId: result.notification?.id,
+            type,
+            title,
+            message,
+            ...metadata
+          }
+        })
+      } catch (error) {
+        logger.error('Push notification delivery failed', {
+          userId,
+          title,
+          error: error.message
+        })
+        result.push = { sent: false, status: 'FAILED', reason: error.message }
         result.errors.push(error.message)
       }
     }
@@ -320,6 +458,8 @@ export const createNotificationService = ({
     listUserNotifications,
     markAsRead,
     markAllAsRead,
+    registerPushToken,
+    unregisterPushToken,
     normalizeNotification
   }
 }

@@ -15,6 +15,17 @@ router.get(
   NOTIFICATION_CONTROLLER.listMine
 )
 
+router.post(
+  '/push-token',
+  validationHandlingMiddleware(NOTIFICATION_VALIDATION.registerPushToken),
+  NOTIFICATION_CONTROLLER.registerPushToken
+)
+
+router.delete(
+  '/push-token',
+  NOTIFICATION_CONTROLLER.unregisterPushToken
+)
+
 router.patch(
   '/read-all',
   NOTIFICATION_CONTROLLER.markAllAsRead
