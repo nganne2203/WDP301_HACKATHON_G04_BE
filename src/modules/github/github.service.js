@@ -15,6 +15,7 @@ const buildCompetitionConfigKey = (competitionId) => `github.competition.${compe
 
 const GITHUB_API_BASE_URL = 'https://api.github.com'
 const GITHUB_API_VERSION = '2022-11-28'
+const REPOSITORY_WEBHOOK_EVENTS = ['push']
 
 const normalizeString = (value) => {
   return typeof value === 'string' ? value.trim() : value
@@ -412,7 +413,7 @@ export const createGithubService = ({
     const body = {
       name: 'web',
       active: true,
-      competitions: env.github.webhookCompetitions,
+      events: REPOSITORY_WEBHOOK_EVENTS,
       config: {
         url: callbackUrl,
         content_type: 'json',
@@ -448,7 +449,7 @@ export const createGithubService = ({
         organizationName: config.organizationName,
         repoName,
         callbackUrl,
-        competitions: env.github.webhookCompetitions,
+        events: REPOSITORY_WEBHOOK_EVENTS,
         status,
         hookId: data?.id || null
       }
@@ -457,7 +458,7 @@ export const createGithubService = ({
     return {
       repoName,
       callbackUrl,
-      competitions: env.github.webhookCompetitions,
+      competitions: REPOSITORY_WEBHOOK_EVENTS,
       hookId: data?.id || null,
       active: data?.active !== false
     }
@@ -865,7 +866,7 @@ export const createGithubService = ({
         const repoResult = await createRepository({
           competitionId: payload.competitionId,
           teamId: team._id.toString(),
-          roundId: payload.roundId === 'none' ? null : payload.roundId,
+          roundId: null,
           repoName,
           description: `Repository for team ${team.name}`,
           private: true,
@@ -893,7 +894,6 @@ export const createGithubService = ({
       resourceId: payload.competitionId,
       metadata: {
         competitionId: payload.competitionId,
-        roundId: payload.roundId,
         totalTeamsChecked: teams.length,
         totalReposCreated: success.length,
         successCount: success.length,

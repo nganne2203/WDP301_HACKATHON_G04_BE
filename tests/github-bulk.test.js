@@ -146,8 +146,7 @@ test('bulkCreateRepositories creates repos only for confirmed teams lacking them
   })
 
   const result = await service.bulkCreateRepositories({
-    competitionId: COMPETITION_ID,
-    roundId: 'none'
+    competitionId: COMPETITION_ID
   }, { id: 'coordinator-1' })
 
   console.log('REPOS:', [...repository.repositories.values()])
@@ -161,6 +160,7 @@ test('bulkCreateRepositories creates repos only for confirmed teams lacking them
   assert.equal(result.success[0].teamName, 'Team Beta')
   assert.equal(result.success[0].repoName, 'team-beta')
   assert.equal(result.failed.length, 0)
+  assert.equal([...repository.repositories.values()].find((repo) => repo.teamId === 'team-2-id').roundId, null)
 
   // Webhook and collab registry calls should be made for team beta
   const createRepoCalls = calls.filter(call => call.method === 'POST' && call.path === '/orgs/seal-org/repos')
@@ -207,8 +207,7 @@ test('bulkCreateRepositories aggregates errors and continues loop when one team 
   })
 
   const result = await service.bulkCreateRepositories({
-    competitionId: COMPETITION_ID,
-    roundId: null
+    competitionId: COMPETITION_ID
   }, { id: 'coordinator-1' })
 
   assert.equal(result.totalTeamsChecked, 2)
