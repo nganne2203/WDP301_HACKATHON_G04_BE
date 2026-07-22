@@ -1,4 +1,4 @@
-const PRIVILEGED_EVENT_ROLES = new Set(['ADMIN', 'EVENT_COORDINATOR', 'COORDINATOR'])
+const PRIVILEGED_COMPETITION_ROLES = new Set(['ADMIN', 'COMPETITION_COORDINATOR', 'COORDINATOR'])
 
 export const getActorId = (actor = {}) => {
   return actor?.id?.toString?.() || actor?._id?.toString?.() || null
@@ -28,8 +28,8 @@ export const isActiveJudge = (user = {}) => {
   return getSubjectRoles(user).includes('JUDGE')
 }
 
-export const isPrivilegedEventActor = (actor = {}) => {
-  return getActorRoles(actor).some(role => PRIVILEGED_EVENT_ROLES.has(role))
+export const isPrivilegedCompetitionActor = (actor = {}) => {
+  return getActorRoles(actor).some(role => PRIVILEGED_COMPETITION_ROLES.has(role))
 }
 
 export const isParticipantOnlyActor = (actor = {}) => {

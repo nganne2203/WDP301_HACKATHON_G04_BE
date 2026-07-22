@@ -4,7 +4,7 @@ const { Schema } = mongoose
 
 const submissionSchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true },
     roundId: { type: Schema.Types.ObjectId, ref: 'Round', required: true },
     teamId: { type: Schema.Types.ObjectId, ref: 'Team', required: true },
     repositoryId: { type: Schema.Types.ObjectId, ref: 'Repository' },
@@ -22,7 +22,7 @@ const submissionSchema = new Schema(
 )
 
 submissionSchema.index({ roundId: 1, teamId: 1 }, { unique: true })
-submissionSchema.index({ eventId: 1, roundId: 1, status: 1 })
+submissionSchema.index({ competitionId: 1, roundId: 1, status: 1 })
 submissionSchema.index({ submittedAt: 1 })
 
 const Submission = mongoose.model('Submission', submissionSchema)

@@ -1,4 +1,4 @@
-import Event from '#models/event.model.js'
+import Competition from '#models/competition.model.js'
 import Workshop from '#models/workshop.model.js'
 import WorkshopQuestion from '#models/workshopQuestion.model.js'
 import WorkshopFeedback from '#models/workshopFeedback.model.js'
@@ -6,7 +6,7 @@ import WorkshopRating from '#models/workshopRating.model.js'
 import Participant from '#models/participant.model.js'
 
 const workshopPopulate = [
-  { path: 'eventId', select: 'title seriesName season year status' },
+  { path: 'competitionId', select: 'title seriesName season year status' },
   { path: 'presenterId', select: 'fullName email' }
 ]
 
@@ -72,16 +72,16 @@ const deleteWorkshopInteractions = async (workshopId) => {
   ])
 }
 
-const findEventById = async (id) => {
-  return await Event.findById(id)
+const findCompetitionById = async (id) => {
+  return await Competition.findById(id)
 }
 
-const findEventIdsForParticipant = async (userId) => {
-  return await Participant.find({ userId, status: 'JOINED' }).distinct('eventId')
+const findCompetitionIdsForParticipant = async (userId) => {
+  return await Participant.find({ userId, status: 'JOINED' }).distinct('competitionId')
 }
 
-const findOpenRegistrationEventIds = async (now = new Date()) => {
-  return await Event.find({
+const findOpenRegistrationCompetitionIds = async (now = new Date()) => {
+  return await Competition.find({
     status: 'OPEN_REGISTRATION',
     $and: [
       { $or: [{ registrationStart: { $exists: false } }, { registrationStart: null }, { registrationStart: { $lte: now } }] },
@@ -90,12 +90,12 @@ const findOpenRegistrationEventIds = async (now = new Date()) => {
   }).distinct('_id')
 }
 
-const findNonDraftEventIds = async () => {
-  return await Event.find({ status: { $ne: 'DRAFT' } }).distinct('_id')
+const findNonDraftCompetitionIds = async () => {
+  return await Competition.find({ status: { $ne: 'DRAFT' } }).distinct('_id')
 }
 
-const findJoinedParticipant = async ({ eventId, userId }) => {
-  return await Participant.findOne({ eventId, userId, status: 'JOINED' })
+const findJoinedParticipant = async ({ competitionId, userId }) => {
+  return await Participant.findOne({ competitionId, userId, status: 'JOINED' })
 }
 
 const createQuestion = async (data) => {
@@ -199,10 +199,10 @@ export const WORKSHOP_REPOSITORY = {
   updateWorkshopGoogleMeet,
   deleteWorkshopById,
   deleteWorkshopInteractions,
-  findEventById,
-  findEventIdsForParticipant,
-  findOpenRegistrationEventIds,
-  findNonDraftEventIds,
+  findCompetitionById,
+  findCompetitionIdsForParticipant,
+  findOpenRegistrationCompetitionIds,
+  findNonDraftCompetitionIds,
   findJoinedParticipant,
   createQuestion,
   findQuestions,

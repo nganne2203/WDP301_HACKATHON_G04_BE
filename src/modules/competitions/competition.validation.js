@@ -1,7 +1,7 @@
 import Joi from 'joi'
 
 const objectId = Joi.string().hex().length(24)
-const eventStatus = Joi.string().trim().uppercase().valid('DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED')
+const competitionStatus = Joi.string().trim().uppercase().valid('DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED')
 const season = Joi.string().trim().uppercase().valid('SPRING', 'SUMMER', 'FALL')
 const rankingScope = Joi.string().trim().uppercase().valid('TEAM')
 const finalistSelectionMode = Joi.string().trim().uppercase().valid('FIXED_PER_BOARD', 'TOP_PER_BOARD_WITH_WILDCARD', 'OVERALL_SCORE', 'CUSTOM')
@@ -13,7 +13,6 @@ const competitionConfig = Joi.object({
   finalistCount: Joi.number().integer().min(1),
   finalistsPerBoard: Joi.number().integer().min(1),
   finalistSelectionMode,
-  fillRemainingFinalistsByOverallScore: Joi.boolean(),
   rankingScopes: Joi.array().items(rankingScope).min(1).unique(),
   tieBreakRule: Joi.string().trim().max(500).allow('', null),
   tieBreakDurationMinutes: Joi.number().integer().min(1)
@@ -23,11 +22,11 @@ const idParam = Joi.object({
   id: objectId.required()
 })
 
-const listEvents = {
+const listCompetitions = {
   query: Joi.object({
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10),
-    status: eventStatus,
+    status: competitionStatus,
     semester: Joi.string().trim().max(50),
     season,
     year: Joi.number().integer().min(2000).max(2100),
@@ -35,7 +34,7 @@ const listEvents = {
   })
 }
 
-const createEvent = {
+const createCompetition = {
   body: Joi.object({
     title: Joi.string().trim().min(2).max(200).required(),
     description: Joi.string().trim().max(2000).allow('', null),
@@ -54,11 +53,11 @@ const createEvent = {
     competitionConfig: competitionConfig.default(),
     finalistSlotsPerTrack: Joi.number().integer().min(1).default(5),
     totalFinalistSlots: Joi.number().integer().min(1).default(10),
-    status: eventStatus.default('DRAFT')
+    status: competitionStatus.default('DRAFT')
   })
 }
 
-const updateEvent = {
+const updateCompetition = {
   params: idParam,
   body: Joi.object({
     title: Joi.string().trim().min(2).max(200),
@@ -78,18 +77,18 @@ const updateEvent = {
     competitionConfig,
     finalistSlotsPerTrack: Joi.number().integer().min(1),
     totalFinalistSlots: Joi.number().integer().min(1),
-    status: eventStatus
+    status: competitionStatus
   }).min(1)
 }
 
-const updateEventStatus = {
+const updateCompetitionStatus = {
   params: idParam,
   body: Joi.object({
-    status: eventStatus.required()
+    status: competitionStatus.required()
   })
 }
 
-const getEventById = {
+const getCompetitionById = {
   params: idParam
 }
 
@@ -106,11 +105,11 @@ const sendInvitations = {
   })
 }
 
-export const EVENT_VALIDATION = {
-  listEvents,
-  createEvent,
-  updateEvent,
-  updateEventStatus,
-  getEventById,
+export const COMPETITION_VALIDATION = {
+  listCompetitions,
+  createCompetition,
+  updateCompetition,
+  updateCompetitionStatus,
+  getCompetitionById,
   sendInvitations
 }

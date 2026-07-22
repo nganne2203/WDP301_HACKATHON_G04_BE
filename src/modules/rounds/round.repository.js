@@ -1,7 +1,7 @@
 import Round from '#models/round.model.js'
 
 const roundPopulate = [
-  { path: 'eventId', select: 'title semester season year status competitionConfig' },
+  { path: 'competitionId', select: 'title semester season year status competitionConfig' },
   { path: 'trackId', select: 'code name type maxTeams status' },
   { path: 'assignedTeamIds', select: 'name chapterName projectName status trackId boardNumber placementSlot' },
   { path: 'promotedTeamIds', select: 'name chapterName projectName status trackId boardNumber placementSlot' },

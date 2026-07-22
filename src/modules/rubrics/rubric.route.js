@@ -13,7 +13,7 @@ router.use(authorizationMiddleware)
 
 router.get(
   '/',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(RUBRIC_VALIDATION.listRubrics),
   RUBRIC_CONTROLLER.listRubrics
 )
@@ -34,7 +34,7 @@ router.patch(
 
 router.get(
   '/:id',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(RUBRIC_VALIDATION.getRubricById),
   RUBRIC_CONTROLLER.getRubricById
 )

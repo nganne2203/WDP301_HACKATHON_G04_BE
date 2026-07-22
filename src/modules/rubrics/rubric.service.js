@@ -5,24 +5,25 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
-import Event from '#models/event.model.js'
+import Competition from '#models/competition.model.js'
 import Round from '#models/round.model.js'
 import ScoreSheet from '#models/scoreSheet.model.js'
 import {
-  ALLOWED_SCORE_SCALES,
-  getRubricScale,
-  hasAtMostTwoDecimals,
+  ALLOWED_SCORING_COEFFICIENTS,
+  ALLOWED_TOTAL_WEIGHTS,
+  getRubricTotalWeight,
+  isAllowedScoringCoefficient,
   roundToTwoDecimals,
   sumCriterionWeights
 } from '#utils/scoringScale.js'
 
 const RUBRIC_FIELDS = [
-  'eventId',
+  'competitionId',
   'roundId',
   'title',
   'description',
   'totalScore',
-  'version',
+  'criterionMaxScore',
   'status'
 ]
 
@@ -30,7 +31,7 @@ const RUBRIC_UPDATE_FIELDS = [
   'title',
   'description',
   'totalScore',
-  'version',
+  'criterionMaxScore',
   'status'
 ]
 
@@ -49,7 +50,7 @@ const normalizeCriterion = (criterion) => {
     weight: roundToTwoDecimals(plainCriterion.weight),
     order: plainCriterion.order,
     judgeOnly: Boolean(plainCriterion.judgeOnly),
-    aiSupportForAudit: plainCriterion.aiSupportForAudit !== false,
+    aiSupportForAudit: Boolean(plainCriterion.aiSupportForAudit),
     aiInstruction: plainCriterion.aiInstruction || null,
     createdAt: plainCriterion.createdAt,
     updatedAt: plainCriterion.updatedAt
@@ -65,13 +66,13 @@ const normalizeRubric = async (rubric, repository) => {
 
   return {
     id: plainRubric._id?.toString() || plainRubric.id,
-    eventId: plainRubric.eventId?._id?.toString?.() || plainRubric.eventId?.toString?.() || plainRubric.eventId,
+    competitionId: plainRubric.competitionId?._id?.toString?.() || plainRubric.competitionId?.toString?.() || plainRubric.competitionId,
     roundId: plainRubric.roundId?._id?.toString?.() || plainRubric.roundId?.toString?.() || plainRubric.roundId || null,
-    event: plainRubric.eventId && typeof plainRubric.eventId === 'object'
+    competition: plainRubric.competitionId && typeof plainRubric.competitionId === 'object'
       ? {
-        id: plainRubric.eventId._id?.toString() || plainRubric.eventId.id,
-        title: plainRubric.eventId.title,
-        status: plainRubric.eventId.status
+        id: plainRubric.competitionId._id?.toString() || plainRubric.competitionId.id,
+        title: plainRubric.competitionId.title,
+        status: plainRubric.competitionId.status
       }
       : null,
     round: plainRubric.roundId && typeof plainRubric.roundId === 'object'
@@ -85,8 +86,8 @@ const normalizeRubric = async (rubric, repository) => {
     title: plainRubric.title,
     description: plainRubric.description,
     totalScore: plainRubric.totalScore,
+    criterionMaxScore: plainRubric.criterionMaxScore || 10,
     criteriaWeightTotal: sumCriterionWeights(criteria),
-    version: plainRubric.version,
     status: plainRubric.status,
     criteria: criteria.map(normalizeCriterion),
     createdAt: plainRubric.createdAt,
@@ -96,7 +97,7 @@ const normalizeRubric = async (rubric, repository) => {
 
 const buildRubricFilter = (query = {}) => {
   const filter = {}
-  if (query.eventId) filter.eventId = query.eventId
+  if (query.competitionId) filter.competitionId = query.competitionId
   if (query.roundId) filter.roundId = query.roundId
   if (query.status) filter.status = query.status
   return filter
@@ -110,7 +111,7 @@ const ensureObjectId = (id, fieldName = 'id') => {
 
 export const createRubricService = ({
   repository = RUBRIC_REPOSITORY,
-  eventModel = Event,
+  competitionModel = Competition,
   roundModel = Round,
   scoreSheetModel = ScoreSheet
 } = {}) => {
@@ -128,21 +129,21 @@ export const createRubricService = ({
     return criterion
   }
 
-  const ensureContext = async ({ eventId, roundId = null }) => {
-    ensureObjectId(eventId, 'event id')
-    const event = await eventModel.findById(eventId)
-    if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+  const ensureContext = async ({ competitionId, roundId = null }) => {
+    ensureObjectId(competitionId, 'competition id')
+    const competition = await competitionModel.findById(competitionId)
+    if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
 
-    if (!roundId) return { event, round: null }
+    if (!roundId) return { competition, round: null }
 
     ensureObjectId(roundId, 'round id')
     const round = await roundModel.findById(roundId)
     if (!round) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Round not found'])
-    if (round.eventId?.toString() !== eventId.toString()) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round does not belong to the specified event'])
+    if (round.competitionId?.toString() !== competitionId.toString()) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round does not belong to the specified competition'])
     }
 
-    return { event, round }
+    return { competition, round }
   }
 
   const countScoreSheetsForRubric = async (rubricId) => {
@@ -153,7 +154,7 @@ export const createRubricService = ({
   const ensureRubricMutable = async (rubric) => {
     const scoreSheetCount = await countScoreSheetsForRubric(rubric._id || rubric.id)
     if (scoreSheetCount > 0) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric cannot be changed after score sheets have been created; create a new rubric version instead'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric cannot be changed after score sheets have been created; create a new rubric instead'])
     }
   }
 
@@ -167,17 +168,23 @@ export const createRubricService = ({
     if (!Number.isFinite(weight) || weight <= 0) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Criterion weight must be greater than zero'])
     }
-    if (!hasAtMostTwoDecimals(maxScore) || !hasAtMostTwoDecimals(weight)) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Criterion maxScore and weight can have at most 2 decimal places'])
+    if (!Number.isInteger(maxScore) || !Number.isInteger(weight)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Criterion scoring coefficient and weight must be integers'])
     }
   }
 
   const ensureRubricScale = (rubric = {}) => {
-    const scale = getRubricScale(rubric)
+    const scale = getRubricTotalWeight(rubric)
     if (!scale) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Rubric totalScore must be one of ${ALLOWED_SCORE_SCALES.join(', ')}`])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Rubric totalScore must be one of ${ALLOWED_TOTAL_WEIGHTS.join(', ')}`])
     }
     return scale
+  }
+
+  const ensureScoringCoefficient = (value) => {
+    if (!isAllowedScoringCoefficient(value)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Rubric criterionMaxScore must be one of ${ALLOWED_SCORING_COEFFICIENTS.join(', ')}`])
+    }
   }
 
   const ensureCriteriaFitRubricScale = ({ rubric, criteria = [], requireExact = false }) => {
@@ -185,11 +192,11 @@ export const createRubricService = ({
     const totalWeight = sumCriterionWeights(criteria)
 
     if (totalWeight > scale) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Total criterion weight cannot exceed rubric scale ${scale}`])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Total weight cannot exceed ${scale}`])
     }
 
     if (requireExact && totalWeight !== scale) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Total criterion weight must equal rubric scale ${scale}`])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Total weight must equal ${scale}`])
     }
   }
 
@@ -221,12 +228,14 @@ export const createRubricService = ({
   const createRubric = async (payload = {}, actor = {}) => {
     const safePayload = pickSafeFields(payload, RUBRIC_FIELDS)
     safePayload.totalScore = safePayload.totalScore ?? 100
+    safePayload.criterionMaxScore = safePayload.criterionMaxScore ?? 10
     ensureRubricScale({ totalScore: safePayload.totalScore })
-    if (safePayload.status === 'ACTIVE') {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric must be created as DRAFT and activated after criteria weights match the scale'])
+    ensureScoringCoefficient(safePayload.criterionMaxScore)
+    if (safePayload.status !== 'DRAFT') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric must be created as DRAFT; configure criterion coefficients before changing its status'])
     }
     await ensureContext({
-      eventId: safePayload.eventId,
+      competitionId: safePayload.competitionId,
       roundId: safePayload.roundId
     })
 
@@ -249,13 +258,17 @@ export const createRubricService = ({
       ...existingRubricPlain,
       ...safePayload
     }
+    ensureScoringCoefficient(candidateRubric.criterionMaxScore)
     ensureCriteriaFitRubricScale({
       rubric: candidateRubric,
       criteria: await repository.findCriteriaByRubricId(existingRubric._id || existingRubric.id),
-      requireExact: candidateRubric.status === 'ACTIVE'
+      requireExact: candidateRubric.status !== 'DRAFT'
     })
 
     const updatedRubric = await repository.updateRubricById(existingRubric._id, safePayload)
+    if (safePayload.criterionMaxScore !== undefined) {
+      await repository.updateCriteriaMaxScoreByRubricId(existingRubric._id || existingRubric.id, safePayload.criterionMaxScore)
+    }
     return await normalizeRubric(updatedRubric, repository)
   }
 
@@ -265,8 +278,8 @@ export const createRubricService = ({
     const criteria = await repository.findCriteriaByRubricId(rubricId)
     const nextCriterion = {
       ...payload,
-      weight: roundToTwoDecimals(payload.weight),
-      maxScore: roundToTwoDecimals(payload.maxScore)
+      weight: Number(payload.weight),
+      maxScore: roundToTwoDecimals(rubric.criterionMaxScore || 10)
     }
     ensureCriterionNumbers(nextCriterion)
     ensureCriteriaFitRubricScale({
@@ -278,11 +291,11 @@ export const createRubricService = ({
       rubricId,
       name: payload.name,
       description: payload.description,
-      maxScore: nextCriterion.maxScore,
+      maxScore: roundToTwoDecimals(rubric.criterionMaxScore || 10),
       weight: nextCriterion.weight,
       order: payload.order || (criteria.length + 1),
       judgeOnly: Boolean(payload.judgeOnly),
-      aiSupportForAudit: payload.aiSupportForAudit !== false,
+      aiSupportForAudit: Boolean(payload.aiSupportForAudit),
       aiInstruction: payload.aiInstruction || null
     })
 
@@ -303,8 +316,8 @@ export const createRubricService = ({
     const nextCriterion = {
       name: payload.name ?? criterion.name,
       description: payload.description ?? criterion.description,
-      maxScore: roundToTwoDecimals(payload.maxScore ?? criterion.maxScore),
-      weight: roundToTwoDecimals(payload.weight ?? criterion.weight),
+      maxScore: roundToTwoDecimals(rubric.criterionMaxScore || 10),
+      weight: Number(payload.weight ?? criterion.weight),
       order: payload.order ?? criterion.order,
       judgeOnly: payload.judgeOnly ?? criterion.judgeOnly,
       aiSupportForAudit: payload.aiSupportForAudit ?? criterion.aiSupportForAudit,

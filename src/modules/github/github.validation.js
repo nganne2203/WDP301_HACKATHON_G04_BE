@@ -6,7 +6,7 @@ const objectId = Joi.string().hex().length(24)
 
 const eventQuery = {
   query: Joi.object({
-    eventId: objectId.required()
+    competitionId: objectId.required()
   })
 }
 
@@ -32,7 +32,7 @@ const usernameAvailability = {
 
 const saveConfig = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     organizationName: githubName.required(),
     ownerUsername: githubUsername.required(),
     githubToken: Joi.string().trim().allow('', null),
@@ -42,13 +42,13 @@ const saveConfig = {
 
 const testConnection = {
   body: Joi.object({
-    eventId: objectId.required()
+    competitionId: objectId.required()
   })
 }
 
 const createRepository = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     repoName: githubName.required(),
     description: Joi.string().trim().max(500).allow('', null),
     private: Joi.boolean().default(true),
@@ -64,7 +64,7 @@ const assignCollaborator = {
     username: githubUsername.required()
   }),
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     permission: Joi.string().trim().valid('pull', 'triage', 'push', 'maintain', 'admin').default('push')
   })
 }
@@ -74,7 +74,7 @@ const registerRepositoryWebhook = {
     repoName: githubName.required()
   }),
   body: Joi.object({
-    eventId: objectId.required()
+    competitionId: objectId.required()
   })
 }
 
@@ -84,13 +84,13 @@ const revokeCollaborator = {
     username: githubUsername.required()
   }),
   body: Joi.object({
-    eventId: objectId.required()
+    competitionId: objectId.required()
   })
 }
 
 const inviteOrganizationMember = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     email: Joi.string().email().trim().lowercase().required(),
     role: Joi.string().trim().valid('direct_member').default('direct_member')
   })
@@ -98,14 +98,14 @@ const inviteOrganizationMember = {
 
 const revokeMembers = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     confirmationText: Joi.string().valid('REVOKE MEMBERS').required()
   })
 }
 
 const bulkCreateRepositories = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     roundId: objectId.allow(null, 'none'),
     assignCollaborators: Joi.boolean().default(true)
   })
@@ -113,7 +113,7 @@ const bulkCreateRepositories = {
 
 const bulkCollaboratorAction = {
   body: Joi.object({
-    eventId: objectId.required()
+    competitionId: objectId.required()
   })
 }
 

@@ -5,7 +5,7 @@ import { createMediaService, validateMediaFile } from '../src/modules/media/medi
 import { PERMISSIONS } from '../src/constants/permissions.js'
 import ApiError from '../src/utils/ApiError.js'
 
-const EVENT_ID = '664c3f6a3a6d4a5f3f93c101'
+const COMPETITION_ID = '664c3f6a3a6d4a5f3f93c101'
 const USER_ID = '664c3f6a3a6d4a5f3f93c102'
 const TEAM_ID = '664c3f6a3a6d4a5f3f93c103'
 const MEDIA_ID = '664c3f6a3a6d4a5f3f93c104'
@@ -25,7 +25,7 @@ const createBaseConfigRecords = () => ([
   { key: 'media.storage_provider', value: 'SUPABASE' },
   { key: 'media.supabase_url', value: 'https://project.supabase.co' },
   { key: 'media.supabase_service_role_key_encrypted', value: 'encrypted:service-role-secret', isEncrypted: true },
-  { key: 'media.supabase_bucket', value: 'event-media' },
+  { key: 'media.supabase_bucket', value: 'competition-media' },
   { key: 'media.bucket_visibility', value: 'private' },
   { key: 'media.max_image_size_mb', value: 10 },
   { key: 'media.max_video_size_mb', value: 200 },
@@ -52,21 +52,21 @@ const buildRepository = (overrides = {}) => {
       configs.set(key, record)
       return record
     },
-    findEventById: async () => ({
-      _id: EVENT_ID,
+    findCompetitionById: async () => ({
+      _id: COMPETITION_ID,
       title: 'SEAL Hackathon',
       status: 'ONGOING'
     }),
-    findParticipantByEventAndUser: async () => ({
+    findParticipantByCompetitionAndUser: async () => ({
       _id: 'participant-1',
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       userId: USER_ID,
       teamId: TEAM_ID,
       status: 'JOINED'
     }),
     findTeamById: async () => ({
       _id: TEAM_ID,
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       name: 'Team Alpha'
     }),
     createMedia: async (payload) => {
@@ -145,7 +145,7 @@ test('media storage config is stored safely and never exposes service role key',
   const saved = await service.saveStorageConfig({
     supabaseUrl: 'https://project.supabase.co',
     serviceRoleKey: 'new-secret',
-    bucket: 'event-media',
+    bucket: 'competition-media',
     visibility: 'private',
     maxImageSizeMb: 10,
     maxVideoSizeMb: 200,
@@ -157,7 +157,7 @@ test('media storage config is stored safely and never exposes service role key',
 
   assert.deepEqual(saved, {
     provider: 'SUPABASE',
-    bucket: 'event-media',
+    bucket: 'competition-media',
     visibility: 'private',
     hasSecret: true
   })
@@ -214,7 +214,7 @@ test('uploadMedia validates participation, uploads to Supabase, and stores pendi
   })
 
   const media = await service.uploadMedia({
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     teamId: TEAM_ID,
     title: 'Team photo',
     tags: 'team,photo'
@@ -225,13 +225,13 @@ test('uploadMedia validates participation, uploads to Supabase, and stores pendi
     buffer: Buffer.from('image')
   }, {
     id: USER_ID,
-    permissions: [PERMISSIONS.EVENT_VIEW]
+    permissions: [PERMISSIONS.COMPETITION_VIEW]
   })
 
   assert.equal(media.status, 'PENDING')
   assert.equal(media.mediaType, 'IMAGE')
-  assert.equal(media.bucketName, 'event-media')
-  assert.match(media.storagePath, /^events\/664c3f6a3a6d4a5f3f93c101\/users\/664c3f6a3a6d4a5f3f93c102\/\d+-team-photo\.jpg$/)
+  assert.equal(media.bucketName, 'competition-media')
+  assert.match(media.storagePath, /^competitions\/664c3f6a3a6d4a5f3f93c101\/users\/664c3f6a3a6d4a5f3f93c102\/\d+-team-photo\.jpg$/)
   assert.equal(storage.uploaded[0].serviceRoleKey, 'service-role-secret')
   assert.equal(repository.activities[0].action, 'UPLOAD')
   assert.equal(repository.auditLogs[0].action, 'MEDIA_UPLOADED')
@@ -240,10 +240,10 @@ test('uploadMedia validates participation, uploads to Supabase, and stores pendi
 test('participant can delete only own pending media while moderator can delete any media', async () => {
   const pendingMedia = {
     _id: MEDIA_ID,
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     uploadedBy: USER_ID,
-    bucketName: 'event-media',
-    storagePath: 'events/event/users/user/file.jpg',
+    bucketName: 'competition-media',
+    storagePath: 'competitions/competition/users/user/file.jpg',
     status: 'APPROVED'
   }
   const repository = buildRepository()
@@ -257,11 +257,11 @@ test('participant can delete only own pending media while moderator can delete a
   })
 
   await assert.rejects(
-    service.deleteMedia(MEDIA_ID, { id: USER_ID, permissions: [PERMISSIONS.EVENT_VIEW] }),
+    service.deleteMedia(MEDIA_ID, { id: USER_ID, permissions: [PERMISSIONS.COMPETITION_VIEW] }),
     error => error instanceof ApiError && error.code === 'FORBIDDEN'
   )
 
-  await service.deleteMedia(MEDIA_ID, { id: 'moderator-1', permissions: [PERMISSIONS.EVENT_UPDATE] })
+  await service.deleteMedia(MEDIA_ID, { id: 'moderator-1', permissions: [PERMISSIONS.COMPETITION_UPDATE] })
 
   assert.equal(storage.deleted.length, 1)
   assert.equal(repository.mediaRecords.has(MEDIA_ID), false)

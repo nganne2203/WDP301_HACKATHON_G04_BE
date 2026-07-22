@@ -32,7 +32,7 @@ const getParticipantById = async (req, res, next) => {
 
 const getMyParticipant = async (req, res, next) => {
   try {
-    const participant = await PARTICIPANT_SERVICE.getMyParticipant(req.validated.query.eventId, req.user)
+    const participant = await PARTICIPANT_SERVICE.getMyParticipant(req.validated.query.competitionId, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get current participant successfully',
@@ -86,10 +86,10 @@ const updateCheckInStatus = async (req, res, next) => {
 
 const generateCheckInQr = async (req, res, next) => {
   try {
-    const qr = await PARTICIPANT_SERVICE.generateCheckInQr(req.body.eventId, req.user)
+    const qr = await PARTICIPANT_SERVICE.generateCheckInQr(req.body.competitionId, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
-      message: 'Generate event check-in QR successfully',
+      message: 'Generate competition check-in QR successfully',
       data: qr
     }))
   } catch (error) {

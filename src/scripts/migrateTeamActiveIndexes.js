@@ -7,9 +7,9 @@ import Team from '#models/team.model.js'
 dns.setServers(['8.8.8.8', '1.1.1.1'])
 
 const INDEXES_TO_DROP = [
-  'eventId_1_name_1',
-  'eventId_1_normalizedName_1',
-  'eventId_1_leaderId_1'
+  'competitionId_1_name_1',
+  'competitionId_1_normalizedName_1',
+  'competitionId_1_leaderId_1'
 ]
 
 async function dropIndexIfExists(collection, indexName) {

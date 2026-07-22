@@ -5,7 +5,7 @@ import { responseSuccess } from '#utils/responseUtil.js'
 
 const getConfig = async (req, res, next) => {
   try {
-    const config = await GITHUB_SERVICE.getConfig(req.validated.query.eventId)
+    const config = await GITHUB_SERVICE.getConfig(req.validated.query.competitionId)
 
     res.status(StatusCodes.OK).json(responseSuccess({
       message: 'Get GitHub configuration successfully',
@@ -99,7 +99,7 @@ const assignCollaborator = async (req, res, next) => {
     const result = await GITHUB_SERVICE.assignCollaborator({
       repoName: req.params.repoName,
       username: req.params.username,
-      eventId: req.body.eventId,
+      competitionId: req.body.competitionId,
       permission: req.body.permission
     }, req.user)
 
@@ -116,7 +116,7 @@ const registerRepositoryWebhook = async (req, res, next) => {
   try {
     const result = await GITHUB_SERVICE.registerRepositoryWebhook({
       repoName: req.params.repoName,
-      eventId: req.body.eventId
+      competitionId: req.body.competitionId
     }, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({
@@ -133,7 +133,7 @@ const revokeCollaborator = async (req, res, next) => {
     const result = await GITHUB_SERVICE.revokeCollaborator({
       repoName: req.params.repoName,
       username: req.params.username,
-      eventId: req.body.eventId
+      competitionId: req.body.competitionId
     }, req.user)
 
     res.status(StatusCodes.OK).json(responseSuccess({

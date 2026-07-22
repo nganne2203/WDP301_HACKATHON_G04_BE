@@ -8,7 +8,7 @@ export const SUBMISSION_VALIDATION = {
     query: Joi.object({
       page: Joi.number().integer().min(1).default(1),
       limit: Joi.number().integer().min(1).max(100).default(10),
-      eventId: objectId,
+      competitionId: objectId,
       roundId: objectId,
       teamId: objectId,
       repositoryId: objectId,
@@ -17,7 +17,7 @@ export const SUBMISSION_VALIDATION = {
   },
   createSubmission: {
     body: Joi.object({
-      eventId: objectId.required(),
+      competitionId: objectId.required(),
       roundId: objectId.required(),
       teamId: objectId.required(),
       repositoryId: objectId.allow(null),

@@ -4,18 +4,18 @@ import test from 'node:test'
 import ApiError from '../src/utils/ApiError.js'
 import { createRoundService } from '../src/modules/rounds/round.service.js'
 
-test('createRound and updateRound reject windows outside the event dates', async () => {
-  const originalEventFindById = await import('../src/models/event.model.js')
+test('createRound and updateRound reject windows outside the competition dates', async () => {
+  const originalCompetitionFindById = await import('../src/models/competition.model.js')
   const originalTeamFind = await import('../src/models/team.model.js')
   const originalUserFind = await import('../src/models/user.model.js')
 
-  const eventModel = originalEventFindById.default
+  const competitionModel = originalCompetitionFindById.default
   const teamModel = originalTeamFind.default
   const userModel = originalUserFind.default
 
   const existingRound = {
     _id: '000000000000000000000901',
-    eventId: '000000000000000000000101',
+    competitionId: '000000000000000000000101',
     name: 'Round 1',
     startTime: '2026-08-13T03:00:00.000Z',
     endTime: '2026-08-13T10:00:00.000Z',
@@ -32,11 +32,11 @@ test('createRound and updateRound reject windows outside the event dates', async
     deleteById: async () => null
   }
 
-  const eventFindById = eventModel.findById
+  const competitionFindById = competitionModel.findById
   const teamFind = teamModel.find
   const userFind = userModel.find
 
-  eventModel.findById = async () => ({
+  competitionModel.findById = async () => ({
     _id: '000000000000000000000101',
     title: 'SEAL',
     startDate: '2026-08-13T00:00:00.000Z',
@@ -50,14 +50,14 @@ test('createRound and updateRound reject windows outside the event dates', async
   try {
     await assert.rejects(
       service.createRound({
-        eventId: '000000000000000000000101',
-        name: 'Round before event',
+        competitionId: '000000000000000000000101',
+        name: 'Round before competition',
         startTime: '2026-08-12T03:27:00.000Z',
         endTime: '2026-08-13T03:27:00.000Z'
       }),
       (error) => error instanceof ApiError &&
         error.code === 'BAD_REQUEST' &&
-        error.errors.includes('Round start time must be within the event date range')
+        error.errors.includes('Round start time must be within the competition date range')
     )
 
     await assert.rejects(
@@ -66,23 +66,36 @@ test('createRound and updateRound reject windows outside the event dates', async
       }),
       (error) => error instanceof ApiError &&
         error.code === 'BAD_REQUEST' &&
-        error.errors.includes('Round end time must be within the event date range')
+        error.errors.includes('Round end time must be within the competition date range')
+    )
+
+    await assert.rejects(
+      service.createRound({
+        competitionId: '000000000000000000000101',
+        name: 'Round with late result publication',
+        startTime: '2026-08-16T01:00:00.000Z',
+        endTime: '2026-08-16T08:00:00.000Z',
+        publishTime: '2026-08-16T17:00:00.000Z'
+      }),
+      (error) => error instanceof ApiError &&
+        error.code === 'BAD_REQUEST' &&
+        error.errors.includes('Round publish time must be within the competition date range')
     )
   } finally {
-    eventModel.findById = eventFindById
+    competitionModel.findById = competitionFindById
     teamModel.find = teamFind
     userModel.find = userFind
   }
 })
 
 test('createRound rejects teams outside the selected track', async () => {
-  const originalEventFindById = await import('../src/models/event.model.js')
+  const originalCompetitionFindById = await import('../src/models/competition.model.js')
   const originalTrackFindById = await import('../src/models/track.model.js')
   const originalRubricFindById = await import('../src/models/rubric.model.js')
   const originalTeamFind = await import('../src/models/team.model.js')
   const originalUserFind = await import('../src/models/user.model.js')
 
-  const eventModel = originalEventFindById.default
+  const competitionModel = originalCompetitionFindById.default
   const trackModel = originalTrackFindById.default
   const rubricModel = originalRubricFindById.default
   const teamModel = originalTeamFind.default
@@ -97,19 +110,19 @@ test('createRound rejects teams outside the selected track', async () => {
     deleteById: async () => null
   }
 
-  const eventFindById = eventModel.findById
+  const competitionFindById = competitionModel.findById
   const trackFindById = trackModel.findById
   const rubricFindById = rubricModel.findById
   const teamFind = teamModel.find
   const userFind = userModel.find
 
-  eventModel.findById = async () => ({ _id: '000000000000000000000101', title: 'SEAL' })
-  trackModel.findById = async () => ({ _id: '000000000000000000000201', eventId: '000000000000000000000101' })
-  rubricModel.findById = async () => ({ _id: '000000000000000000000301', eventId: '000000000000000000000101' })
+  competitionModel.findById = async () => ({ _id: '000000000000000000000101', title: 'SEAL' })
+  trackModel.findById = async () => ({ _id: '000000000000000000000201', competitionId: '000000000000000000000101' })
+  rubricModel.findById = async () => ({ _id: '000000000000000000000301', competitionId: '000000000000000000000101' })
   userModel.find = async () => [{ _id: '000000000000000000000401', status: 'ACTIVE', roles: [{ name: 'JUDGE' }] }]
   teamModel.find = async () => [{
     _id: '000000000000000000000501',
-    eventId: '000000000000000000000101',
+    competitionId: '000000000000000000000101',
     trackId: '000000000000000000000202'
   }]
 
@@ -118,7 +131,7 @@ test('createRound rejects teams outside the selected track', async () => {
   try {
     await assert.rejects(
       service.createRound({
-        eventId: '000000000000000000000101',
+        competitionId: '000000000000000000000101',
         trackId: '000000000000000000000201',
         name: 'Round 1',
         assignedTeamIds: ['000000000000000000000501'],
@@ -130,7 +143,7 @@ test('createRound rejects teams outside the selected track', async () => {
         error.errors.includes('Assigned teams must belong to the selected track')
     )
   } finally {
-    eventModel.findById = eventFindById
+    competitionModel.findById = competitionFindById
     trackModel.findById = trackFindById
     rubricModel.findById = rubricFindById
     teamModel.find = teamFind
@@ -139,13 +152,13 @@ test('createRound rejects teams outside the selected track', async () => {
 })
 
 test('createRound rejects teams that are not confirmed', async () => {
-  const originalEventFindById = await import('../src/models/event.model.js')
+  const originalCompetitionFindById = await import('../src/models/competition.model.js')
   const originalTrackFindById = await import('../src/models/track.model.js')
   const originalRubricFindById = await import('../src/models/rubric.model.js')
   const originalTeamFind = await import('../src/models/team.model.js')
   const originalUserFind = await import('../src/models/user.model.js')
 
-  const eventModel = originalEventFindById.default
+  const competitionModel = originalCompetitionFindById.default
   const trackModel = originalTrackFindById.default
   const rubricModel = originalRubricFindById.default
   const teamModel = originalTeamFind.default
@@ -160,15 +173,15 @@ test('createRound rejects teams that are not confirmed', async () => {
     deleteById: async () => null
   }
 
-  const eventFindById = eventModel.findById
+  const competitionFindById = competitionModel.findById
   const trackFindById = trackModel.findById
   const rubricFindById = rubricModel.findById
   const teamFind = teamModel.find
   const userFind = userModel.find
 
-  eventModel.findById = async () => ({ _id: '000000000000000000000101', title: 'SEAL' })
-  trackModel.findById = async () => ({ _id: '000000000000000000000201', eventId: '000000000000000000000101' })
-  rubricModel.findById = async () => ({ _id: '000000000000000000000301', eventId: '000000000000000000000101' })
+  competitionModel.findById = async () => ({ _id: '000000000000000000000101', title: 'SEAL' })
+  trackModel.findById = async () => ({ _id: '000000000000000000000201', competitionId: '000000000000000000000101' })
+  rubricModel.findById = async () => ({ _id: '000000000000000000000301', competitionId: '000000000000000000000101' })
   userModel.find = async () => [{ _id: '000000000000000000000401', status: 'ACTIVE', roles: [{ name: 'JUDGE' }] }]
 
   const service = createRoundService({ repository })
@@ -177,14 +190,14 @@ test('createRound rejects teams that are not confirmed', async () => {
     for (const status of ['REJECTED', 'CANCELLED']) {
       teamModel.find = async () => [{
         _id: '000000000000000000000501',
-        eventId: '000000000000000000000101',
+        competitionId: '000000000000000000000101',
         trackId: '000000000000000000000201',
         status
       }]
 
       await assert.rejects(
         service.createRound({
-          eventId: '000000000000000000000101',
+          competitionId: '000000000000000000000101',
           trackId: '000000000000000000000201',
           name: 'Round 1',
           assignedTeamIds: ['000000000000000000000501'],
@@ -197,7 +210,7 @@ test('createRound rejects teams that are not confirmed', async () => {
       )
     }
   } finally {
-    eventModel.findById = eventFindById
+    competitionModel.findById = competitionFindById
     trackModel.findById = trackFindById
     rubricModel.findById = rubricFindById
     teamModel.find = teamFind
@@ -206,13 +219,13 @@ test('createRound rejects teams that are not confirmed', async () => {
 })
 
 test('createRound rejects assigned judges without ACTIVE judge role', async () => {
-  const originalEventFindById = await import('../src/models/event.model.js')
+  const originalCompetitionFindById = await import('../src/models/competition.model.js')
   const originalTrackFindById = await import('../src/models/track.model.js')
   const originalRubricFindById = await import('../src/models/rubric.model.js')
   const originalTeamFind = await import('../src/models/team.model.js')
   const originalUserFind = await import('../src/models/user.model.js')
 
-  const eventModel = originalEventFindById.default
+  const competitionModel = originalCompetitionFindById.default
   const trackModel = originalTrackFindById.default
   const rubricModel = originalRubricFindById.default
   const teamModel = originalTeamFind.default
@@ -227,18 +240,18 @@ test('createRound rejects assigned judges without ACTIVE judge role', async () =
     deleteById: async () => null
   }
 
-  const eventFindById = eventModel.findById
+  const competitionFindById = competitionModel.findById
   const trackFindById = trackModel.findById
   const rubricFindById = rubricModel.findById
   const teamFind = teamModel.find
   const userFind = userModel.find
 
-  eventModel.findById = async () => ({ _id: '000000000000000000000101', title: 'SEAL' })
-  trackModel.findById = async () => ({ _id: '000000000000000000000201', eventId: '000000000000000000000101' })
-  rubricModel.findById = async () => ({ _id: '000000000000000000000301', eventId: '000000000000000000000101' })
+  competitionModel.findById = async () => ({ _id: '000000000000000000000101', title: 'SEAL' })
+  trackModel.findById = async () => ({ _id: '000000000000000000000201', competitionId: '000000000000000000000101' })
+  rubricModel.findById = async () => ({ _id: '000000000000000000000301', competitionId: '000000000000000000000101' })
   teamModel.find = async () => [{
     _id: '000000000000000000000501',
-    eventId: '000000000000000000000101',
+    competitionId: '000000000000000000000101',
     trackId: '000000000000000000000201',
     status: 'CONFIRMED'
   }]
@@ -249,7 +262,7 @@ test('createRound rejects assigned judges without ACTIVE judge role', async () =
     userModel.find = async () => [{ _id: '000000000000000000000401', status: 'ACTIVE', roles: [{ name: 'PARTICIPANT' }] }]
     await assert.rejects(
       service.createRound({
-        eventId: '000000000000000000000101',
+        competitionId: '000000000000000000000101',
         trackId: '000000000000000000000201',
         name: 'Round 1',
         assignedTeamIds: ['000000000000000000000501'],
@@ -264,7 +277,7 @@ test('createRound rejects assigned judges without ACTIVE judge role', async () =
     userModel.find = async () => [{ _id: '000000000000000000000401', status: 'SUSPENDED', roles: [{ name: 'JUDGE' }] }]
     await assert.rejects(
       service.createRound({
-        eventId: '000000000000000000000101',
+        competitionId: '000000000000000000000101',
         trackId: '000000000000000000000201',
         name: 'Round 1',
         assignedTeamIds: ['000000000000000000000501'],
@@ -276,7 +289,7 @@ test('createRound rejects assigned judges without ACTIVE judge role', async () =
         error.errors.includes('Assigned judges must have ACTIVE accounts and the JUDGE role')
     )
   } finally {
-    eventModel.findById = eventFindById
+    competitionModel.findById = competitionFindById
     trackModel.findById = trackFindById
     rubricModel.findById = rubricFindById
     teamModel.find = teamFind

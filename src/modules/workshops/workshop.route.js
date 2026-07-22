@@ -52,7 +52,7 @@ const router = Router()
  *           format: email
  *           nullable: true
  *           example: participant@seal.local
- *     EventSummary:
+ *     CompetitionSummary:
  *       type: object
  *       properties:
  *         id:
@@ -86,12 +86,12 @@ const router = Router()
  *         meetLink:
  *           type: string
  *           example: https://meet.google.com/abc-defg-hij
- *         calendarEventId:
+ *         calendarCompetitionId:
  *           type: string
  *           example: 4hj52jds9s7abcd
  *         htmlLink:
  *           type: string
- *           example: https://www.google.com/calendar/event?eid=abc
+ *           example: https://www.google.com/calendar/competition?eid=abc
  *         organizerUserId:
  *           type: string
  *           example: 664c3f6a3a6d4a5f3f93b003
@@ -108,13 +108,13 @@ const router = Router()
  *         id:
  *           type: string
  *           example: 664c3f6a3a6d4a5f3f93b501
- *         event:
- *           $ref: '#/components/schemas/EventSummary'
- *         eventId:
+ *         competition:
+ *           $ref: '#/components/schemas/CompetitionSummary'
+ *         competitionId:
  *           type: string
  *           nullable: true
  *           example: 664c3f6a3a6d4a5f3f93b101
- *         timelineEventId:
+ *         timelineActivityId:
  *           type: string
  *           nullable: true
  *           example: 664c3f6a3a6d4a5f3f93b201
@@ -208,12 +208,12 @@ const router = Router()
  *           example: null
  *     CreateWorkshopRequest:
  *       type: object
- *       required: [eventId, title, startTime, endTime]
+ *       required: [competitionId, title, startTime, endTime]
  *       properties:
- *         eventId:
+ *         competitionId:
  *           type: string
  *           example: 664c3f6a3a6d4a5f3f93b101
- *         timelineEventId:
+ *         timelineActivityId:
  *           type: string
  *           nullable: true
  *           example: 664c3f6a3a6d4a5f3f93b201
@@ -255,10 +255,10 @@ const router = Router()
  *     UpdateWorkshopRequest:
  *       type: object
  *       properties:
- *         eventId:
+ *         competitionId:
  *           type: string
  *           example: 664c3f6a3a6d4a5f3f93b101
- *         timelineEventId:
+ *         timelineActivityId:
  *           type: string
  *           nullable: true
  *           example: 664c3f6a3a6d4a5f3f93b201
@@ -319,12 +319,12 @@ const router = Router()
  *             meetLink:
  *               type: string
  *               example: https://meet.google.com/abc-defg-hij
- *             calendarEventId:
+ *             calendarCompetitionId:
  *               type: string
  *               example: 4hj52jds9s7abcd
  *             htmlLink:
  *               type: string
- *               example: https://www.google.com/calendar/event?eid=abc
+ *               example: https://www.google.com/calendar/competition?eid=abc
  *             organizerEmail:
  *               type: string
  *               format: email
@@ -566,7 +566,7 @@ router.use(authorizationMiddleware)
  *           maximum: 100
  *           default: 10
  *       - in: query
- *         name: eventId
+ *         name: competitionId
  *         schema:
  *           type: string
  *       - in: query

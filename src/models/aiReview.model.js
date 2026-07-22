@@ -4,7 +4,7 @@ const { Schema } = mongoose
 
 const aiReviewSchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event' },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition' },
     teamId: { type: Schema.Types.ObjectId, ref: 'Team' },
     roundId: { type: Schema.Types.ObjectId, ref: 'Round' },
     repositoryId: { type: Schema.Types.ObjectId, ref: 'Repository', required: true },

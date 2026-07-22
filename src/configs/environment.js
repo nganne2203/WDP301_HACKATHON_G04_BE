@@ -89,7 +89,7 @@ export const env = {
     token: process.env.GITHUB_TOKEN,
     webhookSecret: process.env.GITHUB_WEBHOOK_SECRET,
     webhookCallbackUrl: process.env.GITHUB_WEBHOOK_CALLBACK_URL,
-    webhookEvents: process.env.GITHUB_WEBHOOK_EVENTS?.split(',').map(value => value.trim()).filter(Boolean) || ['push']
+    webhookCompetitions: process.env.GITHUB_WEBHOOK_EVENTS?.split(',').map(value => value.trim()).filter(Boolean) || ['push']
   },
   redis: {
     url: process.env.REDIS_URL || 'redis://127.0.0.1:6379'

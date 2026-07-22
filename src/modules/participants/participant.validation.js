@@ -16,7 +16,7 @@ const listParticipants = {
   query: Joi.object({
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10),
-    eventId: objectId,
+    competitionId: objectId,
     userId: objectId,
     teamId: objectId,
     confirmedTeamsOnly: Joi.boolean(),
@@ -30,13 +30,13 @@ const listParticipants = {
 
 const getMyParticipant = {
   query: Joi.object({
-    eventId: objectId.required()
+    competitionId: objectId.required()
   })
 }
 
 const createParticipant = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     userId: objectId,
     teamId: objectId.allow(null),
     chapterName: Joi.string().trim().max(120).allow('', null),
@@ -81,7 +81,7 @@ const updateCheckIn = {
 
 const generateCheckInQr = {
   body: Joi.object({
-    eventId: objectId.required()
+    competitionId: objectId.required()
   })
 }
 

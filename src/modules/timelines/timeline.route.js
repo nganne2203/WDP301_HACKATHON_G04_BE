@@ -13,35 +13,35 @@ router.use(authorizationMiddleware)
 
 router.get(
   '/',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(TIMELINE_VALIDATION.listTimelines),
   TIMELINE_CONTROLLER.listTimelines
 )
 
 router.post(
   '/',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
   validationHandlingMiddleware(TIMELINE_VALIDATION.createTimeline),
   TIMELINE_CONTROLLER.createTimeline
 )
 
 router.get(
   '/:id',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(TIMELINE_VALIDATION.getTimelineById),
   TIMELINE_CONTROLLER.getTimelineById
 )
 
 router.patch(
   '/:id',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
   validationHandlingMiddleware(TIMELINE_VALIDATION.updateTimeline),
   TIMELINE_CONTROLLER.updateTimeline
 )
 
 router.delete(
   '/:id',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
   validationHandlingMiddleware(TIMELINE_VALIDATION.getTimelineById),
   TIMELINE_CONTROLLER.deleteTimeline
 )

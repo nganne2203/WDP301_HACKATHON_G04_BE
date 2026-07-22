@@ -12,7 +12,7 @@ const listRounds = {
   query: Joi.object({
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10),
-    eventId: objectId,
+    competitionId: objectId,
     trackId: objectId,
     roundType,
     status: roundStatus,
@@ -22,13 +22,12 @@ const listRounds = {
 
 const createRound = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     trackId: objectId.allow(null),
     name: Joi.string().trim().min(2).max(200).required(),
     roundType: roundType.default('PRELIMINARY'),
     problemStatement: Joi.string().trim().max(5000).allow('', null),
     examDriveUrl: Joi.string().trim().uri().max(1000).allow('', null),
-    assignedTeamIds: Joi.array().items(objectId).unique().default([]),
     promotedTeamIds: Joi.array().items(objectId).unique().default([]),
     maxPromotedTeams: Joi.number().integer().min(1).allow(null),
     startTime: Joi.date().iso(),
@@ -49,13 +48,12 @@ const createRound = {
 const updateRound = {
   params: idParam,
   body: Joi.object({
-    eventId: objectId,
+    competitionId: objectId,
     trackId: objectId.allow(null),
     name: Joi.string().trim().min(2).max(200),
     roundType,
     problemStatement: Joi.string().trim().max(5000).allow('', null),
     examDriveUrl: Joi.string().trim().uri().max(1000).allow('', null),
-    assignedTeamIds: Joi.array().items(objectId).unique(),
     promotedTeamIds: Joi.array().items(objectId).unique(),
     maxPromotedTeams: Joi.number().integer().min(1).allow(null),
     startTime: Joi.date().iso(),

@@ -300,7 +300,7 @@ Khi đến giai đoạn chấm:
 - giám khảo chấm theo rubric
 - hệ thống lưu score sheet và các score theo từng tiêu chí
 - hệ thống tổng hợp điểm
-- xếp hạng theo round, track hoặc event
+- xếp hạng theo round, track hoặc competition
 - chọn đội vào vòng sau nếu có
 - công bố kết quả cuối cùng
 
@@ -356,7 +356,7 @@ Chỉ chia bảng khi:
 
 Dữ liệu đầu vào của bước chia bảng gồm:
 
-- `eventId`
+- `competitionId`
 - `roundId` hoặc ngữ cảnh vòng thi tương ứng
 - danh sách đội đủ điều kiện
 - số lượng bảng cấu hình

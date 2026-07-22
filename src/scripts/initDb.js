@@ -7,8 +7,8 @@ import { migrateUsersOffRemovedUserRole } from '#utils/removeUserRoleMigration.j
 import User from '#models/user.model.js'
 import Role from '#models/role.model.js'
 import Permission from '#models/permission.model.js'
-import Event from '#models/event.model.js'
-import TimelineEvent from '#models/timelineEvent.model.js'
+import Competition from '#models/competition.model.js'
+import TimelineActivity from '#models/timelineActivity.model.js'
 import Workshop from '#models/workshop.model.js'
 import WorkshopQuestion from '#models/workshopQuestion.model.js'
 import WorkshopFeedback from '#models/workshopFeedback.model.js'
@@ -49,8 +49,8 @@ const MODELS = [
   User,
   Role,
   Permission,
-  Event,
-  TimelineEvent,
+  Competition,
+  TimelineActivity,
   Workshop,
   WorkshopQuestion,
   WorkshopFeedback,
@@ -89,8 +89,8 @@ const MODELS = [
 
 const ROLE_SEEDS = [
   ['ADMIN', 'System administrator'],
-  ['COORDINATOR', 'Event coordinator'],
-  ['EVENT_COORDINATOR', 'Event coordinator'],
+  ['COORDINATOR', 'Competition coordinator'],
+  ['COMPETITION_COORDINATOR', 'Competition coordinator'],
   ['JUDGE', 'Judge role'],
   ['MENTOR', 'Mentor role'],
   ['SPEAKER', 'Workshop speaker role'],
@@ -174,7 +174,7 @@ const seedRequiredData = async () => {
   const passwordHash = await BCRYPT_UTILS.hashPassword('Password123!')
   const [adminUser, coordinatorUser, mentorUser, speakerUser] = await Promise.all([
     seedBaseUser({ localPart: 'admin', legacyEmail: 'admin@seal.local', fullName: 'Admin User', roleId: roleByName.get('ADMIN')._id, passwordHash }),
-    seedBaseUser({ localPart: 'coordinator', legacyEmail: 'coordinator@seal.local', fullName: 'Event Coordinator', roleId: roleByName.get('COORDINATOR')._id, passwordHash }),
+    seedBaseUser({ localPart: 'coordinator', legacyEmail: 'coordinator@seal.local', fullName: 'Competition Coordinator', roleId: roleByName.get('COORDINATOR')._id, passwordHash }),
     seedBaseUser({ localPart: 'mentor', legacyEmail: 'mentor@seal.local', fullName: 'Mentor User', roleId: roleByName.get('MENTOR')._id, passwordHash }),
     seedBaseUser({ localPart: 'speaker', legacyEmail: 'speaker@seal.local', fullName: 'Speaker User', roleId: roleByName.get('SPEAKER')._id, passwordHash })
   ])
@@ -187,6 +187,7 @@ const seedRequiredData = async () => {
     mentorUser,
     speakerUser
   })
+  await Rubric.collection.updateMany({}, { $unset: { version: '' } })
 }
 
 const run = async () => {
@@ -196,7 +197,7 @@ const run = async () => {
     await initIndexes()
     await seedRequiredData()
     // eslint-disable-next-line no-console
-    console.log('Database initialized with required RBAC/accounts and the completed SEAL Hackathon Spring 2026 event successfully.')
+    console.log('Database initialized with required RBAC/accounts and the completed SEAL Hackathon Spring 2026 competition successfully.')
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to initialize database:', error)

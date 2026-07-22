@@ -33,8 +33,8 @@ test('notifyUser creates in-app notification and sends email', async () => {
       }
     },
     socketEmitter: {
-      emitToUser: (userId, event, payload) => {
-        emitted.push({ userId, event, payload })
+      emitToUser: (userId, competition, payload) => {
+        emitted.push({ userId, competition, payload })
         return true
       }
     },
@@ -60,7 +60,7 @@ test('notifyUser creates in-app notification and sends email', async () => {
   assert.equal(sent[0].template, EMAIL_TEMPLATE_KEYS.ACCOUNT_APPROVED)
   assert.equal(emitted.length, 1)
   assert.equal(emitted[0].userId, 'user-1')
-  assert.equal(emitted[0].event, 'notification_created')
+  assert.equal(emitted[0].competition, 'notification_created')
   assert.equal(emitted[0].payload.title, 'Account approved')
 })
 
@@ -99,11 +99,11 @@ test('notifyUser reuses existing in-app notification when dedupeKey matches', as
   const existing = {
     _id: 'notification-1',
     userId: 'user-1',
-    title: 'Event starts soon',
-    message: 'Your event starts in 1 hour.',
+    title: 'Competition starts soon',
+    message: 'Your competition starts in 1 hour.',
     type: 'DEADLINE',
     status: 'UNREAD',
-    dedupeKey: 'event-start:event-1:1h:user-1',
+    dedupeKey: 'competition-start:competition-1:1h:user-1',
     createdAt: new Date('2026-05-30T00:00:00.000Z')
   }
 
@@ -119,8 +119,8 @@ test('notifyUser reuses existing in-app notification when dedupeKey matches', as
       sendTemplateEmail: async () => ({ sent: true, status: 'SENT', accepted: ['participant@example.com'] })
     },
     socketEmitter: {
-      emitToUser: (userId, event, payload) => {
-        emitted.push({ userId, event, payload })
+      emitToUser: (userId, competition, payload) => {
+        emitted.push({ userId, competition, payload })
         return true
       }
     },
@@ -133,8 +133,8 @@ test('notifyUser reuses existing in-app notification when dedupeKey matches', as
       email: 'participant@example.com',
       fullName: 'Participant User'
     },
-    title: 'Event starts soon',
-    message: 'Your event starts in 1 hour.',
+    title: 'Competition starts soon',
+    message: 'Your competition starts in 1 hour.',
     type: 'DEADLINE',
     dedupeKey: existing.dedupeKey,
     channels: ['IN_APP']
@@ -147,7 +147,7 @@ test('notifyUser reuses existing in-app notification when dedupeKey matches', as
   assert.equal(emitted.length, 0)
 })
 
-test('mark read operations emit notification socket events', async () => {
+test('mark read operations emit notification socket competitions', async () => {
   const emitted = []
   const service = createNotificationService({
     repository: {
@@ -163,8 +163,8 @@ test('mark read operations emit notification socket events', async () => {
       markAllAsRead: async () => ({ matchedCount: 3, modifiedCount: 2 })
     },
     socketEmitter: {
-      emitToUser: (userId, event, payload) => {
-        emitted.push({ userId, event, payload })
+      emitToUser: (userId, competition, payload) => {
+        emitted.push({ userId, competition, payload })
         return true
       }
     },
@@ -178,13 +178,13 @@ test('mark read operations emit notification socket events', async () => {
   await service.markAllAsRead('000000000000000000000002')
 
   assert.equal(emitted.length, 2)
-  assert.equal(emitted[0].event, 'notification_read')
+  assert.equal(emitted[0].competition, 'notification_read')
   assert.equal(emitted[0].payload.status, 'READ')
-  assert.equal(emitted[1].event, 'notifications_read_all')
+  assert.equal(emitted[1].competition, 'notifications_read_all')
   assert.equal(emitted[1].payload.modifiedCount, 2)
 })
 
-test('sendEventInvitations deduplicates recipients and summarizes delivery', async () => {
+test('sendCompetitionInvitations deduplicates recipients and summarizes delivery', async () => {
   const sent = []
   const service = createNotificationService({
     emailService: {
@@ -198,9 +198,9 @@ test('sendEventInvitations deduplicates recipients and summarizes delivery', asy
     logger: createLogger()
   })
 
-  const result = await service.sendEventInvitations({
-    event: {
-      _id: 'event-1',
+  const result = await service.sendCompetitionInvitations({
+    competition: {
+      _id: 'competition-1',
       title: 'SEAL Hackathon'
     },
     emails: ['participant@example.com', 'participant@example.com', 'bad@example.com'],
@@ -211,5 +211,5 @@ test('sendEventInvitations deduplicates recipients and summarizes delivery', asy
   assert.equal(result.sent, 1)
   assert.equal(result.failed, 1)
   assert.equal(sent.length, 2)
-  assert.equal(sent[0].template, EMAIL_TEMPLATE_KEYS.EVENT_INVITATION)
+  assert.equal(sent[0].template, EMAIL_TEMPLATE_KEYS.COMPETITION_INVITATION)
 })

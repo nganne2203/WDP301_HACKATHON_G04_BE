@@ -4,7 +4,7 @@ import test from 'node:test'
 import { createRubricService } from '../src/modules/rubrics/rubric.service.js'
 
 const ids = {
-  event: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+  competition: 'aaaaaaaaaaaaaaaaaaaaaaaa',
   round: 'bbbbbbbbbbbbbbbbbbbbbbbb',
   rubric: 'cccccccccccccccccccccccc',
   criterion1: 'dddddddddddddddddddddddd',
@@ -23,12 +23,12 @@ const countModel = (value) => ({
   }
 })
 
-test('updateCriterion and deleteCriterion recompute criteria weight total without changing rubric scale', async () => {
+test('updateCriterion and deleteCriterion recompute total weight without changing the configured total', async () => {
   const rubrics = new Map([[
     ids.rubric,
     {
       _id: ids.rubric,
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       title: 'Technical Rubric',
       totalScore: 100,
@@ -69,8 +69,8 @@ test('updateCriterion and deleteCriterion recompute criteria weight total withou
 
   const service = createRubricService({
     repository,
-    eventModel: createModel(new Map([[ids.event, { _id: ids.event }]])),
-    roundModel: createModel(new Map([[ids.round, { _id: ids.round, eventId: ids.event }]])),
+    competitionModel: createModel(new Map([[ids.competition, { _id: ids.competition }]])),
+    roundModel: createModel(new Map([[ids.round, { _id: ids.round, competitionId: ids.competition }]])),
     scoreSheetModel: countModel(0)
   })
 
@@ -86,12 +86,12 @@ test('updateCriterion and deleteCriterion recompute criteria weight total withou
   assert.equal(deleted.deletedCriterionId, ids.criterion1)
 })
 
-test('active rubric requires criterion weights to match rubric scale', async () => {
+test('active rubric requires criterion weights to match total weight', async () => {
   const rubrics = new Map([[
     ids.rubric,
     {
       _id: ids.rubric,
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       title: 'Active Rubric',
       totalScore: 100,
@@ -132,15 +132,15 @@ test('active rubric requires criterion weights to match rubric scale', async () 
 
   const service = createRubricService({
     repository,
-    eventModel: createModel(new Map([[ids.event, { _id: ids.event }]])),
-    roundModel: createModel(new Map([[ids.round, { _id: ids.round, eventId: ids.event }]])),
+    competitionModel: createModel(new Map([[ids.competition, { _id: ids.competition }]])),
+    roundModel: createModel(new Map([[ids.round, { _id: ids.round, competitionId: ids.competition }]])),
     scoreSheetModel: countModel(0)
   })
 
   await assert.rejects(
     service.updateCriterion(ids.rubric, ids.criterion2, { weight: 50 }),
     error => error instanceof Error &&
-      error.errors.includes('Total criterion weight must equal rubric scale 100')
+      error.errors.includes('Total weight must equal 100')
   )
 })
 
@@ -153,21 +153,45 @@ test('rubric cannot be created as active before criteria are configured', async 
 
   const service = createRubricService({
     repository,
-    eventModel: createModel(new Map([[ids.event, { _id: ids.event }]])),
-    roundModel: createModel(new Map([[ids.round, { _id: ids.round, eventId: ids.event }]])),
+    competitionModel: createModel(new Map([[ids.competition, { _id: ids.competition }]])),
+    roundModel: createModel(new Map([[ids.round, { _id: ids.round, competitionId: ids.competition }]])),
     scoreSheetModel: countModel(0)
   })
 
   await assert.rejects(
     service.createRubric({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       title: 'Active Rubric',
       totalScore: 100,
       status: 'ACTIVE'
     }),
     error => error instanceof Error &&
-      error.errors.includes('Rubric must be created as DRAFT and activated after criteria weights match the scale')
+      error.errors.includes('Rubric must be created as DRAFT; configure criterion coefficients before changing its status')
+  )
+})
+
+test('rubric cannot leave draft until criterion weights equal the total weight', async () => {
+  const rubric = {
+    _id: ids.rubric,
+    competitionId: ids.competition,
+    title: 'Incomplete Rubric',
+    totalScore: 100,
+    criterionMaxScore: 10,
+    status: 'DRAFT'
+  }
+  const repository = {
+    async findRubricById() { return rubric },
+    async findCriteriaByRubricId() {
+      return [{ _id: ids.criterion1, rubricId: ids.rubric, name: 'Correctness', maxScore: 10, weight: 90, order: 1 }]
+    },
+    async updateRubricById() { throw new Error('should not update an incomplete rubric') }
+  }
+  const service = createRubricService({ repository, scoreSheetModel: countModel(0) })
+
+  await assert.rejects(
+    service.updateRubric(ids.rubric, { status: 'ARCHIVED' }),
+    error => error instanceof Error && error.errors.includes('Total weight must equal 100')
   )
 })
 
@@ -176,7 +200,7 @@ test('rubric criteria cannot change after score sheets exist', async () => {
     ids.rubric,
     {
       _id: ids.rubric,
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       title: 'Locked Rubric',
       totalScore: 30,
@@ -210,20 +234,20 @@ test('rubric criteria cannot change after score sheets exist', async () => {
 
   const service = createRubricService({
     repository,
-    eventModel: createModel(new Map([[ids.event, { _id: ids.event }]])),
-    roundModel: createModel(new Map([[ids.round, { _id: ids.round, eventId: ids.event }]])),
+    competitionModel: createModel(new Map([[ids.competition, { _id: ids.competition }]])),
+    roundModel: createModel(new Map([[ids.round, { _id: ids.round, competitionId: ids.competition }]])),
     scoreSheetModel: countModel(1)
   })
 
   await assert.rejects(
     service.updateCriterion(ids.rubric, ids.criterion1, { maxScore: 8 }),
     error => error instanceof Error &&
-      error.errors.includes('Rubric cannot be changed after score sheets have been created; create a new rubric version instead')
+      error.errors.includes('Rubric cannot be changed after score sheets have been created; create a new rubric instead')
   )
 
   await assert.rejects(
     service.deleteCriterion(ids.rubric, ids.criterion1),
     error => error instanceof Error &&
-      error.errors.includes('Rubric cannot be changed after score sheets have been created; create a new rubric version instead')
+      error.errors.includes('Rubric cannot be changed after score sheets have been created; create a new rubric instead')
   )
 })

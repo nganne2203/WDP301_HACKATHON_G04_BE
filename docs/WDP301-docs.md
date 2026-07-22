@@ -12,7 +12,7 @@ SEAL is a hackathon lifecycle management platform designed to support academic s
 
 The system supports:
 
-- hackathon event management,
+- hackathon competition management,
 - registration and invitation management,
 - team formation and team leader workflows,
 - check-in and seminar/workshop attendance,
@@ -31,7 +31,7 @@ SEAL focuses on hackathon lifecycle management. AI is not the core identity of t
 
 The system includes:
 
-- event creation and lifecycle management,
+- competition creation and lifecycle management,
 - registration forms and invitation emails,
 - participant and team management,
 - check-in and seminar/workshop attendance tracking,
@@ -53,7 +53,7 @@ The AI functionality uses third-party AI APIs and does not develop or train cust
 The system aims to:
 
 - automate hackathon lifecycle processes,
-- centralize event communication and tracking,
+- centralize competition communication and tracking,
 - integrate GitHub repository management,
 - support check-in, judging, finalist selection, and result publishing,
 - support AI-assisted repository evaluation as a secondary feature,
@@ -71,7 +71,7 @@ Current hackathon management processes are mostly manual and contain several lim
 - organizers manually calculate rankings,
 - communication between organizers, mentors, judges, and participants is fragmented,
 - repository creation and access control are handled manually,
-- there is no centralized event timeline management,
+- there is no centralized competition timeline management,
 - check-in and seminar attendance are not integrated,
 - result publishing is not automated,
 - there is no supporting AI-assisted repository review for judges,
@@ -81,11 +81,11 @@ Current hackathon management processes are mostly manual and contain several lim
 
 # 3. Roles, Permissions, Participants, and Hackathon Workflow
 
-This section separates **authorization roles (RBAC)** from the **Participant** domain model. The simplified domain uses `Participant` for event registration, team assignment, check-in, and GitHub access status.
+This section separates **authorization roles (RBAC)** from the **Participant** domain model. The simplified domain uses `Participant` for competition registration, team assignment, check-in, and GitHub access status.
 
 ## 3.1 Permission-based Authorization
 
-The backend uses permission-based access control. Routes and business actions check permission codes such as `EVENT_CREATE`, `WORKSHOP_CREATE`, `TEAM_VIEW`, or `USER_ROLE_ASSIGN`.
+The backend uses permission-based access control. Routes and business actions check permission codes such as `COMPETITION_CREATE`, `WORKSHOP_CREATE`, `TEAM_VIEW`, or `USER_ROLE_ASSIGN`.
 
 Roles are only containers for permissions. A route must not check role names such as `ADMIN`, `COORDINATOR`, or `JUDGE` directly. After login and on authenticated requests, the system resolves permissions from assigned roles, merges them, removes duplicates, and exposes them through the authenticated user context.
 
@@ -95,17 +95,17 @@ Example:
 router.post(
   '/',
   authorizationMiddleware,
-  permissionMiddleware(PERMISSIONS.EVENT_CREATE),
+  permissionMiddleware(PERMISSIONS.COMPETITION_CREATE),
   eventController.createEvent
 )
 ```
 
 ## 3.2 RBAC Roles (Permission Groups Only)
 
-RBAC roles group permissions for easier administration. They are assigned by administrators and do not represent event participation status.
+RBAC roles group permissions for easier administration. They are assigned by administrators and do not represent competition participation status.
 
 - **ADMIN**: system configuration, external integrations, role and permission management, audit oversight.
-- **EVENT_COORDINATOR / COORDINATOR**: event lifecycle management, timelines, workshops, tracks and rounds, assignments, results publishing.
+- **COMPETITION_COORDINATOR / COORDINATOR**: competition lifecycle management, timelines, workshops, tracks and rounds, assignments, results publishing.
 - **JUDGE**: access assigned submissions, scoring, and review summaries.
 - **MENTOR**: access assigned teams and mentoring functions.
 - **PARTICIPANT**: baseline authenticated participant access.
@@ -113,20 +113,20 @@ RBAC roles group permissions for easier administration. They are assigned by adm
 Seeded role-permission mapping:
 
 - **ADMIN**: all permissions.
-- **EVENT_COORDINATOR / COORDINATOR**: `EVENT_CREATE`, `EVENT_VIEW`, `EVENT_UPDATE`, `TRACK_CREATE`, `TRACK_VIEW`, `TRACK_UPDATE`, `TRACK_DELETE`, workshop management permissions, workshop insight view permissions, `TEAM_VIEW`, `PARTICIPANT_VIEW`, `PARTICIPANT_APPROVE`, `USER_CREATE`, `USER_VIEW`, `USER_UPDATE`, `JUDGING_ASSIGN`, GitHub permissions, AI review permissions, `RESULT_PUBLISH`, and `AUDIT_LOG_VIEW`.
-- **JUDGE**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop insight view permissions, `TEAM_VIEW`, `SCORE_CREATE`, `SCORE_VIEW`, and `AI_REVIEW_VIEW`.
-- **MENTOR**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop insight view permissions, `TEAM_VIEW`, and `AI_REVIEW_VIEW`.
-- **PARTICIPANT**: `EVENT_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop question create/view/vote permissions, `WORKSHOP_RATING_CREATE`, `WORKSHOP_FEEDBACK_CREATE`, `TEAM_CREATE`, and `TEAM_VIEW`.
+- **COMPETITION_COORDINATOR / COORDINATOR**: `COMPETITION_CREATE`, `COMPETITION_VIEW`, `COMPETITION_UPDATE`, `TRACK_CREATE`, `TRACK_VIEW`, `TRACK_UPDATE`, `TRACK_DELETE`, workshop management permissions, workshop insight view permissions, `TEAM_VIEW`, `PARTICIPANT_VIEW`, `PARTICIPANT_APPROVE`, `USER_CREATE`, `USER_VIEW`, `USER_UPDATE`, `JUDGING_ASSIGN`, GitHub permissions, AI review permissions, `RESULT_PUBLISH`, and `AUDIT_LOG_VIEW`.
+- **JUDGE**: `COMPETITION_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop insight view permissions, `TEAM_VIEW`, `SCORE_CREATE`, `SCORE_VIEW`, and `AI_REVIEW_VIEW`.
+- **MENTOR**: `COMPETITION_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop insight view permissions, `TEAM_VIEW`, and `AI_REVIEW_VIEW`.
+- **PARTICIPANT**: `COMPETITION_VIEW`, `TRACK_VIEW`, `WORKSHOP_VIEW`, workshop question create/view/vote permissions, `WORKSHOP_RATING_CREATE`, `WORKSHOP_FEEDBACK_CREATE`, `TEAM_CREATE`, and `TEAM_VIEW`.
 
 ## 3.3 User Roles
 
 ### Participant
 
-Participant is a user who joins a hackathon event.
+Participant is a user who joins a hackathon competition.
 
 Participants can:
 
-- register for events,
+- register for competitions,
 - join teams,
 - check in,
 - attend seminars/workshops,
@@ -148,11 +148,11 @@ Responsibilities:
 - submit project materials,
 - communicate with coordinators.
 
-### Event Coordinator
+### Competition Coordinator
 
 Responsibilities:
 
-- create hackathon events,
+- create hackathon competitions,
 - configure registration forms,
 - send invitation emails,
 - manage participants and teams,
@@ -181,35 +181,35 @@ Responsibilities:
 
 **Participant**
 - `userId`
-- `eventId`
+- `competitionId`
 - `teamId`
 - `teamRole` (`MEMBER`, `LEADER`)
 - `checkInStatus`
 - `githubAccessStatus`
 
-This model replaces the previous separated event-participation and team-membership records. A team leader is represented as a participant whose `teamRole = LEADER`.
+This model replaces the previous separated competition-participation and team-membership records. A team leader is represented as a participant whose `teamRole = LEADER`.
 
 ## 3.5 Actors and Use Cases (UML-Oriented)
 
-The use case diagram models **User** as the base actor, with specialized actors that inherit from User. The `Participant` model determines event registration, team membership, team leadership, check-in, and GitHub access state.
+The use case diagram models **User** as the base actor, with specialized actors that inherit from User. The `Participant` model determines competition registration, team membership, team leadership, check-in, and GitHub access state.
 
 **Actor hierarchy**
 - **Participant**
 - **Team Leader**
 - **Mentor**
 - **Judge**
-- **Event Coordinator**
+- **Competition Coordinator**
 - **Admin**
 
 **Use cases by actor**
 - **Participant**
 	- Register/Login
-	- View events, timelines, and workshops
+	- View competitions, timelines, and workshops
 	- View notifications and published results
 	- Join workshops
 	- Submit questions and vote
 	- Rate workshops and submit feedback
-	- Check in to events
+	- Check in to competitions
 	- Access team repository info and activity
 	- View team progress and submissions
 - **Team Leader**
@@ -226,8 +226,8 @@ The use case diagram models **User** as the base actor, with specialized actors 
 	- Score submissions using rubrics
 	- Submit comments
 	- View AI review summaries
-- **Event Coordinator**
-	- Create/manage events and timelines
+- **Competition Coordinator**
+	- Create/manage competitions and timelines
 	- Configure registration forms and invitation emails
 	- Manage workshops, tracks, and rounds
 	- Manage participants and teams
@@ -250,7 +250,7 @@ The use case diagram models **User** as the base actor, with specialized actors 
 
 ### Phase 1 — Registration
 
-- Coordinator creates event.
+- Coordinator creates competition.
 - Participants register via form.
 - Invitation emails are sent.
 - Users authenticate using Google Login.
@@ -259,7 +259,7 @@ The use case diagram models **User** as the base actor, with specialized actors 
 
 - Participants create or join teams.
 - Team Leader manages team registration.
-- Each event supports a maximum of 30 teams.
+- Each competition supports a maximum of 30 teams.
 
 ### Phase 3 — Check-in & Seminar
 
@@ -320,7 +320,7 @@ The use case diagram models **User** as the base actor, with specialized actors 
 
 Users can authenticate using Google Login.
 
-Google login uses OAuth 2.0 scopes `openid`, `email`, `profile`, and `https://www.googleapis.com/auth/calendar.events`.
+Google login uses OAuth 2.0 scopes `openid`, `email`, `profile`, and `https://www.googleapis.com/auth/calendar.competitions`.
 
 ### FR-AUTH-02
 
@@ -354,37 +354,37 @@ Authenticated users with `GOOGLE_CONNECT` permission can connect a Google Calend
 
 ---
 
-# 4.2 Event Management Module
+# 4.2 Competition Management Module
 
 ## Features
 
-- event creation,
-- event lifecycle management,
+- competition creation,
+- competition lifecycle management,
 - registration form configuration,
 - participant invitation,
 - schedule management,
-- event status management.
+- competition status management.
 
 ## Requirements
 
 ### FR-EVT-01
 
-Coordinators can create hackathon events.
+Coordinators can create hackathon competitions.
 
 ### FR-EVT-02
 
-An event contains:
+An competition contains:
 
 - title,
 - description,
 - semester,
 - start date,
 - end date,
-- event status.
+- competition status.
 
 ### FR-EVT-03
 
-Event statuses include:
+Competition statuses include:
 
 - Draft,
 - Open Registration,
@@ -395,7 +395,7 @@ Event statuses include:
 
 ### FR-EVT-04
 
-The system supports multiple events per year.
+The system supports multiple competitions per year.
 
 ### FR-EVT-05
 
@@ -415,11 +415,11 @@ Coordinators can configure registration forms and send invitation emails.
 
 ### FR-TM-01
 
-Coordinators can create timeline events.
+Coordinators can create timeline competitions.
 
 ### FR-TM-02
 
-Timeline events may include:
+Timeline competitions may include:
 
 - workshops,
 - check-ins,
@@ -429,18 +429,18 @@ Timeline events may include:
 
 ### FR-TM-03
 
-Each timeline event contains:
+Each timeline competition contains:
 
 - title,
 - description,
 - start time,
 - end time,
-- event type,
+- competition type,
 - status.
 
 ### FR-TM-04
 
-The system automatically triggers notifications based on scheduled timeline events.
+The system automatically triggers notifications based on scheduled timeline competitions.
 
 ---
 
@@ -450,7 +450,7 @@ The system automatically triggers notifications based on scheduled timeline even
 
 - workshop scheduling,
 - Google Meet integration,
-- Google Calendar event creation,
+- Google Calendar competition creation,
 - questionnaire management,
 - workshop interaction,
 - rating and feedback.
@@ -466,7 +466,7 @@ Coordinators can create workshops.
 A workshop may contain:
 
 - Google Meet link,
-- Google Calendar event metadata,
+- Google Calendar competition metadata,
 - presenter information,
 - questionnaires,
 - workshop schedule.
@@ -494,11 +494,11 @@ The system stores workshop interaction history.
 
 ### FR-WS-06
 
-Users with `WORKSHOP_MEET_CREATE` permission can create a Google Meet link for a workshop through the connected Google Calendar account of the selected organizer. The organizer's Google account owns the Calendar event.
+Users with `WORKSHOP_MEET_CREATE` permission can create a Google Meet link for a workshop through the connected Google Calendar account of the selected organizer. The organizer's Google account owns the Calendar competition.
 
 ### FR-WS-07
 
-When creating a Meet link, the backend stores `googleMeet.enabled`, `meetLink`, `calendarEventId`, `htmlLink`, `organizerUserId`, `organizerEmail`, and `createdAt` on the workshop.
+When creating a Meet link, the backend stores `googleMeet.enabled`, `meetLink`, `calendarCompetitionId`, `htmlLink`, `organizerUserId`, `organizerEmail`, and `createdAt` on the workshop.
 
 ---
 
@@ -524,7 +524,7 @@ A team contains participants and is managed by one team leader.
 
 ### FR-COMP-03
 
-An event supports a maximum of 30 teams.
+An competition supports a maximum of 30 teams.
 
 ### FR-COMP-04
 
@@ -532,7 +532,7 @@ Teams can register into competition tracks/categories.
 
 ### FR-COMP-05
 
-An event may contain multiple competition rounds.
+An competition may contain multiple competition rounds.
 
 ### FR-COMP-06
 
@@ -629,15 +629,15 @@ The system exposes webhook endpoints.
 
 ### FR-GH-03
 
-The system processes GitHub webhook events.
+The system processes GitHub webhook competitions.
 
 ### FR-GH-04
 
-Webhook events may include:
+Webhook competitions may include:
 
-- push events,
-- commit events,
-- pull request events.
+- push competitions,
+- commit competitions,
+- pull request competitions.
 
 ### FR-GH-05
 
@@ -776,7 +776,7 @@ Rankings can be generated by:
 
 - track,
 - round,
-- event.
+- competition.
 
 ### FR-SCORE-09
 
@@ -858,7 +858,7 @@ The system sends reminder notifications for pending feedback.
 
 ## Features
 
-- event check-in,
+- competition check-in,
 - seminar attendance tracking,
 - workshop attendance tracking.
 
@@ -866,7 +866,7 @@ The system sends reminder notifications for pending feedback.
 
 ### FR-MD-01
 
-Participants can check in to events.
+Participants can check in to competitions.
 
 ### FR-MD-02
 
@@ -933,7 +933,7 @@ Participant dashboards display:
 
 - realtime notifications,
 - scheduled notifications,
-- event reminders.
+- competition reminders.
 
 ## Requirements
 
@@ -1017,14 +1017,14 @@ Configuration data is stored in the database.
 
 ## Implementation Status
 
-Backend media APIs are implemented using Supabase Storage for files and MongoDB for metadata. Frontend participant media, event gallery, and admin moderation/statistics pages are implemented.
+Backend media APIs are implemented using Supabase Storage for files and MongoDB for metadata. Frontend participant media, competition gallery, and admin moderation/statistics pages are implemented.
 
 ## Features
 
-- participant media upload for joined events,
+- participant media upload for joined competitions,
 - private Supabase Storage object access through backend-generated signed URLs,
 - participant upload history,
-- approved event gallery,
+- approved competition gallery,
 - coordinator/admin moderation,
 - media statistics,
 - media activity tracking and audit logs,
@@ -1034,7 +1034,7 @@ Backend media APIs are implemented using Supabase Storage for files and MongoDB 
 
 ### FR-MEDIA-01
 
-Participants can upload image, video, and document files only for events they joined.
+Participants can upload image, video, and document files only for competitions they joined.
 
 ### FR-MEDIA-02
 
@@ -1042,11 +1042,11 @@ Uploaded files are validated by extension, MIME type, and configured file-size l
 
 ### FR-MEDIA-03
 
-Event galleries return approved media only.
+Competition galleries return approved media only.
 
 ### FR-MEDIA-04
 
-Admins and event coordinators can list, approve, reject, delete, and inspect statistics for media.
+Admins and competition coordinators can list, approve, reject, delete, and inspect statistics for media.
 
 ### FR-MEDIA-05
 
@@ -1072,7 +1072,7 @@ The system must support:
 
 - webhook processing,
 - asynchronous background jobs,
-- realtime event handling,
+- realtime competition handling,
 - queue-based processing.
 
 ---
@@ -1117,8 +1117,8 @@ The main entities include:
 - User
 - Role
 - Permission
-- Event
-- TimelineEvent
+- Competition
+- TimelineActivity
 - Workshop
 - WorkshopQuestion
 - WorkshopFeedback
@@ -1170,7 +1170,7 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 - Google Calendar tokens are stored encrypted and are never returned to the frontend.
 
 **Role**
-- Stores RBAC role names such as `ADMIN`, `EVENT_COORDINATOR`, `COORDINATOR`, `JUDGE`, `MENTOR`, and `PARTICIPANT`.
+- Stores RBAC role names such as `ADMIN`, `COMPETITION_COORDINATOR`, `COORDINATOR`, `JUDGE`, `MENTOR`, and `PARTICIPANT`.
 - Key fields: `name`, `description`, `permissions`.
 - Relationships: roles reference `Permission` records through `permissions`.
 - Purpose: roles are permission groups only; routes do not authorize by role name.
@@ -1178,22 +1178,22 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 **Permission**
 - Stores fine-grained access permissions.
 - Key fields: `code`, `description`.
-- Example codes: `EVENT_CREATE`, `EVENT_VIEW`, `TRACK_CREATE`, `WORKSHOP_CREATE`, `WORKSHOP_MEET_CREATE`, `GOOGLE_CONNECT`, `TEAM_VIEW`, `PARTICIPANT_APPROVE`, `USER_ROLE_ASSIGN`, `SCORE_CREATE`, `AI_REVIEW_VIEW`, `RESULT_PUBLISH`, `SYSTEM_CONFIG_MANAGE`.
+- Example codes: `COMPETITION_CREATE`, `COMPETITION_VIEW`, `TRACK_CREATE`, `WORKSHOP_CREATE`, `WORKSHOP_MEET_CREATE`, `GOOGLE_CONNECT`, `TEAM_VIEW`, `PARTICIPANT_APPROVE`, `USER_ROLE_ASSIGN`, `SCORE_CREATE`, `AI_REVIEW_VIEW`, `RESULT_PUBLISH`, `SYSTEM_CONFIG_MANAGE`.
 
-### Event and Schedule
+### Competition and Schedule
 
-**Event**
-- Stores one hackathon season or event.
+**Competition**
+- Stores one hackathon season or competition.
 - Key fields: `title`, `description`, `semester`, `seriesName`, `season`, `year`, `theme`, `registrationStart`, `registrationEnd`, `startDate`, `endDate`, `minTeamMembers`, `maxTeamMembers`, `finalistSlotsPerTrack`, `totalFinalistSlots`, `status`, `createdBy`.
-- Relationships: one event has many tracks, rounds, teams, participants, workshops, submissions, rankings, prizes, and media items.
+- Relationships: one competition has many tracks, rounds, teams, participants, workshops, submissions, rankings, prizes, and media items.
 
-**TimelineEvent**
-- Stores event timeline items such as registration, workshops, coding sessions, rounds, ceremonies, and result publishing.
-- Key fields: `eventId`, `title`, `description`, `eventType`, `startTime`, `endTime`, `status`.
+**TimelineActivity**
+- Stores competition timeline items such as registration, workshops, coding sessions, rounds, ceremonies, and result publishing.
+- Key fields: `competitionId`, `title`, `description`, `eventType`, `startTime`, `endTime`, `status`.
 
 **Workshop**
 - Stores workshop or seminar sessions.
-- Key fields: `eventId`, `timelineEventId`, `title`, `description`, `presenterId`, `speakerInfo`, `meetLink`, `googleMeet`, `startTime`, `endTime`, `questionnaire`, `status`.
+- Key fields: `competitionId`, `timelineCompetitionId`, `title`, `description`, `presenterId`, `speakerInfo`, `meetLink`, `googleMeet`, `startTime`, `endTime`, `questionnaire`, `status`.
 
 **WorkshopQuestion**
 - Stores participant questions for workshops.
@@ -1211,33 +1211,34 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 
 **Track**
 - Stores preliminary groups or competition tracks.
-- Key fields: `eventId`, `code`, `name`, `description`, `type`, `maxTeams`, `teamIds`, `status`.
+- Key fields: `competitionId`, `code`, `name`, `description`, `type`, `maxTeams`, `teamIds`, `status`.
 - Relationships: tracks contain teams and can be attached to preliminary rounds.
 
 **Team**
 - Stores team registration and project metadata.
-- Key fields: `eventId`, `trackId`, `name`, `chapterName`, `projectName`, `leaderId`, `memberIds`, `trackAssignmentMethod`, `trackAssignedAt`, `qualificationStatus`, `status`.
+- Key fields: `competitionId`, `trackId`, `name`, `chapterName`, `projectName`, `leaderId`, `memberIds`, `trackAssignmentMethod`, `trackAssignedAt`, `qualificationStatus`, `status`.
 - Relationships: one team has participants, repository, submissions, rankings, and prizes.
 
 **Participant**
-- Stores event registration, team membership, team leader status, check-in state, eligibility, and GitHub access state.
-- Key fields: `eventId`, `userId`, `teamId`, `chapterName`, `teamRole`, `isGraduated`, `consentMediaUse`, `eligibilityStatus`, `attendedActivities`, `checkInStatus`, `githubAccessStatus`, `status`, `joinedAt`.
+- Stores competition registration, team membership, team leader status, check-in state, eligibility, and GitHub access state.
+- Key fields: `competitionId`, `userId`, `teamId`, `chapterName`, `teamRole`, `isGraduated`, `consentMediaUse`, `eligibilityStatus`, `attendedActivities`, `checkInStatus`, `githubAccessStatus`, `status`, `joinedAt`.
 - Relationships: each participant references one user and may reference one team.
 
 **Round**
 - Stores preliminary and final rounds.
-- Key fields: `eventId`, `trackId`, `name`, `roundType`, `assignedTeamIds`, `promotedTeamIds`, `maxPromotedTeams`, `startTime`, `endTime`, `submissionDeadline`, `publishTime`, `assignedJudgeIds`, `rubricId`, `promotionRule`, `tieBreakRule`, `tieBreakDurationMinutes`, `status`.
+- Key fields: `competitionId`, `trackId`, `name`, `roundType`, `assignedTeamIds`, `promotedTeamIds`, `maxPromotedTeams`, `startTime`, `endTime`, `submissionDeadline`, `publishTime`, `assignedJudgeIds`, `rubricId`, `promotionRule`, `tieBreakRule`, `tieBreakDurationMinutes`, `status`.
+- `assignedTeamIds` is read-only in Round APIs: it is written only after the coordinator confirms the randomized judging-board lineup. Preliminary draws use all `CONFIRMED` teams in the competition's configured round tracks; final draws use teams promoted from preliminary rounds.
 - Tie-break policy: final rounds can store a penalty evaluation or 10-minute mini-test rule so tied finalist teams can be ranked without duplicate ranks.
 
 **JudgingBoard**
 - Stores judge/team assignment groups.
-- Key fields: `eventId`, `roundId`, `trackId`, `name`, `boardNumber`, `teamIds`, `judgeIds`, `maxTeams`, `status`.
+- Key fields: `competitionId`, `roundId`, `trackId`, `name`, `boardNumber`, `teamIds`, `judgeIds`, `maxTeams`, `status`.
 
 ### Repository and Submission
 
 **Repository**
 - Stores GitHub repository ownership and submission state.
-- Key fields: `eventId`, `teamId`, `githubOrg`, `repoName`, `repoUrl`, `contributors`, `defaultBranch`, `submissionStatus`, `lastSyncAt`.
+- Key fields: `competitionId`, `teamId`, `githubOrg`, `repoName`, `repoUrl`, `contributors`, `defaultBranch`, `submissionStatus`, `lastSyncAt`.
 - Constraints: `teamId` and `repoUrl` are unique.
 
 **Commit**
@@ -1253,14 +1254,14 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 
 **Submission**
 - Stores team submission material for a specific round.
-- Key fields: `eventId`, `roundId`, `teamId`, `repositoryId`, `demoUrl`, `reportUrl`, `presentationUrl`, `submittedAt`, `status`.
+- Key fields: `competitionId`, `roundId`, `teamId`, `repositoryId`, `demoUrl`, `reportUrl`, `presentationUrl`, `submittedAt`, `status`.
 - Constraints: one submission per `roundId` and `teamId`.
 
 ### Rubric, Scoring, and Ranking
 
 **Rubric**
-- Stores a scoring rubric for an event.
-- Key fields: `eventId`, `title`, `description`, `totalScore`, `createdBy`.
+- Stores a scoring rubric for an competition.
+- Key fields: `competitionId`, `title`, `description`, `totalScore`, `createdBy`.
 
 **Criterion**
 - Stores one scoring criterion under a rubric.
@@ -1268,7 +1269,7 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 
 **ScoreSheet**
 - Stores one judge's complete scoring form for one team in one round.
-- Key fields: `eventId`, `roundId`, `boardId`, `teamId`, `submissionId`, `judgeId`, `rubricId`, `scoreIds`, `totalScore`, `weightedScore`, `finalScore`, `generalComment`, `status`, `submittedAt`, `lockedAt`.
+- Key fields: `competitionId`, `roundId`, `boardId`, `teamId`, `submissionId`, `judgeId`, `rubricId`, `scoreIds`, `totalScore`, `weightedScore`, `finalScore`, `generalComment`, `status`, `submittedAt`, `lockedAt`.
 - Purpose: groups individual criterion `Score` rows into one auditable judge/team/round sheet.
 - Constraints: one score sheet per `roundId`, `teamId`, and `judgeId`.
 
@@ -1280,10 +1281,10 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 
 **Ranking**
 - Stores published rankings for teams, chapters, or individuals.
-- Key fields: `eventId`, `rankingType`, `roundId`, `trackId`, `teamId`, `participantId`, `chapterName`, `score`, `pointDelta`, `tieBreakMethod`, `tieBreakScore`, `penaltyScore`, `miniTestScore`, `rankSortScore`, `rank`, `isSelectedForFinal`, `selectionReason`, `note`, `publishedAt`.
+- Key fields: `competitionId`, `rankingType`, `roundId`, `trackId`, `teamId`, `participantId`, `chapterName`, `score`, `pointDelta`, `tieBreakMethod`, `tieBreakScore`, `penaltyScore`, `miniTestScore`, `rankSortScore`, `rank`, `isSelectedForFinal`, `selectionReason`, `note`, `publishedAt`.
 - Finalist selection fields: `isSelectedForFinal` marks ranking rows selected for final advancement, and `selectionReason` explains the decision.
 - Tie-break fields: `tieBreakMethod`, `penaltyScore`, and `miniTestScore` store the final-round penalty evaluation or 10-minute mini-test result.
-- Constraints: ranks are unique within the same `eventId`, `rankingType`, `roundId`, and `trackId` scope.
+- Constraints: ranks are unique within the same `competitionId`, `rankingType`, `roundId`, and `trackId` scope.
 
 ### AI-assisted Review
 
@@ -1303,19 +1304,19 @@ The backend uses MongoDB with Mongoose. Each model uses `createdAt` and `updated
 
 **Prize**
 - Stores awards for teams or individuals.
-- Key fields: `eventId`, `title`, `description`, `prizeType`, `rank`, `amount`, `sponsor`, `teamId`, `participantId`.
+- Key fields: `competitionId`, `title`, `description`, `prizeType`, `rank`, `amount`, `sponsor`, `teamId`, `participantId`.
 
 **Notification**
 - Stores user notifications.
 - Key fields: `userId`, `title`, `message`, `type`, `status`, `metadata`.
 
 **Media**
-- Stores event media metadata while actual files live in Supabase Storage.
-- Key fields: `eventId`, `uploadedBy`, `teamId`, `title`, `description`, `mediaType`, `storageProvider`, `bucketName`, `storagePath`, `fileUrl`, `originalFileName`, `mimeType`, `fileSize`, `fileExtension`, `tags`, `status`, `reviewedBy`, `reviewedAt`, `rejectReason`, `uploadedAt`.
+- Stores competition media metadata while actual files live in Supabase Storage.
+- Key fields: `competitionId`, `uploadedBy`, `teamId`, `title`, `description`, `mediaType`, `storageProvider`, `bucketName`, `storagePath`, `fileUrl`, `originalFileName`, `mimeType`, `fileSize`, `fileExtension`, `tags`, `status`, `reviewedBy`, `reviewedAt`, `rejectReason`, `uploadedAt`.
 
 **MediaActivity**
 - Tracks media actions.
-- Key fields: `mediaId`, `eventId`, `userId`, `action`, `metadata`, `createdAt`.
+- Key fields: `mediaId`, `competitionId`, `userId`, `action`, `metadata`, `createdAt`.
 
 **AuditLog**
 - Stores critical system activity.

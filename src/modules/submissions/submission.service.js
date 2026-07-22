@@ -6,7 +6,7 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
-import Event from '#models/event.model.js'
+import Competition from '#models/competition.model.js'
 import JudgingBoard from '#models/judgingBoard.model.js'
 import Repository from '#models/repository.model.js'
 import Round from '#models/round.model.js'
@@ -18,7 +18,7 @@ import {
   getIdString,
   idListIncludes,
   idsEqual,
-  isPrivilegedEventActor
+  isPrivilegedCompetitionActor
 } from '#utils/domainAccessUtil.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 import { env } from '#configs/environment.js'
@@ -31,7 +31,7 @@ const SUBMISSION_FIELDS = [
 ]
 
 const SUBMISSION_CREATE_FIELDS = [
-  'eventId',
+  'competitionId',
   'roundId',
   'teamId',
   'repositoryId',
@@ -61,15 +61,15 @@ const normalizeSubmission = (submission) => {
 
   return {
     id: plainSubmission._id?.toString() || plainSubmission.id,
-    eventId: plainSubmission.eventId?._id?.toString?.() || plainSubmission.eventId?.toString?.() || plainSubmission.eventId,
+    competitionId: plainSubmission.competitionId?._id?.toString?.() || plainSubmission.competitionId?.toString?.() || plainSubmission.competitionId,
     roundId: plainSubmission.roundId?._id?.toString?.() || plainSubmission.roundId?.toString?.() || plainSubmission.roundId,
     teamId: plainSubmission.teamId?._id?.toString?.() || plainSubmission.teamId?.toString?.() || plainSubmission.teamId,
     repositoryId: plainSubmission.repositoryId?._id?.toString?.() || plainSubmission.repositoryId?.toString?.() || plainSubmission.repositoryId || null,
-    event: plainSubmission.eventId && typeof plainSubmission.eventId === 'object'
+    competition: plainSubmission.competitionId && typeof plainSubmission.competitionId === 'object'
       ? {
-        id: plainSubmission.eventId._id?.toString() || plainSubmission.eventId.id,
-        title: plainSubmission.eventId.title,
-        status: plainSubmission.eventId.status
+        id: plainSubmission.competitionId._id?.toString() || plainSubmission.competitionId.id,
+        title: plainSubmission.competitionId.title,
+        status: plainSubmission.competitionId.status
       }
       : null,
     round: plainSubmission.roundId && typeof plainSubmission.roundId === 'object'
@@ -158,7 +158,7 @@ const uniqueUsersFromTeam = (team = {}) => {
 
 const buildSubmissionFilter = (query = {}) => {
   const filter = {}
-  if (query.eventId) filter.eventId = query.eventId
+  if (query.competitionId) filter.competitionId = query.competitionId
   if (query.roundId) filter.roundId = query.roundId
   if (query.teamId) filter.teamId = query.teamId
   if (query.repositoryId) filter.repositoryId = query.repositoryId
@@ -169,7 +169,7 @@ const buildSubmissionFilter = (query = {}) => {
 export const createSubmissionService = ({
   repository = SUBMISSION_REPOSITORY,
   auditLogRepository = AUDIT_LOG_REPOSITORY,
-  eventModel = Event,
+  competitionModel = Competition,
   roundModel = Round,
   teamModel = Team,
   participantModel = Participant,
@@ -187,28 +187,28 @@ export const createSubmissionService = ({
     return submission
   }
 
-  const ensureContext = async ({ eventId, roundId, teamId, repositoryId = null }) => {
-    ensureObjectId(eventId, 'event id')
+  const ensureContext = async ({ competitionId, roundId, teamId, repositoryId = null }) => {
+    ensureObjectId(competitionId, 'competition id')
     ensureObjectId(roundId, 'round id')
     ensureObjectId(teamId, 'team id')
 
-    const [event, round, team, linkedRepository] = await Promise.all([
-      eventModel.findById(eventId),
+    const [competition, round, team, linkedRepository] = await Promise.all([
+      competitionModel.findById(competitionId),
       roundModel.findById(roundId),
       teamModel.findById(teamId),
       repositoryId ? repositoryModel.findById(repositoryId) : null
     ])
 
-    if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+    if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
     if (!round) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Round not found'])
     if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
 
-    if (round.eventId?.toString() !== eventId.toString()) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round does not belong to the specified event'])
+    if (round.competitionId?.toString() !== competitionId.toString()) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round does not belong to the specified competition'])
     }
 
-    if (team.eventId?.toString() !== eventId.toString()) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified event'])
+    if (team.competitionId?.toString() !== competitionId.toString()) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified competition'])
     }
 
     const assignedTeamIds = (round.assignedTeamIds || []).map(value => value.toString())
@@ -220,8 +220,8 @@ export const createSubmissionService = ({
     }
 
     if (linkedRepository) {
-      if (linkedRepository.eventId?.toString() !== eventId.toString()) {
-        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Repository does not belong to the specified event'])
+      if (linkedRepository.competitionId?.toString() !== competitionId.toString()) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Repository does not belong to the specified competition'])
       }
       if (linkedRepository.teamId?.toString() !== teamId.toString()) {
         throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Repository does not belong to the specified team'])
@@ -232,7 +232,7 @@ export const createSubmissionService = ({
     }
 
     return {
-      event,
+      competition,
       round,
       team,
       linkedRepository
@@ -240,7 +240,7 @@ export const createSubmissionService = ({
   }
 
   const findScopedTeamIds = async ({ actor = {}, filter = {} }) => {
-    if (isPrivilegedEventActor(actor)) return null
+    if (isPrivilegedCompetitionActor(actor)) return null
 
     const actorId = getActorId(actor)
     if (!actorId) {
@@ -248,7 +248,7 @@ export const createSubmissionService = ({
     }
 
     const teamIds = new Set()
-    const eventScopedFilter = filter.eventId ? { eventId: filter.eventId } : {}
+    const eventScopedFilter = filter.competitionId ? { competitionId: filter.competitionId } : {}
 
     if (teamModel?.find) {
       const teamFilters = [{
@@ -279,7 +279,7 @@ export const createSubmissionService = ({
         judgeIds: actorId,
       status: { $in: relaxedWorkflow ? ['SCORING', 'COMPLETED'] : ['SCORING'] }
       }
-      if (filter.eventId) boardFilter.eventId = filter.eventId
+      if (filter.competitionId) boardFilter.competitionId = filter.competitionId
       if (filter.roundId) boardFilter.roundId = filter.roundId
 
       const boards = await boardModel.find(boardFilter)
@@ -292,14 +292,14 @@ export const createSubmissionService = ({
   }
 
   const ensureCanReadSubmission = async ({ submission, actor = {} }) => {
-    if (isPrivilegedEventActor(actor)) return
+    if (isPrivilegedCompetitionActor(actor)) return
 
     const actorId = getActorId(actor)
     if (!actorId) {
       throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authenticated actor is required'])
     }
 
-    const eventId = getIdString(submission.eventId)
+    const competitionId = getIdString(submission.competitionId)
     const roundId = getIdString(submission.roundId)
     const teamId = getIdString(submission.teamId)
 
@@ -315,7 +315,7 @@ export const createSubmissionService = ({
         throw new ApiError(ERROR_CODES.FORBIDDEN, ['Judge can only access assigned submissions while the round is scoring'])
       }
       const board = await boardModel.findOne({
-        eventId,
+        competitionId,
         roundId,
         judgeIds: actorId,
         teamIds: teamId,
@@ -343,7 +343,7 @@ export const createSubmissionService = ({
 
     if (participantModel?.findOne) {
       const participant = await participantModel.findOne({
-        eventId: getIdString(team.eventId),
+        competitionId: getIdString(team.competitionId),
         teamId: getIdString(team._id || team.id),
         userId: actorId,
         status: 'JOINED'
@@ -354,12 +354,12 @@ export const createSubmissionService = ({
     }
   }
 
-  const resolveRepositoryLink = async ({ eventId, teamId, repositoryId = null, linkedRepository = null }) => {
+  const resolveRepositoryLink = async ({ competitionId, teamId, repositoryId = null, linkedRepository = null }) => {
     if (linkedRepository) return linkedRepository
     if (repositoryId) return linkedRepository
 
     return await repositoryModel.findOne({
-      eventId,
+      competitionId,
       teamId
     })
   }
@@ -439,7 +439,7 @@ export const createSubmissionService = ({
       dedupeKey: `submission-reviewed:${getId(submission)}:${status}:${getId(user)}`,
       metadata: {
         action: 'SUBMISSION_REVIEWED',
-        eventId: getId(submission.eventId),
+        competitionId: getId(submission.competitionId),
         roundId: getId(submission.roundId),
         teamId,
         submissionId: getId(submission),
@@ -486,7 +486,7 @@ export const createSubmissionService = ({
     }
 
     const context = await ensureContext({
-      eventId: safePayload.eventId,
+      competitionId: safePayload.competitionId,
       roundId: safePayload.roundId,
       teamId: safePayload.teamId,
       repositoryId: safePayload.repositoryId
@@ -494,7 +494,7 @@ export const createSubmissionService = ({
     await ensureCanWriteSubmission({ team: context.team, actor })
     ensureSubmissionWindow({ round: context.round })
     const resolvedRepository = await resolveRepositoryLink({
-      eventId: safePayload.eventId,
+      competitionId: safePayload.competitionId,
       teamId: safePayload.teamId,
       repositoryId: safePayload.repositoryId,
       linkedRepository: context.linkedRepository
@@ -528,7 +528,7 @@ export const createSubmissionService = ({
       action: status === 'SUBMITTED' ? 'SUBMISSION_CREATED_AND_SUBMITTED' : 'SUBMISSION_CREATED',
       resourceId: submission._id,
       metadata: {
-        eventId: safePayload.eventId,
+        competitionId: safePayload.competitionId,
         roundId: safePayload.roundId,
         teamId: safePayload.teamId,
         repositoryId: resolvedRepository?._id || safePayload.repositoryId || null,
@@ -546,13 +546,13 @@ export const createSubmissionService = ({
     }
 
     const safePayload = pickSafeFields(payload, SUBMISSION_FIELDS)
-    const eventId = submission.eventId?._id?.toString?.() || submission.eventId?.toString?.()
+    const competitionId = submission.competitionId?._id?.toString?.() || submission.competitionId?.toString?.()
     const roundId = submission.roundId?._id?.toString?.() || submission.roundId?.toString?.()
     const teamId = submission.teamId?._id?.toString?.() || submission.teamId?.toString?.()
     const repositoryId = safePayload.repositoryId ?? submission.repositoryId?._id?.toString?.() ?? submission.repositoryId?.toString?.() ?? null
 
     const context = await ensureContext({
-      eventId,
+      competitionId,
       roundId,
       teamId,
       repositoryId
@@ -561,7 +561,7 @@ export const createSubmissionService = ({
     ensureSubmissionWindow({ round: context.round })
 
     const resolvedRepository = await resolveRepositoryLink({
-      eventId,
+      competitionId,
       teamId,
       repositoryId,
       linkedRepository: context.linkedRepository
@@ -577,7 +577,7 @@ export const createSubmissionService = ({
       action: 'SUBMISSION_UPDATED',
       resourceId: updatedSubmission._id,
       metadata: {
-        eventId,
+        competitionId,
         roundId,
         teamId,
         repositoryId: resolvedRepository?._id || repositoryId || null
@@ -589,7 +589,7 @@ export const createSubmissionService = ({
 
   const submitSubmission = async (id, actor = {}) => {
     const submission = await ensureSubmissionExists(id)
-    const eventId = submission.eventId?._id?.toString?.() || submission.eventId?.toString?.()
+    const competitionId = submission.competitionId?._id?.toString?.() || submission.competitionId?.toString?.()
     const roundId = submission.roundId?._id?.toString?.() || submission.roundId?.toString?.()
     const teamId = submission.teamId?._id?.toString?.() || submission.teamId?.toString?.()
     const repositoryId = submission.repositoryId?._id?.toString?.() || submission.repositoryId?.toString?.() || null
@@ -603,7 +603,7 @@ export const createSubmissionService = ({
     }
 
     const context = await ensureContext({
-      eventId,
+      competitionId,
       roundId,
       teamId,
       repositoryId
@@ -626,7 +626,7 @@ export const createSubmissionService = ({
       action: 'SUBMISSION_SUBMITTED',
       resourceId: updatedSubmission._id,
       metadata: {
-        eventId,
+        competitionId,
         roundId,
         teamId,
         repositoryId
@@ -666,7 +666,7 @@ export const createSubmissionService = ({
       action: `SUBMISSION_${status}`,
       resourceId: updatedSubmission._id,
       metadata: {
-        eventId: updatedSubmission.eventId?._id || updatedSubmission.eventId,
+        competitionId: updatedSubmission.competitionId?._id || updatedSubmission.competitionId,
         roundId: updatedSubmission.roundId?._id || updatedSubmission.roundId,
         teamId: updatedSubmission.teamId?._id || updatedSubmission.teamId
       }

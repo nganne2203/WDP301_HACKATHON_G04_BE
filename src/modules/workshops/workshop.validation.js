@@ -26,7 +26,7 @@ const speakerInfo = Joi.object({
 const listWorkshops = {
   query: Joi.object({
     ...paginationQuery,
-    eventId: objectId,
+    competitionId: objectId,
     presenterId: objectId,
     status: workshopStatus,
     search: Joi.string().trim().max(100)
@@ -35,8 +35,8 @@ const listWorkshops = {
 
 const createWorkshop = {
   body: Joi.object({
-    eventId: objectId.required(),
-    timelineEventId: objectId,
+    competitionId: objectId.required(),
+    timelineActivityId: objectId,
     title: Joi.string().trim().min(2).max(200).required(),
     description: Joi.string().trim().max(2000).allow('', null),
     presenterId: objectId,
@@ -52,8 +52,8 @@ const createWorkshop = {
 const updateWorkshop = {
   params: idParam,
   body: Joi.object({
-    eventId: objectId,
-    timelineEventId: objectId.allow(null),
+    competitionId: objectId,
+    timelineActivityId: objectId.allow(null),
     title: Joi.string().trim().min(2).max(200),
     description: Joi.string().trim().max(2000).allow('', null),
     presenterId: objectId.allow(null),

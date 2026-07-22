@@ -4,7 +4,7 @@ const { Schema } = mongoose
 
 const judgingBoardSchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true },
     roundId: { type: Schema.Types.ObjectId, ref: 'Round', required: true },
     trackId: { type: Schema.Types.ObjectId, ref: 'Track' },
     name: { type: String, required: true, trim: true },
@@ -21,8 +21,8 @@ const judgingBoardSchema = new Schema(
   { timestamps: true }
 )
 
-judgingBoardSchema.index({ eventId: 1, roundId: 1, boardNumber: 1 }, { unique: true })
-judgingBoardSchema.index({ eventId: 1, trackId: 1 })
+judgingBoardSchema.index({ competitionId: 1, roundId: 1, boardNumber: 1 }, { unique: true })
+judgingBoardSchema.index({ competitionId: 1, trackId: 1 })
 judgingBoardSchema.index({ judgeIds: 1 })
 judgingBoardSchema.index({ teamIds: 1 })
 

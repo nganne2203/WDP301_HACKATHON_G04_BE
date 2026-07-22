@@ -55,13 +55,13 @@ const createRepositoryRecord = async (data) => {
   )
 }
 
-const findRepositoryByEventAndRepoName = async ({ eventId, repoName, githubOwner }) => {
+const findRepositoryByCompetitionAndRepoName = async ({ competitionId, repoName, githubOwner }) => {
   const ownerFilter = githubOwner
     ? [{ githubOwner }, { githubOrg: githubOwner }]
     : [{}]
 
   return await Repository.findOne({
-    eventId,
+    competitionId,
     $or: ownerFilter.flatMap((ownerClause) => ([
       { ...ownerClause, repoName },
       { ...ownerClause, githubRepo: repoName }
@@ -86,9 +86,9 @@ const createAuditLog = async ({ userId, action, resourceType, resourceId, metada
   })
 }
 
-const findConfirmedTeamsByEvent = async (eventId) => {
+const findConfirmedTeamsByCompetition = async (competitionId) => {
   return await Team.find({
-    eventId,
+    competitionId,
     status: 'CONFIRMED'
   })
 }
@@ -97,8 +97,8 @@ const findTeamById = async (teamId) => {
   return await Team.findById(teamId)
 }
 
-const findRepositoriesByEvent = async (eventId) => {
-  return await Repository.find({ eventId }).populate({ path: 'teamId', select: 'status name eventId' })
+const findRepositoriesByCompetition = async (competitionId) => {
+  return await Repository.find({ competitionId }).populate({ path: 'teamId', select: 'status name competitionId' })
 }
 
 const findTeamMembersGithubUsernames = async (teamId) => {
@@ -116,11 +116,11 @@ export const GITHUB_REPOSITORY = {
   findConfigByKey,
   upsertConfig,
   createRepositoryRecord,
-  findRepositoryByEventAndRepoName,
+  findRepositoryByCompetitionAndRepoName,
   updateRepositoryById,
   createAuditLog,
-  findConfirmedTeamsByEvent,
+  findConfirmedTeamsByCompetition,
   findTeamById,
-  findRepositoriesByEvent,
+  findRepositoriesByCompetition,
   findTeamMembersGithubUsernames
 }

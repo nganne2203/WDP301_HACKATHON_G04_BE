@@ -17,16 +17,16 @@ const matchesFilter = (item, filter = {}) => Object.entries(filter).every(([key,
 const createRepository = () => {
   const records = new Map()
   let sequence = 1
-  const participantEventIds = new Set()
-  const openRegistrationEventIds = new Set()
-  const nonDraftEventIds = new Set()
+  const participantCompetitionIds = new Set()
+  const openRegistrationCompetitionIds = new Set()
+  const nonDraftCompetitionIds = new Set()
 
   return {
     count: async (filter = {}) => [...records.values()].filter(record => matchesFilter(record, filter)).length,
     findAll: async ({ filter = {} } = {}) => [...records.values()].filter(record => matchesFilter(record, filter)),
     findById: async (id) => records.get(id) || null,
-    findByEventAndName: async (eventId, name) => [...records.values()]
-      .find(record => getId(record.eventId) === getId(eventId) && record.name === name) || null,
+    findByCompetitionAndName: async (competitionId, name) => [...records.values()]
+      .find(record => getId(record.competitionId) === getId(competitionId) && record.name === name) || null,
     create: async (data) => {
       const id = String(sequence).padStart(24, '0')
       const record = { ...data, _id: id }
@@ -44,36 +44,36 @@ const createRepository = () => {
     deleteById: async (id) => {
       records.delete(id)
     },
-    findEventIdsForParticipant: async () => [...participantEventIds],
-    findOpenRegistrationEventIds: async () => [...openRegistrationEventIds],
-    findNonDraftEventIds: async () => [...nonDraftEventIds],
-    seedVisibility: ({ participantEvents = [], openRegistrationEvents = [], nonDraftEvents = [] } = {}) => {
-      participantEvents.forEach(eventId => participantEventIds.add(eventId))
-      openRegistrationEvents.forEach(eventId => openRegistrationEventIds.add(eventId))
-      nonDraftEvents.forEach(eventId => nonDraftEventIds.add(eventId))
+    findCompetitionIdsForParticipant: async () => [...participantCompetitionIds],
+    findOpenRegistrationCompetitionIds: async () => [...openRegistrationCompetitionIds],
+    findNonDraftCompetitionIds: async () => [...nonDraftCompetitionIds],
+    seedVisibility: ({ participantCompetitions = [], openRegistrationCompetitions = [], nonDraftCompetitions = [] } = {}) => {
+      participantCompetitions.forEach(competitionId => participantCompetitionIds.add(competitionId))
+      openRegistrationCompetitions.forEach(competitionId => openRegistrationCompetitionIds.add(competitionId))
+      nonDraftCompetitions.forEach(competitionId => nonDraftCompetitionIds.add(competitionId))
     }
   }
 }
 
-const eventService = {
-  getRawEventById: async (id) => ({ _id: id, title: 'SEAL Event' })
+const competitionService = {
+  getRawCompetitionById: async (id) => ({ _id: id, title: 'SEAL Competition' })
 }
 
-test('listTracks scopes participant to joined or open-registration events', async () => {
+test('listTracks scopes participant to joined or open-registration competitions', async () => {
   const repository = createRepository()
   repository.seedVisibility({
-    participantEvents: ['000000000000000000000101'],
-    openRegistrationEvents: ['000000000000000000000102']
+    participantCompetitions: ['000000000000000000000101'],
+    openRegistrationCompetitions: ['000000000000000000000102']
   })
-  const service = createTrackService({ repository, eventService })
+  const service = createTrackService({ repository, competitionService })
 
   await service.createTrack({
-    eventId: '000000000000000000000101',
-    name: 'Joined Event Track'
+    competitionId: '000000000000000000000101',
+    name: 'Joined Competition Track'
   })
   await service.createTrack({
-    eventId: '000000000000000000000103',
-    name: 'Draft Event Track'
+    competitionId: '000000000000000000000103',
+    name: 'Draft Competition Track'
   })
 
   const result = await service.listTracks({}, {
@@ -82,18 +82,18 @@ test('listTracks scopes participant to joined or open-registration events', asyn
   })
 
   assert.equal(result.tracks.length, 1)
-  assert.equal(result.tracks[0].event.id, '000000000000000000000101')
+  assert.equal(result.tracks[0].competition.id, '000000000000000000000101')
 })
 
-test('getTrackById hides event children outside actor scope', async () => {
+test('getTrackById hides competition children outside actor scope', async () => {
   const repository = createRepository()
   repository.seedVisibility({
-    participantEvents: ['000000000000000000000101']
+    participantCompetitions: ['000000000000000000000101']
   })
-  const service = createTrackService({ repository, eventService })
+  const service = createTrackService({ repository, competitionService })
 
   const created = await service.createTrack({
-    eventId: '000000000000000000000103',
+    competitionId: '000000000000000000000103',
     name: 'Unrelated Track'
   })
 
@@ -108,11 +108,11 @@ test('getTrackById hides event children outside actor scope', async () => {
 
 test('track status follows the configured workflow', async () => {
   const repository = createRepository()
-  const service = createTrackService({ repository, eventService })
+  const service = createTrackService({ repository, competitionService })
 
   await assert.rejects(
     service.createTrack({
-      eventId: '000000000000000000000101',
+      competitionId: '000000000000000000000101',
       name: 'Already Open Track',
       status: 'OPEN'
     }),
@@ -121,7 +121,7 @@ test('track status follows the configured workflow', async () => {
   )
 
   const created = await service.createTrack({
-    eventId: '000000000000000000000101',
+    competitionId: '000000000000000000000101',
     name: 'Workflow Track'
   })
 

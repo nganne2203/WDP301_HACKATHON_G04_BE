@@ -4,7 +4,7 @@ const { Schema } = mongoose
 
 const teamInvitationSchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true },
     teamId: { type: Schema.Types.ObjectId, ref: 'Team', required: true },
     leaderId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     invitedEmail: { type: String, required: true, lowercase: true, trim: true },
@@ -25,8 +25,8 @@ const teamInvitationSchema = new Schema(
   { timestamps: true }
 )
 
-teamInvitationSchema.index({ eventId: 1, invitedEmail: 1, status: 1 })
-teamInvitationSchema.index({ eventId: 1, invitedUserId: 1, status: 1 })
+teamInvitationSchema.index({ competitionId: 1, invitedEmail: 1, status: 1 })
+teamInvitationSchema.index({ competitionId: 1, invitedUserId: 1, status: 1 })
 teamInvitationSchema.index({ teamId: 1, status: 1 })
 teamInvitationSchema.index({ expiresAt: 1 })
 

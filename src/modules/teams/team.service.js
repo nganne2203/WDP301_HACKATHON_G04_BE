@@ -37,10 +37,10 @@ const CONFIRMED_TEAM_STATUSES = [TEAM_STATUSES.CONFIRMED]
 const OPEN_TEAM_STATUSES = [TEAM_STATUSES.WAITING_FOR_MEMBERS, TEAM_STATUSES.WAITLISTED]
 const ACTIVE_TEAM_STATUSES = [TEAM_STATUSES.WAITING_FOR_MEMBERS, TEAM_STATUSES.WAITLISTED, TEAM_STATUSES.CONFIRMED]
 const ACTIVE_PARTICIPANT_STATUSES = ['INVITED', 'JOINED']
-const COORDINATOR_ROLES = ['ADMIN', 'COORDINATOR', 'EVENT_COORDINATOR']
+const COORDINATOR_ROLES = ['ADMIN', 'COORDINATOR', 'COMPETITION_COORDINATOR']
 const MENTOR_SCOPED_ROLES = ['MENTOR', 'SPEAKER']
 const IN_APP_ONLY = ['IN_APP']
-const EVENT_STATUSES = {
+const COMPETITION_STATUSES = {
   OPEN_REGISTRATION: 'OPEN_REGISTRATION',
   REGISTRATION_CLOSED: 'REGISTRATION_CLOSED'
 }
@@ -143,33 +143,33 @@ export const normalizeInvitationMembers = ({ members = [], emails = [] } = {}) =
   return uniqueMembers
 }
 
-export const isRegistrationOpen = (event, now = new Date()) => {
-  if (!event || event.status !== EVENT_STATUSES.OPEN_REGISTRATION) return false
+export const isRegistrationOpen = (competition, now = new Date()) => {
+  if (!competition || competition.status !== COMPETITION_STATUSES.OPEN_REGISTRATION) return false
 
-  if (event.registrationStart && now < new Date(event.registrationStart)) return false
-  if (event.registrationEnd && now > new Date(event.registrationEnd)) return false
+  if (competition.registrationStart && now < new Date(competition.registrationStart)) return false
+  if (competition.registrationEnd && now > new Date(competition.registrationEnd)) return false
 
   return true
 }
 
-const getMaxTeams = (event) => {
-  return event?.maxTeams || 30
+const getMaxTeams = (competition) => {
+  return competition?.maxTeams || 30
 }
 
-const getRegistrationClosure = ({ event, confirmedCount = null, now = new Date() }) => {
-  if (!event || event.status !== EVENT_STATUSES.OPEN_REGISTRATION) return null
+const getRegistrationClosure = ({ competition, confirmedCount = null, now = new Date() }) => {
+  if (!competition || competition.status !== COMPETITION_STATUSES.OPEN_REGISTRATION) return null
 
-  if (event.registrationEnd && now > new Date(event.registrationEnd)) {
+  if (competition.registrationEnd && now > new Date(competition.registrationEnd)) {
     return {
-      status: EVENT_STATUSES.REGISTRATION_CLOSED,
+      status: COMPETITION_STATUSES.REGISTRATION_CLOSED,
       registrationClosedAt: now,
       registrationCloseReason: REGISTRATION_CLOSE_REASONS.REGISTRATION_ENDED
     }
   }
 
-  if (confirmedCount !== null && confirmedCount >= getMaxTeams(event)) {
+  if (confirmedCount !== null && confirmedCount >= getMaxTeams(competition)) {
     return {
-      status: EVENT_STATUSES.REGISTRATION_CLOSED,
+      status: COMPETITION_STATUSES.REGISTRATION_CLOSED,
       registrationClosedAt: now,
       registrationCloseReason: REGISTRATION_CLOSE_REASONS.CAPACITY_REACHED
     }
@@ -178,12 +178,12 @@ const getRegistrationClosure = ({ event, confirmedCount = null, now = new Date()
   return null
 }
 
-const syncEventRegistrationStatus = async ({ repository, event, session, confirmedCount = null, now = new Date() }) => {
-  const closure = getRegistrationClosure({ event, confirmedCount, now })
-  if (!closure) return event
+const syncCompetitionRegistrationStatus = async ({ repository, competition, session, confirmedCount = null, now = new Date() }) => {
+  const closure = getRegistrationClosure({ competition, confirmedCount, now })
+  if (!closure) return competition
 
-  const updatedEvent = await repository.updateEventById(getId(event), closure, { session })
-  return updatedEvent || event
+  const updatedCompetition = await repository.updateCompetitionById(getId(competition), closure, { session })
+  return updatedCompetition || competition
 }
 
 const getFrontendUrl = (path, logger = LOGGER) => {
@@ -261,24 +261,24 @@ const normalizeUserSummary = (user) => {
   }
 }
 
-const normalizeEventSummary = (event) => {
-  if (!event) return null
-  const plainEvent = typeof event.toObject === 'function'
-    ? event.toObject({ getters: true, virtuals: false })
-    : event
+const normalizeCompetitionSummary = (competition) => {
+  if (!competition) return null
+  const plainCompetition = typeof competition.toObject === 'function'
+    ? competition.toObject({ getters: true, virtuals: false })
+    : competition
 
   return {
-    id: getId(plainEvent._id) || plainEvent.id,
-    title: plainEvent.title,
-    status: plainEvent.status,
-    registrationStart: plainEvent.registrationStart,
-    registrationEnd: plainEvent.registrationEnd,
-    registrationClosedAt: plainEvent.registrationClosedAt,
-    registrationCloseReason: plainEvent.registrationCloseReason,
-    minTeamMembers: plainEvent.minTeamMembers,
-    maxTeamMembers: plainEvent.maxTeamMembers,
-    maxTeams: getMaxTeams(plainEvent),
-    competitionConfig: plainEvent.competitionConfig || null
+    id: getId(plainCompetition._id) || plainCompetition.id,
+    title: plainCompetition.title,
+    status: plainCompetition.status,
+    registrationStart: plainCompetition.registrationStart,
+    registrationEnd: plainCompetition.registrationEnd,
+    registrationClosedAt: plainCompetition.registrationClosedAt,
+    registrationCloseReason: plainCompetition.registrationCloseReason,
+    minTeamMembers: plainCompetition.minTeamMembers,
+    maxTeamMembers: plainCompetition.maxTeamMembers,
+    maxTeams: getMaxTeams(plainCompetition),
+    competitionConfig: plainCompetition.competitionConfig || null
   }
 }
 
@@ -306,7 +306,7 @@ const normalizeParticipant = (participant) => {
 
   return {
     id: getId(plainParticipant._id) || plainParticipant.id,
-    eventId: getId(plainParticipant.eventId),
+    competitionId: getId(plainParticipant.competitionId),
     teamId: getId(plainParticipant.teamId),
     user: normalizeUserSummary(plainParticipant.userId),
     teamRole: plainParticipant.teamRole,
@@ -325,7 +325,7 @@ const normalizeInvitation = (invitation) => {
 
   return {
     id: getId(plainInvitation._id) || plainInvitation.id,
-    eventId: getId(plainInvitation.eventId),
+    competitionId: getId(plainInvitation.competitionId),
     teamId: getId(plainInvitation.teamId),
     leaderId: getId(plainInvitation.leaderId),
     invitedEmail: plainInvitation.invitedEmail,
@@ -360,8 +360,8 @@ const normalizeTeam = ({ team, participants = [], invitations = [] } = {}) => {
 
   return {
     id: getId(plainTeam._id) || plainTeam.id,
-    event: normalizeEventSummary(plainTeam.eventId),
-    eventId: getId(plainTeam.eventId),
+    competition: normalizeCompetitionSummary(plainTeam.competitionId),
+    competitionId: getId(plainTeam.competitionId),
     track: normalizeTrackSummary(plainTeam.trackId),
     trackId: getId(plainTeam.trackId),
     leader: normalizeUserSummary(plainTeam.leaderId),
@@ -420,10 +420,10 @@ const ensureObjectId = (id, fieldName = 'id') => {
   }
 }
 
-const ensureUniqueTeamName = async ({ repository, eventId, name, session }) => {
-  const existingTeam = await repository.findTeamByEventAndName({ eventId, name }, { session })
+const ensureUniqueTeamName = async ({ repository, competitionId, name, session }) => {
+  const existingTeam = await repository.findTeamByCompetitionAndName({ competitionId, name }, { session })
   if (existingTeam) {
-    throw new ApiError(ERROR_CODES.CONFLICT, ['Team name already exists in this event'])
+    throw new ApiError(ERROR_CODES.CONFLICT, ['Team name already exists in this competition'])
   }
 }
 
@@ -438,19 +438,19 @@ const mapDuplicateTeamError = (error) => {
   const keyNames = Object.keys(keyPattern)
 
   if (keyNames.includes('name') || keyNames.includes('normalizedName')) {
-    return new ApiError(ERROR_CODES.CONFLICT, ['Team name already exists in this event'])
+    return new ApiError(ERROR_CODES.CONFLICT, ['Team name already exists in this competition'])
   }
 
   if (keyNames.includes('leaderId')) {
-    return new ApiError(ERROR_CODES.CONFLICT, ['You already created a team for this event'])
+    return new ApiError(ERROR_CODES.CONFLICT, ['You already created a team for this competition'])
   }
 
-  return new ApiError(ERROR_CODES.CONFLICT, ['Team name or leader already exists in this event'])
+  return new ApiError(ERROR_CODES.CONFLICT, ['Team name or leader already exists in this competition'])
 }
 
-const ensureEventOpen = (event) => {
-  if (!isRegistrationOpen(event)) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Event registration is not open'])
+const ensureCompetitionOpen = (competition) => {
+  if (!isRegistrationOpen(competition)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Competition registration is not open'])
   }
 }
 
@@ -470,14 +470,14 @@ const ensureTeamLeader = (team, actor) => {
   }
 }
 
-const ensureTeamSizeWithinEventRules = (team, event) => {
+const ensureTeamSizeWithinCompetitionRules = (team, competition) => {
   const memberCount = (team.memberIds || []).length
-  if (memberCount < (event.minTeamMembers || 1)) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not meet the minimum member requirement for this event'])
+  if (memberCount < (competition.minTeamMembers || 1)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not meet the minimum member requirement for this competition'])
   }
 
-  if (memberCount > (event.maxTeamMembers || 5)) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team exceeds the maximum member limit for this event'])
+  if (memberCount > (competition.maxTeamMembers || 5)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team exceeds the maximum member limit for this competition'])
   }
 }
 
@@ -582,7 +582,7 @@ const buildBoardMentorAssignmentJobs = ({ result, mentorUsers = [] } = {}) => {
   if (addedMentorIds.length === 0) return jobs
 
   const addedMentors = mentorUsers.filter(mentor => addedMentorIds.includes(getId(mentor)))
-  const eventTitle = result?.eventTitle || 'the event'
+  const eventTitle = result?.eventTitle || 'the competition'
   const boardNumber = result?.boardNumber
 
   for (const mentor of addedMentors) {
@@ -593,10 +593,10 @@ const buildBoardMentorAssignmentJobs = ({ result, mentorUsers = [] } = {}) => {
         title: 'Mentor board assignment',
         message: `You were assigned to board ${boardNumber} for ${eventTitle}.`,
         type: 'SYSTEM',
-        dedupeKey: `mentor-board-assigned:${result.eventId}:${boardNumber}:${getId(mentor)}`,
+        dedupeKey: `mentor-board-assigned:${result.competitionId}:${boardNumber}:${getId(mentor)}`,
         metadata: {
           action: 'MENTOR_BOARD_ASSIGNED',
-          eventId: result.eventId,
+          competitionId: result.competitionId,
           boardNumber,
           teamIds: result.teamIds,
           targetPath: '/mentor/teams'
@@ -624,10 +624,10 @@ const buildBoardMentorAssignmentJobs = ({ result, mentorUsers = [] } = {}) => {
           title: 'Team mentors assigned',
           message,
           type: 'SYSTEM',
-          dedupeKey: `team-mentors-assigned:${result.eventId}:${boardNumber}:${team.id}:${getId(user)}`,
+          dedupeKey: `team-mentors-assigned:${result.competitionId}:${boardNumber}:${team.id}:${getId(user)}`,
           metadata: {
             action: 'TEAM_MENTORS_ASSIGNED',
-            eventId: result.eventId,
+            competitionId: result.competitionId,
             boardNumber,
             teamId: team.id,
             mentorIds: result.mentorIds,
@@ -642,44 +642,44 @@ const buildBoardMentorAssignmentJobs = ({ result, mentorUsers = [] } = {}) => {
   return jobs
 }
 
-const ensureConfirmedSlotsNotFull = async ({ event, repository, session }) => {
+const ensureConfirmedSlotsNotFull = async ({ competition, repository, session }) => {
   const confirmedCount = await repository.countTeams({
-    eventId: getId(event),
+    competitionId: getId(competition),
     status: { $in: CONFIRMED_TEAM_STATUSES }
   }, { session })
 
-  if (confirmedCount >= getMaxTeams(event)) {
+  if (confirmedCount >= getMaxTeams(competition)) {
     throw new ApiError(ERROR_CODES.CONFLICT, [TEAM_REJECTION_REASONS.CAPACITY_REACHED])
   }
 }
 
-const loadEventForRegistration = async ({ repository, eventId, session }) => {
-  let event = await repository.findEventById(eventId, { session })
-  if (!event) {
-    throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+const loadCompetitionForRegistration = async ({ repository, competitionId, session }) => {
+  let competition = await repository.findCompetitionById(competitionId, { session })
+  if (!competition) {
+    throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
   }
 
   const confirmedCount = await repository.countTeams({
-    eventId: getId(event),
+    competitionId: getId(competition),
     status: { $in: CONFIRMED_TEAM_STATUSES }
   }, { session })
 
-  event = await syncEventRegistrationStatus({
+  competition = await syncCompetitionRegistrationStatus({
     repository,
-    event,
+    competition,
     session,
     confirmedCount
   })
 
-  return { event, confirmedCount }
+  return { competition, confirmedCount }
 }
 
-const getCompetitionConfig = (event = {}) => {
-  return event?.competitionConfig || {}
+const getCompetitionConfig = (competition = {}) => {
+  return competition?.competitionConfig || {}
 }
 
-const getTrackCapacity = ({ event, track }) => {
-  return track?.maxTeams || getCompetitionConfig(event).maxTeamsPerBoard || null
+const getTrackCapacity = ({ competition, track }) => {
+  return track?.maxTeams || getCompetitionConfig(competition).maxTeamsPerBoard || null
 }
 
 const buildBoardInfoByTrack = (tracks = []) => {
@@ -692,7 +692,7 @@ const buildBoardInfoByTrack = (tracks = []) => {
   return new Map(sortedTracks.map((track, index) => [getId(track), index + 1]))
 }
 
-const ensureTrackBelongsToEvent = async ({ repository, eventId, trackId, session }) => {
+const ensureTrackBelongsToCompetition = async ({ repository, competitionId, trackId, session }) => {
   if (!trackId) return null
 
   ensureObjectId(trackId, 'track id')
@@ -701,16 +701,16 @@ const ensureTrackBelongsToEvent = async ({ repository, eventId, trackId, session
     throw new ApiError(ERROR_CODES.NOT_FOUND, ['Track not found'])
   }
 
-  if (!isSameId(track.eventId, eventId)) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Track does not belong to this event'])
+  if (!isSameId(track.competitionId, competitionId)) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Track does not belong to this competition'])
   }
 
   return track
 }
 
-const getTrackOccupancy = async ({ repository, eventId, trackId, excludeTeamId = null, session }) => {
+const getTrackOccupancy = async ({ repository, competitionId, trackId, excludeTeamId = null, session }) => {
   const filter = {
-    eventId,
+    competitionId,
     trackId,
     status: { $in: CONFIRMED_TEAM_STATUSES }
   }
@@ -722,9 +722,9 @@ const getTrackOccupancy = async ({ repository, eventId, trackId, excludeTeamId =
   return await repository.countTeams(filter, { session })
 }
 
-const getWaitlistPosition = async ({ repository, eventId, trackId = null, excludeTeamId = null, session }) => {
+const getWaitlistPosition = async ({ repository, competitionId, trackId = null, excludeTeamId = null, session }) => {
   const filter = {
-    eventId,
+    competitionId,
     status: TEAM_STATUSES.WAITLISTED
   }
 
@@ -740,11 +740,11 @@ const getWaitlistPosition = async ({ repository, eventId, trackId = null, exclud
   return count + 1
 }
 
-const buildCapacitySummary = async ({ repository, event, session }) => {
-  const eventId = getId(event)
-  const tracks = await repository.findTracksByEvent(eventId, { session })
+const buildCapacitySummary = async ({ repository, competition, session }) => {
+  const competitionId = getId(competition)
+  const tracks = await repository.findTracksByCompetition(competitionId, { session })
   const boardNumberByTrackId = buildBoardInfoByTrack(tracks)
-  const fallbackTrackCapacity = getCompetitionConfig(event).maxTeamsPerBoard || null
+  const fallbackTrackCapacity = getCompetitionConfig(competition).maxTeamsPerBoard || null
 
   const trackSummaries = []
   let totalOccupiedSlots = 0
@@ -753,11 +753,11 @@ const buildCapacitySummary = async ({ repository, event, session }) => {
   for (const track of tracks) {
     const occupiedSlots = await getTrackOccupancy({
       repository,
-      eventId,
+      competitionId,
       trackId: getId(track),
       session
     })
-    const capacity = getTrackCapacity({ event, track }) || fallbackTrackCapacity
+    const capacity = getTrackCapacity({ competition, track }) || fallbackTrackCapacity
     totalOccupiedSlots += occupiedSlots
     if (capacity) totalCapacity += capacity
 
@@ -773,11 +773,11 @@ const buildCapacitySummary = async ({ repository, event, session }) => {
   }
 
   return {
-    event: normalizeEventSummary(event),
-    eventId,
-    boardCount: getCompetitionConfig(event).boardCount || tracks.length || null,
-    trackCount: getCompetitionConfig(event).trackCount || tracks.length || null,
-    maxTeamsPerBoard: getCompetitionConfig(event).maxTeamsPerBoard || null,
+    competition: normalizeCompetitionSummary(competition),
+    competitionId,
+    boardCount: getCompetitionConfig(competition).boardCount || tracks.length || null,
+    trackCount: getCompetitionConfig(competition).trackCount || tracks.length || null,
+    maxTeamsPerBoard: getCompetitionConfig(competition).maxTeamsPerBoard || null,
     totalCapacity: totalCapacity || null,
     totalOccupiedSlots,
     availableSlots: totalCapacity ? Math.max(totalCapacity - totalOccupiedSlots, 0) : null,
@@ -787,7 +787,7 @@ const buildCapacitySummary = async ({ repository, event, session }) => {
 
 const assignTeamPlacement = async ({
   repository,
-  event,
+  competition,
   team,
   preferredTrackId = null,
   trackAssignmentMethod = 'SYSTEM',
@@ -795,8 +795,8 @@ const assignTeamPlacement = async ({
   allowWaitlist = true,
   allowUnassignedPlacement = false
 }) => {
-  const eventId = getId(event)
-  const tracks = await repository.findTracksByEvent(eventId, { session })
+  const competitionId = getId(competition)
+  const tracks = await repository.findTracksByCompetition(competitionId, { session })
   if (tracks.length === 0) {
     if (allowUnassignedPlacement) {
       return await repository.updateTeamById(getId(team), {
@@ -809,7 +809,7 @@ const assignTeamPlacement = async ({
       }, { session })
     }
 
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['No tracks are configured for this event'])
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['No tracks are configured for this competition'])
   }
 
   const boardNumberByTrackId = buildBoardInfoByTrack(tracks)
@@ -819,7 +819,7 @@ const assignTeamPlacement = async ({
   if (selectedTrackId) {
     const selectedTrack = tracks.find(track => isSameId(track, selectedTrackId))
     if (!selectedTrack) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Track does not belong to this event'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Track does not belong to this competition'])
     }
     candidateTracks = [selectedTrack]
   }
@@ -829,12 +829,12 @@ const assignTeamPlacement = async ({
   for (const track of candidateTracks) {
     const occupiedSlots = await getTrackOccupancy({
       repository,
-      eventId,
+      competitionId,
       trackId: getId(track),
       excludeTeamId: getId(team),
       session
     })
-    const capacity = getTrackCapacity({ event, track })
+    const capacity = getTrackCapacity({ competition, track })
 
     candidateSummaries.push({
       track,
@@ -868,7 +868,7 @@ const assignTeamPlacement = async ({
       placementSlot: null,
       waitlistPosition: await getWaitlistPosition({
         repository,
-        eventId,
+        competitionId,
         trackId: waitlistTrackId,
         excludeTeamId: getId(team),
         session
@@ -890,9 +890,9 @@ const assignTeamPlacement = async ({
   }, { session })
 }
 
-const ensureParticipantCanJoinEvent = async ({
+const ensureParticipantCanJoinCompetition = async ({
   repository,
-  eventId,
+  competitionId,
   user,
   targetTeamId = null,
   excludeInvitationId = null,
@@ -902,24 +902,24 @@ const ensureParticipantCanJoinEvent = async ({
 
   if (!userId) return
 
-  const participant = await repository.findParticipantByEventAndUser({ eventId, userId }, { session })
+  const participant = await repository.findParticipantByCompetitionAndUser({ competitionId, userId }, { session })
   if (
     participant &&
     ACTIVE_PARTICIPANT_STATUSES.includes(participant.status) &&
     (!targetTeamId || !isSameId(participant.teamId, targetTeamId))
   ) {
-    throw new ApiError(ERROR_CODES.CONFLICT, ['User already belongs to another team in this event'])
+    throw new ApiError(ERROR_CODES.CONFLICT, ['User already belongs to another team in this competition'])
   }
 
   const blockingInvitation = await repository.findBlockingInvitation({
-    eventId,
+    competitionId,
     email: user.email,
     userId,
     excludeInvitationId
   }, { session })
 
   if (blockingInvitation) {
-    throw new ApiError(ERROR_CODES.CONFLICT, ['User already has an active invitation for this event'])
+    throw new ApiError(ERROR_CODES.CONFLICT, ['User already has an active invitation for this competition'])
   }
 }
 
@@ -965,7 +965,7 @@ const ensureGithubUsernameMatchesExistingUser = (user, githubUsername) => {
   }
 }
 
-const buildInvitationEmailContext = ({ event, team, leader, token, invitedUser, fullName, email, logger = LOGGER }) => {
+const buildInvitationEmailContext = ({ competition, team, leader, token, invitedUser, fullName, email, logger = LOGGER }) => {
   const { acceptUrl, declineUrl } = buildInvitationUrls(token, logger)
 
   return {
@@ -973,7 +973,7 @@ const buildInvitationEmailContext = ({ event, team, leader, token, invitedUser, 
     template: EMAIL_TEMPLATE_KEYS.TEAM_INVITATION,
     context: {
       fullName: invitedUser?.fullName || fullName || email,
-      eventTitle: event.title,
+      eventTitle: competition.title,
       teamName: team.name,
       leaderName: leader.fullName,
       leaderEmail: leader.email,
@@ -981,7 +981,7 @@ const buildInvitationEmailContext = ({ event, team, leader, token, invitedUser, 
       declineUrl
     },
     metadata: {
-      eventId: getId(event),
+      competitionId: getId(competition),
       teamId: getId(team),
       invitedUserId: getId(invitedUser)
     }
@@ -1026,7 +1026,7 @@ const sendJobs = async ({ jobs, emailService, notificationService, logger }) => 
     if (job.kind === 'github_assign') {
       try {
         await GITHUB_SERVICE.assignCollaborator({
-          eventId: job.payload.eventId,
+          competitionId: job.payload.competitionId,
           repoName: job.payload.repoName,
           username: job.payload.githubUsername,
           permission: 'push'
@@ -1066,7 +1066,7 @@ const runWithOptionalTransaction = async ({ repository, logger, work }) => {
 
 const createInvitationForEmail = async ({
   repository,
-  event,
+  competition,
   team,
   leader,
   email,
@@ -1084,9 +1084,9 @@ const createInvitationForEmail = async ({
   if (invitedUser) {
     ensureInvitedUserCanJoinTeam(invitedUser)
 
-    await ensureParticipantCanJoinEvent({
+    await ensureParticipantCanJoinCompetition({
       repository,
-      eventId: getId(event),
+      competitionId: getId(competition),
       user: invitedUser,
       targetTeamId: getId(team),
       excludeInvitationId,
@@ -1109,12 +1109,12 @@ const createInvitationForEmail = async ({
     }
   } else {
     const blockingInvitation = await repository.findBlockingInvitation({
-      eventId: getId(event),
+      competitionId: getId(competition),
       email,
       excludeInvitationId
     }, { session })
     if (blockingInvitation) {
-      throw new ApiError(ERROR_CODES.CONFLICT, ['User already has an active invitation for this event'])
+      throw new ApiError(ERROR_CODES.CONFLICT, ['User already has an active invitation for this competition'])
     }
 
     await ensureGithubUsernameAvailableForInvite({
@@ -1128,7 +1128,7 @@ const createInvitationForEmail = async ({
 
   const token = createInvitationToken()
   const invitation = await repository.createInvitation({
-    eventId: getId(event),
+    competitionId: getId(competition),
     teamId: getId(team),
     leaderId: getId(leader),
     invitedEmail: email,
@@ -1145,7 +1145,7 @@ const createInvitationForEmail = async ({
   jobs.push({
     kind: 'email',
     payload: buildInvitationEmailContext({
-      event,
+      competition,
       team,
       leader,
       token,
@@ -1163,15 +1163,15 @@ const createInvitationForEmail = async ({
         user: invitedUser,
         type: 'SYSTEM',
         title: 'Team invitation',
-        message: `${leader.fullName || leader.email} invited you to join ${team.name} for ${event.title}.`,
+        message: `${leader.fullName || leader.email} invited you to join ${team.name} for ${competition.title}.`,
         metadata: {
           action: 'TEAM_INVITATION_CONFIRM',
-          eventId: getId(event),
+          competitionId: getId(competition),
           teamId: getId(team),
           invitationId: getId(invitation),
           invitationToken: token,
           teamName: team.name,
-          eventTitle: event.title,
+          eventTitle: competition.title,
           leaderName: leader.fullName,
           leaderEmail: leader.email
         },
@@ -1191,7 +1191,7 @@ const getInvitationMetadata = (invitation = {}) => {
 
 const resolveInvitationUser = async ({
   repository,
-  event,
+  competition,
   team,
   invitation,
   session
@@ -1253,9 +1253,9 @@ const resolveInvitationUser = async ({
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team member must not be the team leader'])
   }
 
-  await ensureParticipantCanJoinEvent({
+  await ensureParticipantCanJoinCompetition({
     repository,
-    eventId: getId(event),
+    competitionId: getId(competition),
     user: invitedUser,
     targetTeamId: getId(team),
     excludeInvitationId: getId(invitation),
@@ -1269,9 +1269,9 @@ const resolveInvitationUser = async ({
   }
 }
 
-const rejectOpenTeams = async ({ repository, event, reason, excludeTeamId = null, session, jobs }) => {
+const rejectOpenTeams = async ({ repository, competition, reason, excludeTeamId = null, session, jobs }) => {
   const filter = {
-    eventId: getId(event),
+    competitionId: getId(competition),
     status: { $in: OPEN_TEAM_STATUSES }
   }
 
@@ -1313,12 +1313,12 @@ const rejectOpenTeams = async ({ repository, event, reason, excludeTeamId = null
           message: buildTeamRejectedMessage(rejectedTeam, reason),
           emailTemplate: EMAIL_TEMPLATE_KEYS.TEAM_REJECTED,
           emailContext: {
-            eventTitle: event.title,
+            eventTitle: competition.title,
             teamName: rejectedTeam.name,
             rejectionReason: reason
           },
           metadata: {
-            eventId: getId(event),
+            competitionId: getId(competition),
             teamId: getId(rejectedTeam),
             reason
           }
@@ -1381,9 +1381,9 @@ export const createTeamService = ({
 
     const { page, limit } = normalizePaginationQuery(query)
     const filter = {}
-    if (query.eventId) {
-      ensureObjectId(query.eventId, 'event id')
-      filter.eventId = query.eventId
+    if (query.competitionId) {
+      ensureObjectId(query.competitionId, 'competition id')
+      filter.competitionId = query.competitionId
     }
     if (query.trackId) {
       ensureObjectId(query.trackId, 'track id')
@@ -1431,17 +1431,17 @@ export const createTeamService = ({
     return await loadTeamDetail({ repository, team })
   }
 
-  const getMyTeamByEvent = async (eventId, actor = {}) => {
-    ensureObjectId(eventId, 'event id')
-    const team = await repository.findTeamForUserInEvent({ eventId, userId: actor.id })
+  const getMyTeamByCompetition = async (competitionId, actor = {}) => {
+    ensureObjectId(competitionId, 'competition id')
+    const team = await repository.findTeamForUserInCompetition({ competitionId, userId: actor.id })
     if (!team) return null
 
     return await loadTeamDetail({ repository, team })
   }
 
   const rejectUnconfirmedTeamsForRegistrationClosure = async ({
-    event,
-    eventId,
+    competition,
+    competitionId,
     reason = TEAM_REJECTION_REASONS.REGISTRATION_CLOSED
   } = {}) => {
     const jobs = []
@@ -1449,21 +1449,21 @@ export const createTeamService = ({
       repository,
       logger,
       work: async (session) => {
-        const targetEvent = event || await repository.findEventById(eventId, { session })
-        if (!targetEvent) {
-          throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+        const targetCompetition = competition || await repository.findCompetitionById(competitionId, { session })
+        if (!targetCompetition) {
+          throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
         }
 
         const rejectedCount = await rejectOpenTeams({
           repository,
-          event: targetEvent,
+          competition: targetCompetition,
           reason,
           session,
           jobs
         })
 
         return {
-          eventId: getId(targetEvent),
+          competitionId: getId(targetCompetition),
           rejectedCount
         }
       }
@@ -1474,28 +1474,28 @@ export const createTeamService = ({
   }
 
   const checkTeamAvailability = async (query = {}, actor = {}) => {
-    ensureObjectId(query.eventId, 'event id')
+    ensureObjectId(query.competitionId, 'competition id')
     if (!actor.id) {
       throw new ApiError(ERROR_CODES.FORBIDDEN, ['User context is required to validate team availability'])
     }
 
     const name = String(query.name || '').trim()
-    const [event, existingTeam, existingLeaderTeam] = await Promise.all([
-      repository.findEventById(query.eventId),
-      repository.findTeamByEventAndName({ eventId: query.eventId, name }),
-      repository.findTeamByLeaderAndEvent({ eventId: query.eventId, leaderId: actor.id })
+    const [competition, existingTeam, existingLeaderTeam] = await Promise.all([
+      repository.findCompetitionById(query.competitionId),
+      repository.findTeamByCompetitionAndName({ competitionId: query.competitionId, name }),
+      repository.findTeamByLeaderAndCompetition({ competitionId: query.competitionId, leaderId: actor.id })
     ])
 
-    if (!event) {
-      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+    if (!competition) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
     }
 
     const errors = []
-    if (existingTeam) errors.push('Team name already exists in this event')
-    if (existingLeaderTeam) errors.push('You already created a team for this event')
+    if (existingTeam) errors.push('Team name already exists in this competition')
+    if (existingLeaderTeam) errors.push('You already created a team for this competition')
 
     return {
-      eventId: getId(event),
+      competitionId: getId(competition),
       name,
       normalizedName: normalizeTeamName(name),
       available: errors.length === 0,
@@ -1506,14 +1506,14 @@ export const createTeamService = ({
   }
 
   const checkInviteEligibility = async (query = {}, actor = {}) => {
-    ensureObjectId(query.eventId, 'event id')
+    ensureObjectId(query.competitionId, 'competition id')
     if (!actor.id) {
       throw new ApiError(ERROR_CODES.FORBIDDEN, ['User context is required to validate invitation eligibility'])
     }
 
-    const event = await repository.findEventById(query.eventId)
-    if (!event) {
-      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+    const competition = await repository.findCompetitionById(query.competitionId)
+    if (!competition) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
     }
 
     const email = normalizeEmailAddress(query.email)
@@ -1531,24 +1531,24 @@ export const createTeamService = ({
         errors.push('This email belongs to an account that is not a participant')
       }
 
-      participant = await repository.findParticipantByEventAndUser({
-        eventId: getId(event),
+      participant = await repository.findParticipantByCompetitionAndUser({
+        competitionId: getId(competition),
         userId: getId(invitedUser)
       })
 
       if (participant && ACTIVE_PARTICIPANT_STATUSES.includes(participant.status)) {
-        errors.push('This user already belongs to a team in this event')
+        errors.push('This user already belongs to a team in this competition')
       }
     }
 
     const blockingInvitation = await repository.findBlockingInvitation({
-      eventId: getId(event),
+      competitionId: getId(competition),
       email,
       userId: getId(invitedUser)
     })
 
     if (blockingInvitation) {
-      errors.push('This email already has an active invitation for this event')
+      errors.push('This email already has an active invitation for this competition')
     }
 
     if (query.githubUsername) {
@@ -1576,7 +1576,7 @@ export const createTeamService = ({
     }
 
     return {
-      eventId: getId(event),
+      competitionId: getId(competition),
       email,
       available: errors.length === 0,
       userExists: Boolean(invitedUser),
@@ -1595,16 +1595,16 @@ export const createTeamService = ({
         repository,
         logger,
         work: async (session) => {
-          const { event } = await loadEventForRegistration({
+          const { competition } = await loadCompetitionForRegistration({
             repository,
-            eventId: payload.eventId,
+            competitionId: payload.competitionId,
             session
           })
-          ensureEventOpen(event)
-          await ensureConfirmedSlotsNotFull({ event, repository, session })
-          await ensureTrackBelongsToEvent({
+          ensureCompetitionOpen(competition)
+          await ensureConfirmedSlotsNotFull({ competition, repository, session })
+          await ensureTrackBelongsToCompetition({
             repository,
-            eventId: getId(event),
+            competitionId: getId(competition),
             trackId: payload.trackId,
             session
           })
@@ -1614,24 +1614,24 @@ export const createTeamService = ({
             throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only active users can create teams'])
           }
 
-          const existingTeam = await repository.findTeamByLeaderAndEvent({
-            eventId: getId(event),
+          const existingTeam = await repository.findTeamByLeaderAndCompetition({
+            competitionId: getId(competition),
             leaderId: getId(leader)
           }, { session })
           if (existingTeam) {
-            throw new ApiError(ERROR_CODES.CONFLICT, ['You already created a team for this event'])
+            throw new ApiError(ERROR_CODES.CONFLICT, ['You already created a team for this competition'])
           }
 
           await ensureUniqueTeamName({
             repository,
-            eventId: getId(event),
+            competitionId: getId(competition),
             name: payload.name,
             session
           })
 
-          await ensureParticipantCanJoinEvent({
+          await ensureParticipantCanJoinCompetition({
             repository,
-            eventId: getId(event),
+            competitionId: getId(competition),
             user: leader,
             session
           })
@@ -1640,13 +1640,13 @@ export const createTeamService = ({
             members: payload.invitedMembers,
             emails: payload.invitedEmails
           })
-          if (invitedMembers.length > Math.max((event.maxTeamMembers || 5) - 1, 0)) {
-            throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Too many invited members for this event'])
+          if (invitedMembers.length > Math.max((competition.maxTeamMembers || 5) - 1, 0)) {
+            throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Too many invited members for this competition'])
           }
           ensureMembersDoNotContainLeader(invitedMembers, leader)
 
           const team = await repository.createTeam({
-            eventId: getId(event),
+            competitionId: getId(competition),
             trackId: payload.trackId || undefined,
             leaderId: getId(leader),
             memberIds: [getId(leader)],
@@ -1657,7 +1657,7 @@ export const createTeamService = ({
           }, { session })
 
           await repository.upsertParticipant({
-            eventId: getId(event),
+            competitionId: getId(competition),
             userId: getId(leader),
             data: {
               teamId: getId(team),
@@ -1670,7 +1670,7 @@ export const createTeamService = ({
           for (const member of invitedMembers) {
             await createInvitationForEmail({
               repository,
-              event,
+              competition,
               team,
               leader,
               email: member.email,
@@ -1681,7 +1681,7 @@ export const createTeamService = ({
             })
           }
 
-          if ((event.minTeamMembers || 1) <= 1) {
+          if ((competition.minTeamMembers || 1) <= 1) {
             const confirmedTeam = await repository.updateTeamById(getId(team), {
               status: TEAM_STATUSES.CONFIRMED,
               confirmedAt: new Date()
@@ -1689,7 +1689,7 @@ export const createTeamService = ({
 
             await assignTeamPlacement({
               repository,
-              event,
+              competition,
               team: confirmedTeam,
               preferredTrackId: payload.trackId,
               trackAssignmentMethod: payload.trackId ? 'MANUAL' : 'SYSTEM',
@@ -1698,12 +1698,12 @@ export const createTeamService = ({
               allowUnassignedPlacement: true
             })
 
-            await syncEventRegistrationStatus({
+            await syncCompetitionRegistrationStatus({
               repository,
-              event,
+              competition,
               session,
               confirmedCount: await repository.countTeams({
-                eventId: getId(event),
+                competitionId: getId(competition),
                 status: { $in: CONFIRMED_TEAM_STATUSES }
               }, { session })
             })
@@ -1734,13 +1734,13 @@ export const createTeamService = ({
         ensureTeamLeader(team, actor)
         ensureTeamCanBeChanged(team)
 
-        const { event } = await loadEventForRegistration({
+        const { competition } = await loadCompetitionForRegistration({
           repository,
-          eventId: getId(team.eventId),
+          competitionId: getId(team.competitionId),
           session
         })
-        ensureEventOpen(event)
-        await ensureConfirmedSlotsNotFull({ event, repository, session })
+        ensureCompetitionOpen(competition)
+        await ensureConfirmedSlotsNotFull({ competition, repository, session })
 
         const leader = await repository.findUserById(actor.id, { session })
         const currentMemberCount = (team.memberIds || []).length
@@ -1752,15 +1752,15 @@ export const createTeamService = ({
         })
         ensureMembersDoNotContainLeader(invitedMembers, leader)
 
-        if (currentMemberCount + pendingInvitations.length + invitedMembers.length > (event.maxTeamMembers || 5)) {
-          throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Too many team members for this event'])
+        if (currentMemberCount + pendingInvitations.length + invitedMembers.length > (competition.maxTeamMembers || 5)) {
+          throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Too many team members for this competition'])
         }
 
         const invitations = []
         for (const member of invitedMembers) {
           invitations.push(await createInvitationForEmail({
             repository,
-            event,
+            competition,
             team,
             leader,
             email: member.email,
@@ -1794,12 +1794,12 @@ export const createTeamService = ({
         const team = await repository.findTeamById(invitation.teamId, { session })
         if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
 
-        const { event } = await loadEventForRegistration({
+        const { competition } = await loadCompetitionForRegistration({
           repository,
-          eventId: invitation.eventId,
+          competitionId: invitation.competitionId,
           session
         })
-        ensureEventOpen(event)
+        ensureCompetitionOpen(competition)
 
         if (invitation.status === INVITATION_STATUSES.ACCEPTED) {
           return {
@@ -1847,11 +1847,11 @@ export const createTeamService = ({
         }
 
         const confirmedCount = await repository.countTeams({
-          eventId: getId(event),
+          competitionId: getId(competition),
           status: { $in: CONFIRMED_TEAM_STATUSES }
         }, { session })
 
-        if (!CONFIRMED_TEAM_STATUSES.includes(team.status) && confirmedCount >= getMaxTeams(event)) {
+        if (!CONFIRMED_TEAM_STATUSES.includes(team.status) && confirmedCount >= getMaxTeams(competition)) {
           const rejectedTeam = await repository.updateTeamById(getId(team), {
             status: TEAM_STATUSES.REJECTED,
             rejectedAt: new Date(),
@@ -1864,7 +1864,7 @@ export const createTeamService = ({
           }, { session })
           await rejectOpenTeams({
             repository,
-            event,
+            competition,
             reason: TEAM_REJECTION_REASONS.CAPACITY_REACHED,
             excludeTeamId: getId(team),
             session,
@@ -1884,14 +1884,14 @@ export const createTeamService = ({
           temporaryPassword
         } = await resolveInvitationUser({
           repository,
-          event,
+          competition,
           team,
           invitation,
           session
         })
 
         await repository.upsertParticipant({
-          eventId: getId(event),
+          competitionId: getId(competition),
           userId: getId(invitedUser),
           data: {
             teamId: getId(team),
@@ -1904,7 +1904,7 @@ export const createTeamService = ({
         if (invitedUser.githubUsername) {
           try {
             const teamRepo = await mongoose.model('Repository').findOne({
-              eventId: getId(event),
+              competitionId: getId(competition),
               teamId: getId(team),
               status: 'ACTIVE'
             }).session(session)
@@ -1913,7 +1913,7 @@ export const createTeamService = ({
               jobs.push({
                 kind: 'github_assign',
                 payload: {
-                  eventId: getId(event),
+                  competitionId: getId(competition),
                   repoName: teamRepo.repoName || teamRepo.githubRepo,
                   githubUsername: invitedUser.githubUsername,
                   actor: { id: getId(team.leaderId) }
@@ -1939,13 +1939,13 @@ export const createTeamService = ({
         }, { session })
 
         const memberCount = (updatedTeam.memberIds || []).length
-        if (!CONFIRMED_TEAM_STATUSES.includes(updatedTeam.status) && memberCount >= (event.minTeamMembers || 1)) {
+        if (!CONFIRMED_TEAM_STATUSES.includes(updatedTeam.status) && memberCount >= (competition.minTeamMembers || 1)) {
           const confirmedCountBeforeUpdate = await repository.countTeams({
-            eventId: getId(event),
+            competitionId: getId(competition),
             status: { $in: CONFIRMED_TEAM_STATUSES }
           }, { session })
 
-          if (confirmedCountBeforeUpdate >= getMaxTeams(event)) {
+          if (confirmedCountBeforeUpdate >= getMaxTeams(competition)) {
             updatedTeam = await repository.updateTeamById(getId(updatedTeam), {
               status: TEAM_STATUSES.REJECTED,
               rejectedAt: new Date(),
@@ -1959,7 +1959,7 @@ export const createTeamService = ({
 
             updatedTeam = await assignTeamPlacement({
               repository,
-              event,
+              competition,
               team: updatedTeam,
               preferredTrackId: getId(updatedTeam.trackId),
               trackAssignmentMethod: getId(updatedTeam.trackId) ? 'MANUAL' : 'SYSTEM',
@@ -1970,10 +1970,10 @@ export const createTeamService = ({
 
             // Repository provisioning is bulk/manual; use the missing-confirmed-teams report to reconcile.
 
-            if (CONFIRMED_TEAM_STATUSES.includes(updatedTeam.status) && confirmedCountBeforeUpdate + 1 >= getMaxTeams(event)) {
+            if (CONFIRMED_TEAM_STATUSES.includes(updatedTeam.status) && confirmedCountBeforeUpdate + 1 >= getMaxTeams(competition)) {
               await rejectOpenTeams({
                 repository,
-                event,
+                competition,
                 reason: TEAM_REJECTION_REASONS.CAPACITY_REACHED,
                 excludeTeamId: getId(updatedTeam),
                 session,
@@ -1981,9 +1981,9 @@ export const createTeamService = ({
               })
             }
 
-            await syncEventRegistrationStatus({
+            await syncCompetitionRegistrationStatus({
               repository,
-              event,
+              competition,
               session,
               confirmedCount: confirmedCountBeforeUpdate + 1
             })
@@ -2003,7 +2003,7 @@ export const createTeamService = ({
                 loginUrl: buildLoginUrl(logger)
               },
               metadata: {
-                eventId: getId(event),
+                competitionId: getId(competition),
                 teamId: getId(updatedTeam),
                 invitedUserId: getId(invitedUser),
                 invitationId: getId(acceptedInvitation)
@@ -2021,11 +2021,11 @@ export const createTeamService = ({
             message: `You joined ${updatedTeam.name}.`,
             emailTemplate: EMAIL_TEMPLATE_KEYS.TEAM_CONFIRMATION_SUCCESS,
             emailContext: {
-              eventTitle: event.title,
+              eventTitle: competition.title,
               teamName: updatedTeam.name
             },
             metadata: {
-              eventId: getId(event),
+              competitionId: getId(competition),
               teamId: getId(updatedTeam),
               invitationId: getId(acceptedInvitation)
             },
@@ -2055,7 +2055,7 @@ export const createTeamService = ({
         if (!invitation) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Invitation not found'])
 
         const team = await repository.findTeamById(invitation.teamId, { session })
-        const event = await repository.findEventById(invitation.eventId, { session })
+        const competition = await repository.findCompetitionById(invitation.competitionId, { session })
         const leader = await repository.findUserById(invitation.leaderId, { session })
 
         if (invitation.status === INVITATION_STATUSES.DECLINED) {
@@ -2097,12 +2097,12 @@ export const createTeamService = ({
               message: `${invitation.invitedEmail} declined the invitation to join ${team?.name || 'your team'}.`,
               emailTemplate: EMAIL_TEMPLATE_KEYS.TEAM_MEMBER_DECLINED,
               emailContext: {
-                eventTitle: event?.title,
+                eventTitle: competition?.title,
                 teamName: team?.name,
                 declinedEmail: invitation.invitedEmail
               },
               metadata: {
-                eventId: getId(event),
+                competitionId: getId(competition),
                 teamId: getId(team),
                 invitationId: getId(declinedInvitation)
               }
@@ -2142,19 +2142,19 @@ export const createTeamService = ({
           throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only declined invitations can be replaced'])
         }
 
-        const { event } = await loadEventForRegistration({
+        const { competition } = await loadCompetitionForRegistration({
           repository,
-          eventId: getId(team.eventId),
+          competitionId: getId(team.competitionId),
           session
         })
-        ensureEventOpen(event)
-        await ensureConfirmedSlotsNotFull({ event, repository, session })
+        ensureCompetitionOpen(competition)
+        await ensureConfirmedSlotsNotFull({ competition, repository, session })
 
         const leader = await repository.findUserById(actor.id, { session })
         const [replacement] = await Promise.all([
           createInvitationForEmail({
             repository,
-            event,
+            competition,
             team,
             leader,
             email: String(email).trim().toLowerCase(),
@@ -2212,9 +2212,9 @@ export const createTeamService = ({
         if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
         ensureTeamCanBeChanged(team)
 
-        const event = await repository.findEventById(getId(team.eventId), { session })
-        if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
-        ensureEventOpen(event)
+        const competition = await repository.findCompetitionById(getId(team.competitionId), { session })
+        if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
+        ensureCompetitionOpen(competition)
 
         const actorIsLeader = isSameId(team.leaderId, actor.id)
         const memberIds = (team.memberIds || []).map(getId)
@@ -2234,7 +2234,7 @@ export const createTeamService = ({
           })
 
           await repository.updateParticipants({
-            eventId: getId(event),
+            competitionId: getId(competition),
             teamId: getId(team),
             status: { $in: ACTIVE_PARTICIPANT_STATUSES }
           }, {
@@ -2255,8 +2255,8 @@ export const createTeamService = ({
           return await loadTeamDetail({ repository, team: updatedTeam, session })
         }
 
-        const participant = await repository.findParticipantByEventAndUser({
-          eventId: getId(event),
+        const participant = await repository.findParticipantByCompetitionAndUser({
+          competitionId: getId(competition),
           userId: actor.id
         }, { session })
 
@@ -2268,8 +2268,8 @@ export const createTeamService = ({
           return await loadTeamDetail({ repository, team, session })
         }
 
-        await repository.updateParticipantByEventAndUser({
-          eventId: getId(event),
+        await repository.updateParticipantByCompetitionAndUser({
+          competitionId: getId(competition),
           userId: actor.id,
           data: { status: 'WITHDRAWN' }
         }, { session })
@@ -2280,7 +2280,7 @@ export const createTeamService = ({
 
         const activeParticipants = await repository.findParticipantsByTeam(getId(team), { session })
         const joinedCount = activeParticipants.filter(participant => participant.status === 'JOINED').length
-        const minimumMembers = event.minTeamMembers || 1
+        const minimumMembers = competition.minTeamMembers || 1
         if (
           [TEAM_STATUSES.CONFIRMED, TEAM_STATUSES.WAITLISTED].includes(updatedTeam.status) &&
           joinedCount < minimumMembers
@@ -2308,18 +2308,18 @@ export const createTeamService = ({
         const team = await repository.findTeamById(teamId, { session })
         if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
 
-        const event = await repository.findEventById(getId(team.eventId), { session })
-        if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+        const competition = await repository.findCompetitionById(getId(team.competitionId), { session })
+        if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
 
         let updatedTeam = team
         const nextStatus = payload.status
 
         if (nextStatus === TEAM_STATUSES.CONFIRMED) {
           if (!CONFIRMED_TEAM_STATUSES.includes(team.status)) {
-            await ensureConfirmedSlotsNotFull({ event, repository, session })
+            await ensureConfirmedSlotsNotFull({ competition, repository, session })
           }
 
-          ensureTeamSizeWithinEventRules(team, event)
+          ensureTeamSizeWithinCompetitionRules(team, competition)
 
           updatedTeam = await repository.updateTeamById(getId(team), {
             status: TEAM_STATUSES.CONFIRMED,
@@ -2330,7 +2330,7 @@ export const createTeamService = ({
 
           updatedTeam = await assignTeamPlacement({
             repository,
-            event,
+            competition,
             team: updatedTeam,
             preferredTrackId: payload.trackId || getId(updatedTeam.trackId),
             trackAssignmentMethod: payload.trackId || getId(updatedTeam.trackId) ? 'MANUAL' : 'SYSTEM',
@@ -2339,12 +2339,12 @@ export const createTeamService = ({
           })
 
           const confirmedCount = await repository.countTeams({
-            eventId: getId(event),
+            competitionId: getId(competition),
             status: { $in: CONFIRMED_TEAM_STATUSES }
           }, { session })
-          await syncEventRegistrationStatus({
+          await syncCompetitionRegistrationStatus({
             repository,
-            event,
+            competition,
             session,
             confirmedCount
           })
@@ -2380,13 +2380,13 @@ export const createTeamService = ({
         const team = await repository.findTeamById(teamId, { session })
         if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
 
-        const event = await repository.findEventById(getId(team.eventId), { session })
-        if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+        const competition = await repository.findCompetitionById(getId(team.competitionId), { session })
+        if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
 
         if (payload.trackId) {
-          await ensureTrackBelongsToEvent({
+          await ensureTrackBelongsToCompetition({
             repository,
-            eventId: getId(event),
+            competitionId: getId(competition),
             trackId: payload.trackId,
             session
           })
@@ -2394,7 +2394,7 @@ export const createTeamService = ({
 
         const updatedTeam = await assignTeamPlacement({
           repository,
-          event,
+          competition,
           team,
           preferredTrackId: payload.trackId,
           trackAssignmentMethod: payload.trackAssignmentMethod || (payload.trackId ? 'MANUAL' : 'SYSTEM'),
@@ -2445,14 +2445,14 @@ export const createTeamService = ({
 
   const assignMentorsByBoard = async (payload = {}, actor = {}) => {
     ensureTeamManagementPermission(actor)
-    ensureObjectId(payload.eventId, 'event id')
+    ensureObjectId(payload.competitionId, 'competition id')
 
     const result = await runWithOptionalTransaction({
       repository,
       logger,
       work: async (session) => {
-        const event = await repository.findEventById(payload.eventId, { session })
-        if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+        const competition = await repository.findCompetitionById(payload.competitionId, { session })
+        if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
 
         const { mentorIds } = await validateMentorAssignments({
           repository,
@@ -2462,7 +2462,7 @@ export const createTeamService = ({
 
         const teams = await repository.findTeams({
           filter: {
-            eventId: payload.eventId,
+            competitionId: payload.competitionId,
             boardNumber: Number(payload.boardNumber),
             status: TEAM_STATUSES.CONFIRMED
           },
@@ -2495,8 +2495,8 @@ export const createTeamService = ({
         }
 
         return {
-          eventId: getId(event),
-          eventTitle: event.title,
+          competitionId: getId(competition),
+          eventTitle: competition.title,
           boardNumber: Number(payload.boardNumber),
           mentorIds,
           updatedCount: updatedTeams.length,
@@ -2523,20 +2523,20 @@ export const createTeamService = ({
     return result
   }
 
-  const getEventTeamCapacity = async (eventId, actor = {}) => {
+  const getCompetitionTeamCapacity = async (competitionId, actor = {}) => {
     ensureTeamManagementPermission(actor)
-    ensureObjectId(eventId, 'event id')
+    ensureObjectId(competitionId, 'competition id')
 
-    const event = await repository.findEventById(eventId)
-    if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+    const competition = await repository.findCompetitionById(competitionId)
+    if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
 
-    return await buildCapacitySummary({ repository, event })
+    return await buildCapacitySummary({ repository, competition })
   }
 
   return {
     listTeams,
     getTeamById,
-    getMyTeamByEvent,
+    getMyTeamByCompetition,
     rejectUnconfirmedTeamsForRegistrationClosure,
     checkTeamAvailability,
     checkInviteEligibility,
@@ -2551,7 +2551,7 @@ export const createTeamService = ({
     updateTeamPlacement,
     updateTeamMentors,
     assignMentorsByBoard,
-    getEventTeamCapacity,
+    getCompetitionTeamCapacity,
     normalizeTeam
   }
 }

@@ -11,7 +11,7 @@ const listBoards = {
   query: Joi.object({
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10),
-    eventId: objectId,
+    competitionId: objectId,
     roundId: objectId,
     trackId: objectId,
     status: boardStatus,
@@ -21,7 +21,7 @@ const listBoards = {
 
 const createBoard = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     roundId: objectId.required(),
     trackId: objectId.allow(null),
     name: Joi.string().trim().min(2).max(200).required(),
@@ -36,7 +36,7 @@ const createBoard = {
 const updateBoard = {
   params: idParam,
   body: Joi.object({
-    eventId: objectId,
+    competitionId: objectId,
     roundId: objectId,
     trackId: objectId.allow(null),
     name: Joi.string().trim().min(2).max(200),
@@ -50,7 +50,7 @@ const updateBoard = {
 
 const autoAssignBoards = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     roundId: objectId.required()
   })
 }
@@ -63,14 +63,14 @@ const boardPlanItem = Joi.object({
 
 const randomizePreview = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     roundId: objectId.required()
   })
 }
 
 const confirmRandomization = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     roundId: objectId.required(),
     boards: Joi.array().items(boardPlanItem).min(1).required()
   })
