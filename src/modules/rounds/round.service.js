@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 
 import { ROUND_REPOSITORY } from './round.repository.js'
+import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
@@ -339,8 +340,28 @@ const syncSingleJudgingBoardForRound = async (round) => {
 }
 
 export const createRoundService = ({
-  repository = ROUND_REPOSITORY
+  repository = ROUND_REPOSITORY,
+  notificationService = NOTIFICATION_SERVICE
 } = {}) => {
+  const notifyAssignedJudges = async (round, previousJudgeIds = []) => {
+    const previousIds = new Set(previousJudgeIds.map(id => id?.toString?.() || String(id)))
+    const roundId = round?._id?.toString?.() || round?.id
+    const competitionId = round?.competitionId?._id?.toString?.() || round?.competitionId?.id || round?.competitionId?.toString?.()
+    const addedJudges = (round?.assignedJudgeIds || []).filter(judge => {
+      const judgeId = judge?._id?.toString?.() || judge?.id || judge?.toString?.()
+      return judgeId && !previousIds.has(judgeId)
+    })
+
+    await Promise.all(addedJudges.map(judge => notificationService.notifyUser({
+      user: judge,
+      title: 'Round assignment',
+      message: `You were assigned as a judge for ${round.name || 'a competition round'}.`,
+      type: 'SYSTEM',
+      dedupeKey: `judge-round-assigned:${roundId}:${judge?._id?.toString?.() || judge?.id}`,
+      metadata: { action: 'JUDGE_ROUND_ASSIGNED', competitionId, roundId, targetPath: '/judge' },
+      channels: ['IN_APP']
+    })))
+  }
   const ensureRoundExists = async (id) => {
     ensureObjectId(id)
     const round = await repository.findById(id)
@@ -484,6 +505,7 @@ export const createRoundService = ({
 
     const round = await repository.create(pickSafeFields(payload, ROUND_FIELDS))
     const hydratedRound = await repository.findById(round._id)
+    await notifyAssignedJudges(hydratedRound)
     await syncSingleJudgingBoardForRound(hydratedRound)
     return normalizeRound(await repository.findById(round._id))
   }
@@ -521,7 +543,11 @@ export const createRoundService = ({
       maxPromotedTeams: safePayload.maxPromotedTeams ?? existingRound.maxPromotedTeams
     })
 
+    const previousJudgeIds = (existingRound.assignedJudgeIds || [])
+      .map(judge => judge?._id?.toString?.() || judge?.id || judge?.toString?.())
+      .filter(Boolean)
     const round = await repository.updateById(id, safePayload)
+    if (safePayload.assignedJudgeIds !== undefined) await notifyAssignedJudges(round, previousJudgeIds)
     await syncSingleJudgingBoardForRound(round)
     return normalizeRound(await repository.findById(id))
   }

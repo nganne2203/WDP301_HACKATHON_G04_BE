@@ -2,6 +2,7 @@ import mongoose from 'mongoose'
 
 import { WORKSHOP_REPOSITORY } from './workshop.repository.js'
 import { GOOGLE_SERVICE } from '#modules/google/google.service.js'
+import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 import { PERMISSIONS } from '#constants/permissions.js'
 import ApiError from '#utils/ApiError.js'
 import { isWithinCompetitionDateWindow } from '#utils/competitionDateWindow.js'
@@ -35,6 +36,31 @@ const WORKSHOP_FIELDS = [
   'questionnaire',
   'status'
 ]
+
+const notifyPresenterAssignment = async (workshop) => {
+  const presenter = workshop?.presenterId
+  const presenterId = getIdString(presenter)
+  const workshopId = getIdString(workshop?._id || workshop?.id)
+
+  if (!presenterId || !presenter?.email || !workshopId) return
+
+  const competitionTitle = workshop.competitionId?.title || 'SEAL Hackathon'
+
+  await NOTIFICATION_SERVICE.notifyUser({
+    user: presenter,
+    title: 'Workshop assignment',
+    message: `You were assigned as the speaker for "${workshop.title}" in ${competitionTitle}.`,
+    type: 'WORKSHOP',
+    dedupeKey: `workshop-speaker-assigned:${workshopId}:${presenterId}`,
+    metadata: {
+      action: 'WORKSHOP_SPEAKER_ASSIGNED',
+      workshopId,
+      competitionId: getIdString(workshop.competitionId),
+      targetPath: '/mentor/workshops'
+    },
+    channels: ['IN_APP', 'EMAIL']
+  })
+}
 
 const ensureObjectId = (id, fieldName = 'id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -425,7 +451,10 @@ const createWorkshop = async (payload = {}) => {
 
   const workshop = await WORKSHOP_REPOSITORY.createWorkshop(pickSafeFields(payload, WORKSHOP_FIELDS))
 
-  return normalizeWorkshop(await WORKSHOP_REPOSITORY.findWorkshopById(workshop._id))
+  const createdWorkshop = await WORKSHOP_REPOSITORY.findWorkshopById(workshop._id)
+  await notifyPresenterAssignment(createdWorkshop)
+
+  return normalizeWorkshop(createdWorkshop)
 }
 
 const updateWorkshop = async (id, payload = {}) => {
@@ -453,7 +482,15 @@ const updateWorkshop = async (id, payload = {}) => {
     toStatus: safePayload.status
   })
 
-  return normalizeWorkshop(await WORKSHOP_REPOSITORY.updateWorkshopById(id, safePayload))
+  const previousPresenterId = getIdString(existingWorkshop.presenterId)
+  const updatedWorkshop = await WORKSHOP_REPOSITORY.updateWorkshopById(id, safePayload)
+  const nextPresenterId = getIdString(updatedWorkshop.presenterId)
+
+  if (nextPresenterId && nextPresenterId !== previousPresenterId) {
+    await notifyPresenterAssignment(updatedWorkshop)
+  }
+
+  return normalizeWorkshop(updatedWorkshop)
 }
 
 const deleteWorkshop = async (id) => {

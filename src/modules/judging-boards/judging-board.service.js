@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 
 import { JUDGING_BOARD_REPOSITORY } from './judging-board.repository.js'
+import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
@@ -261,9 +262,42 @@ const distributeTeamsAcrossBoards = ({ teams = [], boardCount }) => {
 
 export const createJudgingBoardService = ({
   repository = JUDGING_BOARD_REPOSITORY,
+  notificationService = NOTIFICATION_SERVICE,
   randomFn = Math.random,
   relaxedWorkflow = false
 } = {}) => {
+  const notifyAssignedJudges = async ({ board, previousJudgeIds = [] }) => {
+    const previousIds = new Set(previousJudgeIds.map(id => id?.toString?.() || String(id)))
+    const boardId = board?._id?.toString?.() || board?.id
+    const competitionId = board?.competitionId?._id?.toString?.() || board?.competitionId?.id || board?.competitionId?.toString?.()
+    const eventTitle = board?.competitionId?.title || 'SEAL Hackathon'
+    const roundName = board?.roundId?.name
+
+    const addedJudges = (board?.judgeIds || []).filter(judge => {
+      const judgeId = judge?._id?.toString?.() || judge?.id || judge?.toString?.()
+      return judgeId && !previousIds.has(judgeId)
+    })
+
+    await Promise.all(addedJudges.map(judge => notificationService.notifyUser({
+      user: judge,
+      title: 'Judging board assignment',
+      message: `You were assigned to ${board.name || `Board ${board.boardNumber}`} for ${roundName ? `${roundName} of ` : ''}${eventTitle}.`,
+      type: 'SYSTEM',
+      // A board is created from a Round in the current workflow. Reuse the
+      // round-level key so that automatic board sync does not duplicate the
+      // Round assignment notification.
+      dedupeKey: `judge-round-assigned:${board?.roundId?._id?.toString?.() || board?.roundId?.id || board?.roundId?.toString?.()}:${judge?._id?.toString?.() || judge?.id}`,
+      metadata: {
+        action: 'JUDGE_BOARD_ASSIGNED',
+        competitionId,
+        roundId: board?.roundId?._id?.toString?.() || board?.roundId?.id || board?.roundId?.toString?.(),
+        boardId,
+        targetPath: '/judge'
+      },
+      channels: ['IN_APP']
+    })))
+  }
+
   const ensureBoardExists = async (id) => {
     ensureObjectId(id)
     const board = await repository.findById(id)
@@ -356,7 +390,9 @@ export const createJudgingBoardService = ({
       ...pickSafeFields(payload, BOARD_FIELDS),
       trackId: trackId || undefined
     })
-    return normalizeBoard(await repository.findById(board._id))
+    const createdBoard = await repository.findById(board._id)
+    await notifyAssignedJudges({ board: createdBoard })
+    return normalizeBoard(createdBoard)
   }
 
   const updateBoard = async (id, payload = {}) => {
@@ -387,7 +423,13 @@ export const createJudgingBoardService = ({
       }
     }
 
+    const previousJudgeIds = (existingBoard.judgeIds || [])
+      .map(judge => judge?._id?.toString?.() || judge?.id || judge?.toString?.())
+      .filter(Boolean)
     const board = await repository.updateById(id, safePayload)
+    if (safePayload.judgeIds !== undefined) {
+      await notifyAssignedJudges({ board, previousJudgeIds })
+    }
     return normalizeBoard(board)
   }
 
