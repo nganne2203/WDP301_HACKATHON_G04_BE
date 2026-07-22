@@ -27,7 +27,7 @@ const mediaIdParam = Joi.object({
 
 const uploadMedia = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     teamId: objectId.allow('', null),
     title: Joi.string().trim().max(200).allow('', null),
     description: Joi.string().trim().max(2000).allow('', null),
@@ -38,7 +38,7 @@ const uploadMedia = {
 const listMyHistory = {
   query: Joi.object({
     ...pagination,
-    eventId: objectId,
+    competitionId: objectId,
     mediaType,
     status: mediaStatus,
     search: Joi.string().trim().max(100),
@@ -50,7 +50,7 @@ const listMyHistory = {
 const listAdminMedia = {
   query: Joi.object({
     ...pagination,
-    eventId: objectId,
+    competitionId: objectId,
     uploadedBy: objectId,
     teamId: objectId,
     mediaType,
@@ -93,7 +93,7 @@ const rejectMedia = {
 
 const statistics = {
   query: Joi.object({
-    eventId: objectId,
+    competitionId: objectId,
     fromDate: Joi.date().iso(),
     toDate: Joi.date().iso()
   })
@@ -104,11 +104,11 @@ const config = {
     provider: Joi.string().trim().uppercase().valid('SUPABASE', 'CLOUDINARY').default('CLOUDINARY'),
     supabaseUrl: Joi.string().trim().uri().allow('', null),
     serviceRoleKey: Joi.string().trim().allow('', null),
-    bucket: Joi.string().trim().min(1).max(120).default('event-media'),
+    bucket: Joi.string().trim().min(1).max(120).default('competition-media'),
     cloudinaryCloudName: Joi.string().trim().allow('', null),
     cloudinaryApiKey: Joi.string().trim().allow('', null),
     cloudinaryApiSecret: Joi.string().trim().allow('', null),
-    cloudinaryFolder: Joi.string().trim().min(1).max(120).default('event-media'),
+    cloudinaryFolder: Joi.string().trim().min(1).max(120).default('competition-media'),
     visibility: Joi.string().trim().valid('private').default('private'),
     maxImageSizeMb: Joi.number().integer().min(1).max(100).default(10),
     maxVideoSizeMb: Joi.number().integer().min(1).max(500).default(200),

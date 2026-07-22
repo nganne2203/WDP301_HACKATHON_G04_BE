@@ -95,7 +95,7 @@ const router = Router()
  *           type: array
  *           items:
  *             type: string
- *           example: [EVENT_VIEW, WORKSHOP_VIEW, TEAM_VIEW]
+ *           example: [COMPETITION_VIEW, WORKSHOP_VIEW, TEAM_VIEW]
  *         avatarUrl:
  *           type: string
  *           nullable: true

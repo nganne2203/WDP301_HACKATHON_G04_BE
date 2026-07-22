@@ -4,7 +4,7 @@ const { Schema } = mongoose
 
 const repositorySchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true },
     teamId: { type: Schema.Types.ObjectId, ref: 'Team', required: true },
     roundId: { type: Schema.Types.ObjectId, ref: 'Round' },
     githubOwner: { type: String, trim: true },
@@ -68,8 +68,8 @@ repositorySchema.pre('validate', function syncLegacyRepositoryFields(next) {
 repositorySchema.index({ teamId: 1 }, { unique: true })
 repositorySchema.index({ repoUrl: 1 }, { unique: true })
 repositorySchema.index({ repositoryFullName: 1 }, { unique: true, sparse: true })
-repositorySchema.index({ eventId: 1, teamId: 1 })
-repositorySchema.index({ eventId: 1, roundId: 1 })
+repositorySchema.index({ competitionId: 1, teamId: 1 })
+repositorySchema.index({ competitionId: 1, roundId: 1 })
 
 const Repository = mongoose.model('Repository', repositorySchema)
 

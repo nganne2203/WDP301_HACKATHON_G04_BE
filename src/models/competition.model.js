@@ -13,7 +13,6 @@ const competitionConfigSchema = new Schema(
       type: String,
       enum: ['FIXED_PER_BOARD', 'TOP_PER_BOARD_WITH_WILDCARD', 'OVERALL_SCORE', 'CUSTOM']
     },
-    fillRemainingFinalistsByOverallScore: { type: Boolean, default: false },
     rankingScopes: [{
       type: String,
       enum: ['TEAM', 'CHAPTER', 'INDIVIDUAL']
@@ -78,6 +77,6 @@ eventSchema.index(
   }
 )
 
-const Event = mongoose.model('Event', eventSchema)
+const Competition = mongoose.model('Competition', eventSchema)
 
-export default Event
+export default Competition

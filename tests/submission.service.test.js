@@ -5,7 +5,7 @@ import ApiError from '../src/utils/ApiError.js'
 import { createSubmissionService } from '../src/modules/submissions/submission.service.js'
 
 const ids = {
-  event: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+  competition: 'aaaaaaaaaaaaaaaaaaaaaaaa',
   round: 'bbbbbbbbbbbbbbbbbbbbbbbb',
   team: 'cccccccccccccccccccccccc',
   repository: 'dddddddddddddddddddddddd',
@@ -69,12 +69,12 @@ const createSubmissionFixture = ({
   memberParticipantStatus = 'JOINED',
   notificationService = null
 } = {}) => {
-  const events = new Map([[ids.event, { _id: ids.event, status: 'ONGOING' }]])
+  const competitions = new Map([[ids.competition, { _id: ids.competition, status: 'ONGOING' }]])
   const rounds = new Map([[
     ids.round,
     {
       _id: ids.round,
-      eventId: ids.event,
+      competitionId: ids.competition,
       status: roundStatus,
       assignedTeamIds,
       submissionOpenAt: new Date(Date.now() + openOffsetMs),
@@ -84,7 +84,7 @@ const createSubmissionFixture = ({
   ]])
   const teams = new Map([[ids.team, {
     _id: ids.team,
-    eventId: ids.event,
+    competitionId: ids.competition,
     name: 'Team Alpha',
     status: 'CONFIRMED',
     leaderId: { _id: ids.leader, email: 'leader@example.com', fullName: 'Leader' },
@@ -93,7 +93,7 @@ const createSubmissionFixture = ({
   const participants = new Map([
     ['leader-participant', {
       _id: 'leader-participant',
-      eventId: ids.event,
+      competitionId: ids.competition,
       teamId: ids.team,
       userId: ids.leader,
       status: 'JOINED',
@@ -101,7 +101,7 @@ const createSubmissionFixture = ({
     }],
     ['member-participant', {
       _id: 'member-participant',
-      eventId: ids.event,
+      competitionId: ids.competition,
       teamId: ids.team,
       userId: ids.member,
       status: memberParticipantStatus,
@@ -112,7 +112,7 @@ const createSubmissionFixture = ({
     ids.repository,
     {
       _id: ids.repository,
-      eventId: ids.event,
+      competitionId: ids.competition,
       teamId: ids.team,
       repositoryFullName: 'seal/team-alpha'
     }
@@ -154,7 +154,7 @@ const createSubmissionFixture = ({
           return entry
         }
       },
-      eventModel: createModel(events),
+      competitionModel: createModel(competitions),
       roundModel: createModel(rounds),
       teamModel: createModel(teams),
       repositoryModel: createRepositoryModel(repositories),
@@ -173,7 +173,7 @@ test('createSubmission auto-links team repository and submitSubmission sets SUBM
   const { service, stores } = createSubmissionFixture()
 
   const created = await service.createSubmission({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     teamId: ids.team,
     demoUrl: 'https://example.com/demo'
@@ -198,7 +198,7 @@ test('submission writes require a JOINED participant membership, not only Team.m
 
   await assert.rejects(
     () => service.createSubmission({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       teamId: ids.team,
       demoUrl: 'https://example.com/demo'
@@ -214,7 +214,7 @@ test('createSubmission rejects when round submission window is not open', async 
 
   await assert.rejects(
     () => service.createSubmission({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       teamId: ids.team,
       demoUrl: 'https://example.com/demo'
@@ -230,7 +230,7 @@ test('createSubmission rejects when round submission window has closed', async (
 
   await assert.rejects(
     () => service.createSubmission({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       teamId: ids.team,
       demoUrl: 'https://example.com/demo'
@@ -246,7 +246,7 @@ test('createSubmission rejects when round has no assigned teams', async () => {
 
   await assert.rejects(
     () => service.createSubmission({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       teamId: ids.team,
       demoUrl: 'https://example.com/demo'
@@ -260,7 +260,7 @@ test('participant cannot create or read another team submission', async () => {
 
   await assert.rejects(
     () => service.createSubmission({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       teamId: ids.team,
       demoUrl: 'https://example.com/demo'
@@ -269,7 +269,7 @@ test('participant cannot create or read another team submission', async () => {
   )
 
   const created = await service.createSubmission({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     teamId: ids.team,
     demoUrl: 'https://example.com/demo'
@@ -286,20 +286,20 @@ test('listSubmissions scopes participant results to their own team', async () =>
 
   stores.submissions.set(ids.submission, {
     _id: ids.submission,
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     teamId: ids.team,
     status: 'SUBMITTED'
   })
   stores.submissions.set('eeeeeeeeeeeeeeeeeeeeeeef', {
     _id: 'eeeeeeeeeeeeeeeeeeeeeeef',
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     teamId: '111111111111111111111117',
     status: 'SUBMITTED'
   })
 
-  const { submissions, pagination } = await service.listSubmissions({ eventId: ids.event }, leaderActor)
+  const { submissions, pagination } = await service.listSubmissions({ competitionId: ids.competition }, leaderActor)
 
   assert.equal(submissions.length, 1)
   assert.equal(submissions[0].teamId, ids.team)
@@ -318,7 +318,7 @@ test('updateSubmissionStatus notifies team when submission is reviewed', async (
   })
 
   const created = await service.createSubmission({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     teamId: ids.team,
     demoUrl: 'https://example.com/demo',

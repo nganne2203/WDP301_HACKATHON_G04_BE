@@ -4,25 +4,25 @@ import test from 'node:test'
 import ApiError from '../src/utils/ApiError.js'
 import { createRepositoryService } from '../src/modules/repositories/repository.service.js'
 
-test('createRepository stores a linked repository and listRepositories filters by eventId', async () => {
-  const eventModule = await import('../src/models/event.model.js')
+test('createRepository stores a linked repository and listRepositories filters by competitionId', async () => {
+  const competitionModule = await import('../src/models/competition.model.js')
   const teamModule = await import('../src/models/team.model.js')
   const roundModule = await import('../src/models/round.model.js')
 
-  const EventModel = eventModule.default
+  const CompetitionModel = competitionModule.default
   const TeamModel = teamModule.default
   const RoundModel = roundModule.default
 
-  const originalEventFindById = EventModel.findById
+  const originalCompetitionFindById = CompetitionModel.findById
   const originalTeamFindById = TeamModel.findById
   const originalRoundFindById = RoundModel.findById
 
   const stored = new Map()
   let seq = 1
   const repository = {
-    count: async (filter = {}) => [...stored.values()].filter(item => !filter.eventId || item.eventId === filter.eventId).length,
+    count: async (filter = {}) => [...stored.values()].filter(item => !filter.competitionId || item.competitionId === filter.competitionId).length,
     findAll: async ({ filter = {} } = {}) => {
-      return [...stored.values()].filter(item => !filter.eventId || item.eventId === filter.eventId)
+      return [...stored.values()].filter(item => !filter.competitionId || item.competitionId === filter.competitionId)
     },
     findById: async (id) => stored.get(id) || null,
     findByTeamId: async (teamId) => [...stored.values()].find(item => item.teamId === teamId) || null,
@@ -42,15 +42,15 @@ test('createRepository stores a linked repository and listRepositories filters b
     }
   }
 
-  EventModel.findById = async () => ({ _id: '000000000000000000000101', title: 'SEAL' })
-  TeamModel.findById = async () => ({ _id: '000000000000000000000201', eventId: '000000000000000000000101', name: 'Team Alpha' })
-  RoundModel.findById = async () => ({ _id: '000000000000000000000301', eventId: '000000000000000000000101', name: 'Round 1' })
+  CompetitionModel.findById = async () => ({ _id: '000000000000000000000101', title: 'SEAL' })
+  TeamModel.findById = async () => ({ _id: '000000000000000000000201', competitionId: '000000000000000000000101', name: 'Team Alpha' })
+  RoundModel.findById = async () => ({ _id: '000000000000000000000301', competitionId: '000000000000000000000101', name: 'Round 1' })
 
   const service = createRepositoryService({ repository })
 
   try {
     const created = await service.createRepository({
-      eventId: '000000000000000000000101',
+      competitionId: '000000000000000000000101',
       teamId: '000000000000000000000201',
       roundId: '000000000000000000000301',
       githubOwner: 'seal-org',
@@ -64,13 +64,13 @@ test('createRepository stores a linked repository and listRepositories filters b
     assert.equal(created.repositoryFullName, 'seal-org/team-alpha')
 
     const listed = await service.listRepositories({
-      eventId: '000000000000000000000101'
+      competitionId: '000000000000000000000101'
     })
 
     assert.equal(listed.repositories.length, 1)
     assert.equal(listed.repositories[0].teamId, '000000000000000000000201')
   } finally {
-    EventModel.findById = originalEventFindById
+    CompetitionModel.findById = originalCompetitionFindById
     TeamModel.findById = originalTeamFindById
     RoundModel.findById = originalRoundFindById
   }
@@ -94,26 +94,26 @@ test('listRepositories treats search text as plain text', async () => {
 })
 
 test('listConfirmedTeamsMissingRepositories reports confirmed teams without a repo', async () => {
-  const eventModule = await import('../src/models/event.model.js')
+  const competitionModule = await import('../src/models/competition.model.js')
   const teamModule = await import('../src/models/team.model.js')
 
-  const EventModel = eventModule.default
+  const CompetitionModel = competitionModule.default
   const TeamModel = teamModule.default
 
-  const originalEventFindById = EventModel.findById
+  const originalCompetitionFindById = CompetitionModel.findById
   const originalTeamFind = TeamModel.find
 
-  EventModel.findById = async () => ({ _id: '000000000000000000000101', title: 'SEAL' })
+  CompetitionModel.findById = async () => ({ _id: '000000000000000000000101', title: 'SEAL' })
   TeamModel.find = () => ({
     sort: async () => [
-      { _id: '000000000000000000000201', eventId: '000000000000000000000101', name: 'Team Alpha', status: 'CONFIRMED' },
-      { _id: '000000000000000000000202', eventId: '000000000000000000000101', name: 'Team Beta', status: 'CONFIRMED' }
+      { _id: '000000000000000000000201', competitionId: '000000000000000000000101', name: 'Team Alpha', status: 'CONFIRMED' },
+      { _id: '000000000000000000000202', competitionId: '000000000000000000000101', name: 'Team Beta', status: 'CONFIRMED' }
     ]
   })
 
   const repository = {
     findAll: async () => [
-      { _id: 'repo-1', eventId: '000000000000000000000101', teamId: '000000000000000000000201' }
+      { _id: 'repo-1', competitionId: '000000000000000000000101', teamId: '000000000000000000000201' }
     ],
     count: async () => 1
   }
@@ -121,7 +121,7 @@ test('listConfirmedTeamsMissingRepositories reports confirmed teams without a re
 
   try {
     const result = await service.listConfirmedTeamsMissingRepositories({
-      eventId: '000000000000000000000101'
+      competitionId: '000000000000000000000101'
     })
 
     assert.equal(result.summary.confirmedTeamCount, 2)
@@ -129,19 +129,19 @@ test('listConfirmedTeamsMissingRepositories reports confirmed teams without a re
     assert.equal(result.teams[0].id, '000000000000000000000202')
     assert.equal(result.summary.provisioningMode, 'BULK_OR_MANUAL_REQUIRED')
   } finally {
-    EventModel.findById = originalEventFindById
+    CompetitionModel.findById = originalCompetitionFindById
     TeamModel.find = originalTeamFind
   }
 })
 
 test('createRepository rejects linking the same team twice', async () => {
-  const eventModule = await import('../src/models/event.model.js')
+  const competitionModule = await import('../src/models/competition.model.js')
   const teamModule = await import('../src/models/team.model.js')
 
-  const EventModel = eventModule.default
+  const CompetitionModel = competitionModule.default
   const TeamModel = teamModule.default
 
-  const originalEventFindById = EventModel.findById
+  const originalCompetitionFindById = CompetitionModel.findById
   const originalTeamFindById = TeamModel.findById
 
   const repository = {
@@ -155,15 +155,15 @@ test('createRepository rejects linking the same team twice', async () => {
     updateById: async () => null
   }
 
-  EventModel.findById = async () => ({ _id: '000000000000000000000101' })
-  TeamModel.findById = async () => ({ _id: '000000000000000000000201', eventId: '000000000000000000000101' })
+  CompetitionModel.findById = async () => ({ _id: '000000000000000000000101' })
+  TeamModel.findById = async () => ({ _id: '000000000000000000000201', competitionId: '000000000000000000000101' })
 
   const service = createRepositoryService({ repository })
 
   try {
     await assert.rejects(
       service.createRepository({
-        eventId: '000000000000000000000101',
+        competitionId: '000000000000000000000101',
         teamId: '000000000000000000000201',
         githubOwner: 'seal-org',
         githubRepo: 'team-alpha',
@@ -174,26 +174,26 @@ test('createRepository rejects linking the same team twice', async () => {
         error.errors.includes('A repository is already linked to this team')
     )
   } finally {
-    EventModel.findById = originalEventFindById
+    CompetitionModel.findById = originalCompetitionFindById
     TeamModel.findById = originalTeamFindById
   }
 })
 
 test('createRepository requires confirmed teams unless admin override is provided', async () => {
-  const eventModule = await import('../src/models/event.model.js')
+  const competitionModule = await import('../src/models/competition.model.js')
   const teamModule = await import('../src/models/team.model.js')
 
-  const EventModel = eventModule.default
+  const CompetitionModel = competitionModule.default
   const TeamModel = teamModule.default
 
-  const originalEventFindById = EventModel.findById
+  const originalCompetitionFindById = CompetitionModel.findById
   const originalTeamFindById = TeamModel.findById
 
   let createdRecord = null
   const repository = {
     count: async () => 0,
     findAll: async () => [],
-    findById: async (id) => createdRecord || ({ _id: id, eventId: '000000000000000000000101', teamId: '000000000000000000000201' }),
+    findById: async (id) => createdRecord || ({ _id: id, competitionId: '000000000000000000000101', teamId: '000000000000000000000201' }),
     findByTeamId: async () => null,
     listCommitsByRepository: async () => [],
     countCommitsByRepository: async () => 0,
@@ -204,10 +204,10 @@ test('createRepository requires confirmed teams unless admin override is provide
     updateById: async () => null
   }
 
-  EventModel.findById = async () => ({ _id: '000000000000000000000101' })
+  CompetitionModel.findById = async () => ({ _id: '000000000000000000000101' })
   TeamModel.findById = async () => ({
     _id: '000000000000000000000201',
-    eventId: '000000000000000000000101',
+    competitionId: '000000000000000000000101',
     status: 'WAITLISTED'
   })
 
@@ -216,7 +216,7 @@ test('createRepository requires confirmed teams unless admin override is provide
   try {
     await assert.rejects(
       service.createRepository({
-        eventId: '000000000000000000000101',
+        competitionId: '000000000000000000000101',
         teamId: '000000000000000000000201',
         githubOwner: 'seal-org',
         githubRepo: 'team-alpha',
@@ -227,7 +227,7 @@ test('createRepository requires confirmed teams unless admin override is provide
     )
 
     const created = await service.createRepository({
-      eventId: '000000000000000000000101',
+      competitionId: '000000000000000000000101',
       teamId: '000000000000000000000201',
       githubOwner: 'seal-org',
       githubRepo: 'team-alpha',
@@ -237,7 +237,7 @@ test('createRepository requires confirmed teams unless admin override is provide
 
     assert.equal(created.repositoryFullName, 'seal-org/team-alpha')
   } finally {
-    EventModel.findById = originalEventFindById
+    CompetitionModel.findById = originalCompetitionFindById
     TeamModel.findById = originalTeamFindById
   }
 })

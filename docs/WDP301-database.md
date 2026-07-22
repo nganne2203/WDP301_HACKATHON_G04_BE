@@ -65,10 +65,10 @@ This document defines the MongoDB data model for the SEAL backend based on the S
 
 **Seeded role-permission groups**
 - `ADMIN`: all permissions.
-- `EVENT_COORDINATOR` and `COORDINATOR`: event, track, workshop, team view, participant approval, judging assignment, GitHub, AI review, result publishing, audit view, and user management permissions.
-- `JUDGE`: event, track, workshop, team view, scoring, and AI review view permissions.
-- `MENTOR`: event, track, workshop, team view, and AI review view permissions.
-- `PARTICIPANT`: event, track, workshop, team create, and team view permissions.
+- `COMPETITION_COORDINATOR` and `COORDINATOR`: competition, track, workshop, team view, participant approval, judging assignment, GitHub, AI review, result publishing, audit view, and user management permissions.
+- `JUDGE`: competition, track, workshop, team view, scoring, and AI review view permissions.
+- `MENTOR`: competition, track, workshop, team view, and AI review view permissions.
+- `PARTICIPANT`: competition, track, workshop, team create, and team view permissions.
 
 Routes must not authorize by role name. Routes authorize through permission codes.
 
@@ -88,7 +88,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `code` unique
 
 **Current permission constants**
-- `EVENT_CREATE`, `EVENT_VIEW`, `EVENT_UPDATE`, `EVENT_DELETE`
+- `COMPETITION_CREATE`, `COMPETITION_VIEW`, `COMPETITION_UPDATE`, `COMPETITION_DELETE`
 - `TRACK_CREATE`, `TRACK_VIEW`, `TRACK_UPDATE`, `TRACK_DELETE`
 - `WORKSHOP_CREATE`, `WORKSHOP_VIEW`, `WORKSHOP_UPDATE`, `WORKSHOP_DELETE`
 - `WORKSHOP_QUESTION_CREATE`, `WORKSHOP_QUESTION_VIEW`, `WORKSHOP_QUESTION_VOTE`
@@ -108,9 +108,9 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.4 events
+### 2.4 competitions
 
-**Purpose:** Hackathon event container.
+**Purpose:** Hackathon competition container.
 
 **Fields**
 - `_id` (ObjectId)
@@ -129,13 +129,13 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ---
 
-### 2.5 timelineEvents
+### 2.5 timelineActivitys
 
-**Purpose:** Scheduled activities within an event.
+**Purpose:** Scheduled activities within an competition.
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events, required)
+- `competitionId` (ObjectId, ref: competitions, required)
 - `title` (string, required)
 - `description` (string)
 - `startTime` (date)
@@ -145,7 +145,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `createdAt`, `updatedAt`
 
 **Indexes**
-- `eventId, startTime`
+- `competitionId, startTime`
 - `eventType`
 
 ---
@@ -156,14 +156,14 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events, required)
-- `timelineEventId` (ObjectId, ref: timelineEvents)
+- `competitionId` (ObjectId, ref: competitions, required)
+- `timelineCompetitionId` (ObjectId, ref: timelineActivitys)
 - `title` (string, required)
 - `description` (string)
 - `presenterId` (ObjectId, ref: users)
 - `speakerInfo` (object: `name`, `title`, `bio`, `email`)
 - `meetLink` (string)
-- `googleMeet` (object: `enabled`, `meetLink`, `calendarEventId`, `htmlLink`, `organizerUserId`, `organizerEmail`, `createdAt`)
+- `googleMeet` (object: `enabled`, `meetLink`, `calendarCompetitionId`, `htmlLink`, `organizerUserId`, `organizerEmail`, `createdAt`)
 - `startTime` (date, required)
 - `endTime` (date, required)
 - `questionnaire` (string[])
@@ -171,7 +171,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `createdAt`, `updatedAt`
 
 **Indexes**
-- `eventId, startTime`
+- `competitionId, startTime`
 - `presenterId`
 - `status`
 
@@ -233,17 +233,17 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ### 2.10 tracks
 
-**Purpose:** Competition categories within an event.
+**Purpose:** Competition categories within an competition.
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events, required)
+- `competitionId` (ObjectId, ref: competitions, required)
 - `name` (string, required)
 - `description` (string)
 - `createdAt`, `updatedAt`
 
 **Indexes**
-- `eventId, name` unique
+- `competitionId, name` unique
 
 ---
 
@@ -253,7 +253,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events, required)
+- `competitionId` (ObjectId, ref: competitions, required)
 - `trackId` (ObjectId, ref: tracks)
 - `name` (string, required)
 - `submissionDeadline` (date)
@@ -265,7 +265,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `createdAt`, `updatedAt`
 
 **Indexes**
-- `eventId, trackId`
+- `competitionId, trackId`
 - `submissionDeadline`
 
 ---
@@ -276,7 +276,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events, required)
+- `competitionId` (ObjectId, ref: competitions, required)
 - `roundId` (ObjectId, ref: rounds, required)
 - `name` (string, required)
 - `boardNumber` (number, required)
@@ -287,7 +287,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `createdAt`, `updatedAt`
 
 **Indexes**
-- `eventId, roundId, boardNumber` unique
+- `competitionId, roundId, boardNumber` unique
 - `judgeIds`
 - `teamIds`
 
@@ -295,11 +295,11 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ### 2.13 participants
 
-**Purpose:** Hackathon participant records for event registration, team assignment, check-in, and GitHub access.
+**Purpose:** Hackathon participant records for competition registration, team assignment, check-in, and GitHub access.
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events, required)
+- `competitionId` (ObjectId, ref: competitions, required)
 - `userId` (ObjectId, ref: users, required)
 - `teamId` (ObjectId, ref: teams)
 - `teamRole` (string, enum: MEMBER, LEADER)
@@ -310,8 +310,8 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `createdAt`, `updatedAt`
 
 **Indexes**
-- `eventId, userId` unique
-- `eventId, teamId`
+- `competitionId, userId` unique
+- `competitionId, teamId`
 - `checkInStatus`
 - `githubAccessStatus`
 - `teamId, teamRole` unique for `teamRole = LEADER`
@@ -324,14 +324,14 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events, required)
+- `competitionId` (ObjectId, ref: competitions, required)
 - `trackId` (ObjectId, ref: tracks)
 - `name` (string, required)
 - `status` (string, enum: ACTIVE, INACTIVE, DISQUALIFIED)
 - `createdAt`, `updatedAt`
 
 **Indexes**
-- `eventId, trackId`
+- `competitionId, trackId`
 - `name`
 
 ---
@@ -342,7 +342,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events)
+- `competitionId` (ObjectId, ref: competitions)
 - `teamId` (ObjectId, ref: teams, required)
 - `githubOrg` (string)
 - `repoName` (string)
@@ -388,7 +388,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events)
+- `competitionId` (ObjectId, ref: competitions)
 - `roundId` (ObjectId, ref: rounds, required)
 - `teamId` (ObjectId, ref: teams, required)
 - `repositoryId` (ObjectId, ref: repositories)
@@ -411,7 +411,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events)
+- `competitionId` (ObjectId, ref: competitions)
 - `title` (string, required)
 - `description` (string)
 - `totalScore` (number)
@@ -419,7 +419,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `createdAt`, `updatedAt`
 
 **Indexes**
-- `eventId`
+- `competitionId`
 
 ---
 
@@ -470,7 +470,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events, required)
+- `competitionId` (ObjectId, ref: competitions, required)
 - `rankingType` (string, enum: TEAM, CHAPTER, INDIVIDUAL)
 - `roundId` (ObjectId, ref: rounds)
 - `trackId` (ObjectId, ref: tracks)
@@ -492,12 +492,12 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `createdAt`, `updatedAt`
 
 **Indexes**
-- `eventId, rankingType, roundId, trackId`
-- `eventId, rankingType, teamId`
-- `eventId, rankingType, participantId`
-- `eventId, rankingType, chapterName`
-- `eventId, rankingType, roundId, trackId, rank` unique
-- `eventId, roundId, isSelectedForFinal`
+- `competitionId, rankingType, roundId, trackId`
+- `competitionId, rankingType, teamId`
+- `competitionId, rankingType, participantId`
+- `competitionId, rankingType, chapterName`
+- `competitionId, rankingType, roundId, trackId, rank` unique
+- `competitionId, roundId, isSelectedForFinal`
 - `rank`
 
 ---
@@ -508,7 +508,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events, required)
+- `competitionId` (ObjectId, ref: competitions, required)
 - `title` (string, required)
 - `description` (string)
 - `amount` (number)
@@ -517,7 +517,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `createdAt`, `updatedAt`
 
 **Indexes**
-- `eventId`
+- `competitionId`
 
 ---
 
@@ -596,11 +596,11 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ### 2.26 media
 
-**Purpose:** Uploaded event media metadata for Supabase Storage-backed galleries, participant upload history, and moderation.
+**Purpose:** Uploaded competition media metadata for Supabase Storage-backed galleries, participant upload history, and moderation.
 
 **Fields**
 - `_id` (ObjectId)
-- `eventId` (ObjectId, ref: events, required)
+- `competitionId` (ObjectId, ref: competitions, required)
 - `uploadedBy` (ObjectId, ref: users, required)
 - `teamId` (ObjectId, ref: teams)
 - `title` (string)
@@ -623,13 +623,13 @@ Routes must not authorize by role name. Routes authorize through permission code
 - `createdAt`, `updatedAt`
 
 **Indexes**
-- `eventId`
+- `competitionId`
 - `uploadedBy`
 - `teamId`
 - `mediaType`
 - `status`
 - `uploadedAt`
-- `eventId, uploadedAt`
+- `competitionId, uploadedAt`
 - `uploadedBy, uploadedAt`
 - `tags`
 
@@ -642,7 +642,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 **Fields**
 - `_id` (ObjectId)
 - `mediaId` (ObjectId, ref: media, required)
-- `eventId` (ObjectId, ref: events, required)
+- `competitionId` (ObjectId, ref: competitions, required)
 - `userId` (ObjectId, ref: users, required)
 - `action` (string, enum: UPLOAD, VIEW, DOWNLOAD, APPROVE, REJECT, DELETE)
 - `metadata` (object)
@@ -650,7 +650,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 **Indexes**
 - `mediaId, createdAt`
-- `eventId, createdAt`
+- `competitionId, createdAt`
 - `userId, createdAt`
 - `action, createdAt`
 
@@ -695,7 +695,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 
 ## 3. Relationships Summary
 
-- One `event` has many `participants`, `timelineEvents`, `workshops`, `tracks`, `rounds`, `judgingBoards`, `teams`, `repositories`, `submissions`, `rubrics`, `rankings`, `prizes`, `media`.
+- One `competition` has many `participants`, `timelineActivitys`, `workshops`, `tracks`, `rounds`, `judgingBoards`, `teams`, `repositories`, `submissions`, `rubrics`, `rankings`, `prizes`, `media`.
 - One `user` can have many assigned `roles`.
 - One `role` has many `permissions`.
 - One `track` has many `rounds` and `teams`.
@@ -709,7 +709,7 @@ Routes must not authorize by role name. Routes authorize through permission code
 - One `score` can reference one `aiReviewCriterion` as an AI-suggested criterion score for judge review.
 - One `rubric` has many `criteria`.
 - One `aiReview` has many `aiReviewCriteria`.
-- One `user` can have multiple `participants` across events.
+- One `user` can have multiple `participants` across competitions.
 - One `media` item has many `mediaActivities`.
 
 ---
@@ -721,18 +721,18 @@ Routes must not authorize by role name. Routes authorize through permission code
 - **Finalist selection:** filter `rankings` by `isSelectedForFinal` and review `selectionReason`.
 - **Workshop rating:** average `workshopFeedback.rating` by `workshopId`.
 - **Dashboard totals:** precompute counts for participants, teams, submissions, commits, pending AI reviews.
-- **Media statistics:** aggregate `media` by event, team, uploader, status, media type, and upload date; aggregate `mediaActivities` by `VIEW` action for most-viewed media.
+- **Media statistics:** aggregate `media` by competition, team, uploader, status, media type, and upload date; aggregate `mediaActivities` by `VIEW` action for most-viewed media.
 
 ---
 
 ## 5. Data Integrity Notes
 
-- Enforce maximum 30 teams per event using application-level validation.
+- Enforce maximum 30 teams per competition using application-level validation.
 - Enforce team size using `participants` counts per team.
 - Enforce exactly one leader per team with a unique constraint on `teamId + teamRole = LEADER` or application-level validation.
 - Ensure `roundId + teamId` uniqueness for submissions.
 - Store external secrets in `systemConfigurations` with encryption at rest.
-- Store actual event media files in Supabase Storage, and store only metadata in `media`.
+- Store actual competition media files in Supabase Storage, and store only metadata in `media`.
 - Store `media.supabase_service_role_key_encrypted` encrypted in `systemConfigurations`; never return the service role key from APIs.
 - Keep authorization checks permission-based. Roles should remain permission groups, not route-level access conditions.
 - For webhook reliability, store processing status in `auditLogs` or a dedicated webhook log collection if needed.

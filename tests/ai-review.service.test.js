@@ -50,7 +50,7 @@ const createAiReviewRepository = () => {
       findRepositoryById: async (id) => repositories.get(id) || null,
       findTeamById: async (id) => teams.get(id) || null,
       findRepositoriesByTeamId: async (teamId) => [...repositories.values()].filter(repository => repository.teamId?._id === teamId || repository.teamId === teamId),
-      findEventById: async () => null,
+      findCompetitionById: async () => null,
       findRoundById: async () => null,
       findRubricById: async (id) => rubrics.get(id) || null,
       findCriteriaByRubricId: async (rubricId) => criteriaByRubric.get(rubricId) || [],
@@ -113,14 +113,14 @@ const createRepositoryFixture = ({ impactDecision, commitSha = 'commit-1' }) => 
   const { repository, stores } = createAiReviewRepository()
   const repositoryId = 'repo-1'
   const teamId = 'team-1'
-  const eventId = 'event-1'
+  const competitionId = 'competition-1'
   const roundId = 'round-1'
   const rubricId = 'rubric-1'
 
   stores.repositories.set(repositoryId, {
     _id: repositoryId,
-    eventId: {
-      _id: eventId,
+    competitionId: {
+      _id: competitionId,
       title: 'SEAL',
       semester: 'SP26',
       season: 'SPRING',

@@ -98,7 +98,7 @@ const normalizeRepository = (repository) => {
 
   return {
     id: plain._id?.toString() || plain.id,
-    eventId: plain.eventId?._id?.toString?.() || plain.eventId?.toString?.() || plain.eventId,
+    competitionId: plain.competitionId?._id?.toString?.() || plain.competitionId?.toString?.() || plain.competitionId,
     teamId: plain.teamId?._id?.toString?.() || plain.teamId?.toString?.() || plain.teamId,
     roundId: plain.roundId?._id?.toString?.() || plain.roundId?.toString?.() || plain.roundId || null,
     repositoryFullName: plain.repositoryFullName,
@@ -114,14 +114,14 @@ const normalizeRepository = (repository) => {
       chapterName: plain.teamId.chapterName,
       status: plain.teamId.status
     } : null,
-    event: plain.eventId ? {
-      id: plain.eventId._id?.toString?.() || plain.eventId.id,
-      title: plain.eventId.title,
-      semester: plain.eventId.semester,
-      season: plain.eventId.season,
-      year: plain.eventId.year,
-      status: plain.eventId.status,
-      competitionConfig: plain.eventId.competitionConfig || null
+    competition: plain.competitionId ? {
+      id: plain.competitionId._id?.toString?.() || plain.competitionId.id,
+      title: plain.competitionId.title,
+      semester: plain.competitionId.semester,
+      season: plain.competitionId.season,
+      year: plain.competitionId.year,
+      status: plain.competitionId.status,
+      competitionConfig: plain.competitionId.competitionConfig || null
     } : null,
     round: plain.roundId ? {
       id: plain.roundId._id?.toString?.() || plain.roundId.id,
@@ -144,7 +144,7 @@ const normalizeAiReview = (aiReview) => {
   return {
     id: plain._id?.toString() || plain.id,
     repositoryId: plain.repositoryId?._id?.toString?.() || plain.repositoryId?.toString?.() || plain.repositoryId,
-    eventId: plain.eventId?._id?.toString?.() || plain.eventId?.toString?.() || plain.eventId || null,
+    competitionId: plain.competitionId?._id?.toString?.() || plain.competitionId?.toString?.() || plain.competitionId || null,
     teamId: plain.teamId?._id?.toString?.() || plain.teamId?.toString?.() || plain.teamId || null,
     roundId: plain.roundId?._id?.toString?.() || plain.roundId?.toString?.() || plain.roundId || null,
     commitId: plain.commitId?._id?.toString?.() || plain.commitId?.toString?.() || plain.commitId || null,
@@ -208,7 +208,7 @@ const buildRubricContext = ({ rubric, criteria }) => {
       maxScore: criterion.maxScore,
       weight: criterion.weight,
       judgeOnly: Boolean(criterion.judgeOnly),
-      aiSupportForAudit: criterion.aiSupportForAudit !== false,
+      aiSupportForAudit: Boolean(criterion.aiSupportForAudit),
       aiInstruction: criterion.aiInstruction || null,
       order: index
     }))
@@ -398,7 +398,7 @@ export const createAiReviewService = ({
         reviewContext: promptInput,
         aiReviewId,
         callbackUrl,
-        eventId: aiReview.eventId?._id?.toString?.() || aiReview.eventId?.toString?.() || aiReview.eventId
+        competitionId: aiReview.competitionId?._id?.toString?.() || aiReview.competitionId?.toString?.() || aiReview.competitionId
       })
       return
     }
@@ -407,7 +407,7 @@ export const createAiReviewService = ({
       reviewContext: promptInput,
       aiReviewId,
       callbackUrl,
-      eventId: aiReview.eventId?._id?.toString?.() || aiReview.eventId?.toString?.() || aiReview.eventId
+      competitionId: aiReview.competitionId?._id?.toString?.() || aiReview.competitionId?.toString?.() || aiReview.competitionId
     })
   }
 
@@ -573,12 +573,12 @@ export const createAiReviewService = ({
     branch = null,
     beforeCommitSha = null,
     deliveryId = null,
-    deliveryEventId = null,
+    deliveryCompetitionId = null,
     triggerSource = 'manual'
   }) => {
     return {
       reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
-      eventContext: normalizedRepository.event || null,
+      eventContext: normalizedRepository.competition || null,
       roundContext: normalizedRepository.round || null,
       repositoryContext: {
         id: normalizedRepository.id,
@@ -593,7 +593,7 @@ export const createAiReviewService = ({
       triggerContext: {
         source: triggerSource,
         deliveryId,
-        deliveryEventId,
+        deliveryCompetitionId,
         branch: branch || normalizedRepository.defaultBranch || null,
         beforeCommitSha,
         afterCommitSha: commitSha,
@@ -618,7 +618,7 @@ export const createAiReviewService = ({
   }) => {
     return {
       reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
-      eventContext: normalizedRepository.event || null,
+      eventContext: normalizedRepository.competition || null,
       roundContext: normalizedRepository.round || null,
       repositoryContext: {
         id: normalizedRepository.id,
@@ -702,7 +702,7 @@ export const createAiReviewService = ({
     branch = null,
     beforeCommitSha = null,
     deliveryId = null,
-    deliveryEventId = null,
+    deliveryCompetitionId = null,
     source = 'manual'
   }) => {
     if (aiReviewId) {
@@ -722,12 +722,12 @@ export const createAiReviewService = ({
       branch,
       beforeCommitSha,
       deliveryId,
-      deliveryEventId,
+      deliveryCompetitionId,
       triggerSource: source
     })
 
     const aiReview = await repository.createAiReview({
-      eventId: context.repository.eventId,
+      competitionId: context.repository.competitionId,
       teamId: context.repository.teamId,
       roundId: context.repository.roundId || undefined,
       repositoryId,
@@ -778,7 +778,7 @@ export const createAiReviewService = ({
     })
 
     const aiReview = await repository.createAiReview({
-      eventId: context.repository.eventId,
+      competitionId: context.repository.competitionId,
       teamId: context.repository.teamId,
       roundId: context.repository.roundId || undefined,
       repositoryId,

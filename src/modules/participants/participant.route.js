@@ -26,7 +26,7 @@ router.get(
 
 router.post(
   '/',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(PARTICIPANT_VALIDATION.createParticipant),
   PARTICIPANT_CONTROLLER.createParticipant
 )

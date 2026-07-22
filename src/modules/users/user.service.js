@@ -248,9 +248,9 @@ const ensureGithubUsernameCanBeChanged = async (userId, existingGithubUsername, 
   const blockingParticipant = await USER_REPOSITORY.findStartedJoinedParticipantByUserId(userId)
   if (!blockingParticipant) return
 
-  const eventTitle = blockingParticipant.eventId?.title || 'a started event'
+  const eventTitle = blockingParticipant.competitionId?.title || 'a started competition'
   throw new ApiError(ERROR_CODES.FORBIDDEN, [
-    `GitHub username cannot be changed after joining ${eventTitle} because the event has already started`
+    `GitHub username cannot be changed after joining ${eventTitle} because the competition has already started`
   ])
 }
 

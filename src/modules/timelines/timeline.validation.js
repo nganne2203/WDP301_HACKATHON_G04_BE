@@ -1,7 +1,7 @@
 import Joi from 'joi'
 
 const objectId = Joi.string().hex().length(24)
-const eventType = Joi.string().trim().uppercase().valid('WORKSHOP', 'CHECK_IN', 'ROUND', 'RESULT_PUBLISHING', 'CEREMONY', 'OTHER')
+const activityType = Joi.string().trim().uppercase().valid('WORKSHOP', 'CHECK_IN', 'ROUND', 'RESULT_PUBLISHING', 'CEREMONY', 'OTHER')
 const timelineStatus = Joi.string().trim().uppercase().valid('SCHEDULED', 'ONGOING', 'COMPLETED', 'CANCELLED')
 
 const idParam = Joi.object({
@@ -12,8 +12,8 @@ const listTimelines = {
   query: Joi.object({
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10),
-    eventId: objectId,
-    eventType,
+    competitionId: objectId,
+    activityType,
     status: timelineStatus,
     search: Joi.string().trim().max(100)
   })
@@ -21,12 +21,12 @@ const listTimelines = {
 
 const createTimeline = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     title: Joi.string().trim().min(2).max(200).required(),
     description: Joi.string().trim().max(2000).allow('', null),
     startTime: Joi.date().iso(),
     endTime: Joi.date().iso().min(Joi.ref('startTime')),
-    eventType: eventType.default('OTHER'),
+    activityType: activityType.default('OTHER'),
     status: timelineStatus.default('SCHEDULED')
   })
 }
@@ -34,12 +34,12 @@ const createTimeline = {
 const updateTimeline = {
   params: idParam,
   body: Joi.object({
-    eventId: objectId,
+    competitionId: objectId,
     title: Joi.string().trim().min(2).max(200),
     description: Joi.string().trim().max(2000).allow('', null),
     startTime: Joi.date().iso(),
     endTime: Joi.date().iso(),
-    eventType,
+    activityType,
     status: timelineStatus
   }).min(1)
 }

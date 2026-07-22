@@ -4,7 +4,7 @@ const { Schema } = mongoose
 
 const rankingSchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true },
     rankingType: {
       type: String,
       enum: ['TEAM', 'CHAPTER', 'INDIVIDUAL'],
@@ -46,12 +46,12 @@ const rankingSchema = new Schema(
   { timestamps: true }
 )
 
-rankingSchema.index({ eventId: 1, rankingType: 1, roundId: 1, trackId: 1 })
-rankingSchema.index({ eventId: 1, rankingType: 1, teamId: 1 })
-rankingSchema.index({ eventId: 1, rankingType: 1, participantId: 1 })
-rankingSchema.index({ eventId: 1, rankingType: 1, chapterName: 1 })
-rankingSchema.index({ eventId: 1, rankingType: 1, roundId: 1, trackId: 1, rank: 1 })
-rankingSchema.index({ eventId: 1, roundId: 1, isSelectedForFinal: 1 })
+rankingSchema.index({ competitionId: 1, rankingType: 1, roundId: 1, trackId: 1 })
+rankingSchema.index({ competitionId: 1, rankingType: 1, teamId: 1 })
+rankingSchema.index({ competitionId: 1, rankingType: 1, participantId: 1 })
+rankingSchema.index({ competitionId: 1, rankingType: 1, chapterName: 1 })
+rankingSchema.index({ competitionId: 1, rankingType: 1, roundId: 1, trackId: 1, rank: 1 })
+rankingSchema.index({ competitionId: 1, roundId: 1, isSelectedForFinal: 1 })
 rankingSchema.index({ rank: 1 })
 
 rankingSchema.pre('validate', function validateRankingTarget(next) {

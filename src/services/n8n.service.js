@@ -9,8 +9,8 @@ export const createN8nService = ({
   githubTokenProvider = GITHUB_SERVICE.getTokenForN8nDispatch,
   encryption = ENCRYPTION_UTILS
 } = {}) => {
-  const buildDispatchPayload = async ({ reviewKind, aiReviewId, callbackUrl, reviewContext, eventId }) => {
-    const githubToken = await githubTokenProvider({ eventId, reviewKind, reviewContext })
+  const buildDispatchPayload = async ({ reviewKind, aiReviewId, callbackUrl, reviewContext, competitionId }) => {
+    const githubToken = await githubTokenProvider({ competitionId, reviewKind, reviewContext })
     const encryptedGithubToken = encryption.encryptGithubTokenForN8n(githubToken)
 
     return {
@@ -66,26 +66,26 @@ export const createN8nService = ({
   }
 
   return {
-    async triggerPerPushAudit({ reviewContext, aiReviewId, callbackUrl, eventId }) {
+    async triggerPerPushAudit({ reviewContext, aiReviewId, callbackUrl, competitionId }) {
       const config = getConfig()
       const payload = await buildDispatchPayload({
         reviewKind: 'PER_PUSH_TECHNICAL_AUDIT',
         aiReviewId,
         callbackUrl,
         reviewContext,
-        eventId
+        competitionId
       })
       return await triggerN8nWebhook(config.perPushWebhookUrl, payload)
     },
 
-    async triggerTeamAggregateAudit({ reviewContext, aiReviewId, callbackUrl, eventId }) {
+    async triggerTeamAggregateAudit({ reviewContext, aiReviewId, callbackUrl, competitionId }) {
       const config = getConfig()
       const payload = await buildDispatchPayload({
         reviewKind: 'TEAM_AGGREGATE_TECHNICAL_AUDIT',
         aiReviewId,
         callbackUrl,
         reviewContext,
-        eventId
+        competitionId
       })
       return await triggerN8nWebhook(config.aggregateWebhookUrl || config.teamAggregateWebhookUrl, payload)
     }

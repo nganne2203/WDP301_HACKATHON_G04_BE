@@ -8,9 +8,9 @@ import Team from '#models/team.model.js'
 import { QUEUE_SERVICE } from '#services/queue.service.js'
 import { env } from '#configs/environment.js'
 
-const buildEventRoundFilter = ({ eventId, roundId }) => {
+const buildCompetitionRoundFilter = ({ competitionId, roundId }) => {
   const filter = {}
-  if (eventId) filter.eventId = eventId
+  if (competitionId) filter.competitionId = competitionId
   if (roundId) filter.roundId = roundId
   return filter
 }
@@ -46,11 +46,11 @@ export const createOperationsService = ({
   queueService = QUEUE_SERVICE,
   config = env
 } = {}) => {
-  const getDashboardMetrics = async ({ eventId, roundId } = {}) => {
-    const baseFilter = buildEventRoundFilter({ eventId, roundId })
-    const repositoryFilter = eventId ? { eventId, ...(roundId ? { roundId } : {}) } : {}
+  const getDashboardMetrics = async ({ competitionId, roundId } = {}) => {
+    const baseFilter = buildCompetitionRoundFilter({ competitionId, roundId })
+    const repositoryFilter = competitionId ? { competitionId, ...(roundId ? { roundId } : {}) } : {}
     const aiReviewFilter = {
-      ...(eventId ? { eventId } : {}),
+      ...(competitionId ? { competitionId } : {}),
       ...(roundId ? { roundId } : {})
     }
 
@@ -59,7 +59,7 @@ export const createOperationsService = ({
       queueSummary = await queueService.getQueueSummary()
     } catch (error) {
       queueSummary = {
-        queueName: 'github-push-events',
+        queueName: 'github-push-competitions',
         redisStatus: 'not_ready',
         counts: {
           waiting: 0,
@@ -74,8 +74,8 @@ export const createOperationsService = ({
     }
 
     const [participants, teams, submissions, repositories, pendingAiReviews, failedAiReviews, retryPendingAiReviews, manualRedispatchRequiredAiReviews] = await Promise.all([
-      participantModel.countDocuments(eventId ? { eventId } : {}),
-      teamModel.countDocuments(eventId ? { eventId } : {}),
+      participantModel.countDocuments(competitionId ? { competitionId } : {}),
+      teamModel.countDocuments(competitionId ? { competitionId } : {}),
       submissionModel.countDocuments(baseFilter),
       repositoryModel.countDocuments(repositoryFilter),
       aiReviewModel.countDocuments({
@@ -100,7 +100,7 @@ export const createOperationsService = ({
 
     return {
       scope: {
-        eventId: eventId || null,
+        competitionId: competitionId || null,
         roundId: roundId || null
       },
       metrics: {
@@ -119,8 +119,8 @@ export const createOperationsService = ({
     }
   }
 
-  const getPipelineSummary = async ({ eventId, roundId } = {}) => {
-    const repositoryFilter = eventId ? { eventId, ...(roundId ? { roundId } : {}) } : {}
+  const getPipelineSummary = async ({ competitionId, roundId } = {}) => {
+    const repositoryFilter = competitionId ? { competitionId, ...(roundId ? { roundId } : {}) } : {}
     const repositoryIds = await repositoryModel.find(repositoryFilter).select('_id')
     const repositoryIdValues = repositoryIds.map(item => item._id)
     const scopedCommitDiffFilter = repositoryIdValues.length > 0 ? { repositoryId: { $in: repositoryIdValues } } : {}
@@ -130,7 +130,7 @@ export const createOperationsService = ({
       queueSummary = await queueService.getQueueSummary()
     } catch (error) {
       queueSummary = {
-        queueName: 'github-push-events',
+        queueName: 'github-push-competitions',
         redisStatus: 'not_ready',
         counts: {},
         error: error.message
@@ -150,7 +150,7 @@ export const createOperationsService = ({
         { $sort: { count: -1, status: 1 } }
       ]),
       aiReviewModel.aggregate([
-        { $match: buildEventRoundFilter({ eventId, roundId }) },
+        { $match: buildCompetitionRoundFilter({ competitionId, roundId }) },
         { $group: { _id: '$status', count: { $sum: 1 } } },
         { $project: { _id: 0, status: '$_id', count: 1 } },
         { $sort: { count: -1, status: 1 } }
@@ -161,7 +161,7 @@ export const createOperationsService = ({
 
     return {
       scope: {
-        eventId: eventId || null,
+        competitionId: competitionId || null,
         roundId: roundId || null
       },
       queue: queueSummary,

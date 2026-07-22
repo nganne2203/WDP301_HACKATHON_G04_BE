@@ -5,16 +5,17 @@ import ApiError from '../src/utils/ApiError.js'
 import { createJudgingBoardService } from '../src/modules/judging-boards/judging-board.service.js'
 
 test('previewRandomizedBoards only includes eligible teams and builds board A/B style names', async () => {
-  const eventModule = await import('../src/models/event.model.js')
+  const competitionModule = await import('../src/models/competition.model.js')
   const roundModule = await import('../src/models/round.model.js')
   const teamModule = await import('../src/models/team.model.js')
 
-  const EventModel = eventModule.default
+  const CompetitionModel = competitionModule.default
   const RoundModel = roundModule.default
   const TeamModel = teamModule.default
 
-  const originalEventFindById = EventModel.findById
+  const originalCompetitionFindById = CompetitionModel.findById
   const originalRoundFindById = RoundModel.findById
+  const originalRoundFind = RoundModel.find
   const originalTeamFind = TeamModel.find
 
   const storedBoards = new Map()
@@ -49,14 +50,17 @@ test('previewRandomizedBoards only includes eligible teams and builds board A/B 
     }
   }
 
-  EventModel.findById = async () => ({
+  CompetitionModel.findById = async () => ({
     _id: '000000000000000000000101',
     competitionConfig: { boardCount: 3, maxTeamsPerBoard: 2 }
   })
   RoundModel.findById = async () => ({
     _id: '000000000000000000000201',
-    eventId: '000000000000000000000101',
-    assignedTeamIds: ['000000000000000000000301', '000000000000000000000302', '000000000000000000000303']
+    competitionId: '000000000000000000000101',
+    roundType: 'PRELIMINARY'
+  })
+  RoundModel.find = () => ({
+    select: async () => [{ _id: '000000000000000000000201', trackId: null }]
   })
   TeamModel.find = () => ({
     sort: async () => [
@@ -70,7 +74,7 @@ test('previewRandomizedBoards only includes eligible teams and builds board A/B 
 
   try {
     const result = await service.previewRandomizedBoards({
-      eventId: '000000000000000000000101',
+      competitionId: '000000000000000000000101',
       roundId: '000000000000000000000201'
     })
 
@@ -81,23 +85,25 @@ test('previewRandomizedBoards only includes eligible teams and builds board A/B 
     assert.equal(result.boards[1].name, 'Board B')
     assert.equal(result.boards[2].name, 'Board C')
   } finally {
-    EventModel.findById = originalEventFindById
+    CompetitionModel.findById = originalCompetitionFindById
     RoundModel.findById = originalRoundFindById
+    RoundModel.find = originalRoundFind
     TeamModel.find = originalTeamFind
   }
 })
 
 test('confirmRandomizedBoards persists boardNumber and placementSlot only after confirmation', async () => {
-  const eventModule = await import('../src/models/event.model.js')
+  const competitionModule = await import('../src/models/competition.model.js')
   const roundModule = await import('../src/models/round.model.js')
   const teamModule = await import('../src/models/team.model.js')
 
-  const EventModel = eventModule.default
+  const CompetitionModel = competitionModule.default
   const RoundModel = roundModule.default
   const TeamModel = teamModule.default
 
-  const originalEventFindById = EventModel.findById
+  const originalCompetitionFindById = CompetitionModel.findById
   const originalRoundFindById = RoundModel.findById
+  const originalRoundFindByIdAndUpdate = RoundModel.findByIdAndUpdate
   const originalTeamFind = TeamModel.find
   const originalUpdateMany = TeamModel.updateMany
   const originalFindByIdAndUpdate = TeamModel.findByIdAndUpdate
@@ -136,15 +142,16 @@ test('confirmRandomizedBoards persists boardNumber and placementSlot only after 
     }
   }
 
-  EventModel.findById = async () => ({
+  CompetitionModel.findById = async () => ({
     _id: '000000000000000000000101',
     competitionConfig: { boardCount: 2, maxTeamsPerBoard: 1 }
   })
   RoundModel.findById = async () => ({
     _id: '000000000000000000000201',
-    eventId: '000000000000000000000101',
+    competitionId: '000000000000000000000101',
     assignedTeamIds: ['000000000000000000000301', '000000000000000000000302']
   })
+  RoundModel.findByIdAndUpdate = async () => null
   TeamModel.find = () => ({
     sort: async () => [...teamState.values()]
   })
@@ -158,7 +165,7 @@ test('confirmRandomizedBoards persists boardNumber and placementSlot only after 
 
   try {
     const result = await service.confirmRandomizedBoards({
-      eventId: '000000000000000000000101',
+      competitionId: '000000000000000000000101',
       roundId: '000000000000000000000201',
       boards: [
         { boardNumber: 1, name: 'Board A', teamIds: ['000000000000000000000301'] },
@@ -174,8 +181,9 @@ test('confirmRandomizedBoards persists boardNumber and placementSlot only after 
     assert.equal(teamState.get('000000000000000000000301')?.placementSlot, 1)
     assert.equal(teamState.get('000000000000000000000302')?.boardNumber, 2)
   } finally {
-    EventModel.findById = originalEventFindById
+    CompetitionModel.findById = originalCompetitionFindById
     RoundModel.findById = originalRoundFindById
+    RoundModel.findByIdAndUpdate = originalRoundFindByIdAndUpdate
     TeamModel.find = originalTeamFind
     TeamModel.updateMany = originalUpdateMany
     TeamModel.findByIdAndUpdate = originalFindByIdAndUpdate
@@ -183,15 +191,15 @@ test('confirmRandomizedBoards persists boardNumber and placementSlot only after 
 })
 
 test('previewRandomizedBoards distributes teams evenly across boards', async () => {
-  const eventModule = await import('../src/models/event.model.js')
+  const competitionModule = await import('../src/models/competition.model.js')
   const roundModule = await import('../src/models/round.model.js')
   const teamModule = await import('../src/models/team.model.js')
 
-  const EventModel = eventModule.default
+  const CompetitionModel = competitionModule.default
   const RoundModel = roundModule.default
   const TeamModel = teamModule.default
 
-  const originalEventFindById = EventModel.findById
+  const originalCompetitionFindById = CompetitionModel.findById
   const originalRoundFindById = RoundModel.findById
   const originalTeamFind = TeamModel.find
 
@@ -208,13 +216,13 @@ test('previewRandomizedBoards distributes teams evenly across boards', async () 
     deleteManyByRoundExcludingBoardNumbers: async () => null
   }
 
-  EventModel.findById = async () => ({
+  CompetitionModel.findById = async () => ({
     _id: '000000000000000000000101',
     competitionConfig: { boardCount: 3, maxTeamsPerBoard: 20 }
   })
   RoundModel.findById = async () => ({
     _id: '000000000000000000000201',
-    eventId: '000000000000000000000101',
+    competitionId: '000000000000000000000101',
     assignedTeamIds: teamIds
   })
   TeamModel.find = () => ({
@@ -229,28 +237,28 @@ test('previewRandomizedBoards distributes teams evenly across boards', async () 
 
   try {
     const result = await service.previewRandomizedBoards({
-      eventId: '000000000000000000000101',
+      competitionId: '000000000000000000000101',
       roundId: '000000000000000000000201'
     })
 
     assert.deepEqual(result.boards.map(board => board.teamIds.length), [10, 10, 10])
   } finally {
-    EventModel.findById = originalEventFindById
+    CompetitionModel.findById = originalCompetitionFindById
     RoundModel.findById = originalRoundFindById
     TeamModel.find = originalTeamFind
   }
 })
 
 test('confirmRandomizedBoards validates board count, board numbers, and max teams per board', async () => {
-  const eventModule = await import('../src/models/event.model.js')
+  const competitionModule = await import('../src/models/competition.model.js')
   const roundModule = await import('../src/models/round.model.js')
   const teamModule = await import('../src/models/team.model.js')
 
-  const EventModel = eventModule.default
+  const CompetitionModel = competitionModule.default
   const RoundModel = roundModule.default
   const TeamModel = teamModule.default
 
-  const originalEventFindById = EventModel.findById
+  const originalCompetitionFindById = CompetitionModel.findById
   const originalRoundFindById = RoundModel.findById
   const originalTeamFind = TeamModel.find
   const originalUpdateMany = TeamModel.updateMany
@@ -274,13 +282,13 @@ test('confirmRandomizedBoards validates board count, board numbers, and max team
     replaceRoundTeamPlacements: async () => []
   }
 
-  EventModel.findById = async () => ({
+  CompetitionModel.findById = async () => ({
     _id: '000000000000000000000101',
     competitionConfig: { boardCount: 2, maxTeamsPerBoard: 2 }
   })
   RoundModel.findById = async () => ({
     _id: '000000000000000000000201',
-    eventId: '000000000000000000000101',
+    competitionId: '000000000000000000000101',
     assignedTeamIds: teamIds
   })
   TeamModel.find = () => ({
@@ -298,7 +306,7 @@ test('confirmRandomizedBoards validates board count, board numbers, and max team
   try {
     await assert.rejects(
       service.confirmRandomizedBoards({
-        eventId: '000000000000000000000101',
+        competitionId: '000000000000000000000101',
         roundId: '000000000000000000000201',
         boards: [
           { boardNumber: 1, teamIds }
@@ -310,7 +318,7 @@ test('confirmRandomizedBoards validates board count, board numbers, and max team
 
     await assert.rejects(
       service.confirmRandomizedBoards({
-        eventId: '000000000000000000000101',
+        competitionId: '000000000000000000000101',
         roundId: '000000000000000000000201',
         boards: [
           { boardNumber: 1, teamIds: [teamIds[0]] },
@@ -323,7 +331,7 @@ test('confirmRandomizedBoards validates board count, board numbers, and max team
 
     await assert.rejects(
       service.confirmRandomizedBoards({
-        eventId: '000000000000000000000101',
+        competitionId: '000000000000000000000101',
         roundId: '000000000000000000000201',
         boards: [
           { boardNumber: 1, teamIds },
@@ -334,7 +342,7 @@ test('confirmRandomizedBoards validates board count, board numbers, and max team
         error.errors.includes('Randomized board confirmation exceeds maxTeamsPerBoard')
     )
   } finally {
-    EventModel.findById = originalEventFindById
+    CompetitionModel.findById = originalCompetitionFindById
     RoundModel.findById = originalRoundFindById
     TeamModel.find = originalTeamFind
     TeamModel.updateMany = originalUpdateMany
@@ -343,19 +351,19 @@ test('confirmRandomizedBoards validates board count, board numbers, and max team
 })
 
 test('createBoard rejects teamIds beyond maxTeams', async () => {
-  const eventModule = await import('../src/models/event.model.js')
+  const competitionModule = await import('../src/models/competition.model.js')
   const roundModule = await import('../src/models/round.model.js')
   const trackModule = await import('../src/models/track.model.js')
   const teamModule = await import('../src/models/team.model.js')
   const userModule = await import('../src/models/user.model.js')
 
-  const EventModel = eventModule.default
+  const CompetitionModel = competitionModule.default
   const RoundModel = roundModule.default
   const TrackModel = trackModule.default
   const TeamModel = teamModule.default
   const UserModel = userModule.default
 
-  const originalEventFindById = EventModel.findById
+  const originalCompetitionFindById = CompetitionModel.findById
   const originalRoundFindById = RoundModel.findById
   const originalTrackFindById = TrackModel.findById
   const originalTeamFind = TeamModel.find
@@ -371,12 +379,12 @@ test('createBoard rejects teamIds beyond maxTeams', async () => {
     findByRoundAndBoardNumber: async () => null
   }
 
-  EventModel.findById = async () => ({ _id: '000000000000000000000101' })
-  RoundModel.findById = async () => ({ _id: '000000000000000000000201', eventId: '000000000000000000000101', trackId: '000000000000000000000401' })
-  TrackModel.findById = async () => ({ _id: '000000000000000000000401', eventId: '000000000000000000000101' })
+  CompetitionModel.findById = async () => ({ _id: '000000000000000000000101' })
+  RoundModel.findById = async () => ({ _id: '000000000000000000000201', competitionId: '000000000000000000000101', trackId: '000000000000000000000401' })
+  TrackModel.findById = async () => ({ _id: '000000000000000000000401', competitionId: '000000000000000000000101' })
   TeamModel.find = async () => [
-    { _id: '000000000000000000000301', eventId: '000000000000000000000101', trackId: '000000000000000000000401' },
-    { _id: '000000000000000000000302', eventId: '000000000000000000000101', trackId: '000000000000000000000401' }
+    { _id: '000000000000000000000301', competitionId: '000000000000000000000101', trackId: '000000000000000000000401' },
+    { _id: '000000000000000000000302', competitionId: '000000000000000000000101', trackId: '000000000000000000000401' }
   ]
   UserModel.find = async () => []
 
@@ -385,7 +393,7 @@ test('createBoard rejects teamIds beyond maxTeams', async () => {
   try {
     await assert.rejects(
       service.createBoard({
-        eventId: '000000000000000000000101',
+        competitionId: '000000000000000000000101',
         roundId: '000000000000000000000201',
         trackId: '000000000000000000000401',
         name: 'Board 1',
@@ -399,7 +407,7 @@ test('createBoard rejects teamIds beyond maxTeams', async () => {
         error.errors.includes('teamIds cannot exceed maxTeams')
     )
   } finally {
-    EventModel.findById = originalEventFindById
+    CompetitionModel.findById = originalCompetitionFindById
     RoundModel.findById = originalRoundFindById
     TrackModel.findById = originalTrackFindById
     TeamModel.find = originalTeamFind
@@ -408,19 +416,19 @@ test('createBoard rejects teamIds beyond maxTeams', async () => {
 })
 
 test('createBoard rejects judges without ACTIVE judge role', async () => {
-  const eventModule = await import('../src/models/event.model.js')
+  const competitionModule = await import('../src/models/competition.model.js')
   const roundModule = await import('../src/models/round.model.js')
   const trackModule = await import('../src/models/track.model.js')
   const teamModule = await import('../src/models/team.model.js')
   const userModule = await import('../src/models/user.model.js')
 
-  const EventModel = eventModule.default
+  const CompetitionModel = competitionModule.default
   const RoundModel = roundModule.default
   const TrackModel = trackModule.default
   const TeamModel = teamModule.default
   const UserModel = userModule.default
 
-  const originalEventFindById = EventModel.findById
+  const originalCompetitionFindById = CompetitionModel.findById
   const originalRoundFindById = RoundModel.findById
   const originalTrackFindById = TrackModel.findById
   const originalTeamFind = TeamModel.find
@@ -436,11 +444,11 @@ test('createBoard rejects judges without ACTIVE judge role', async () => {
     findByRoundAndBoardNumber: async () => null
   }
 
-  EventModel.findById = async () => ({ _id: '000000000000000000000101' })
-  RoundModel.findById = async () => ({ _id: '000000000000000000000201', eventId: '000000000000000000000101', trackId: '000000000000000000000401' })
-  TrackModel.findById = async () => ({ _id: '000000000000000000000401', eventId: '000000000000000000000101' })
+  CompetitionModel.findById = async () => ({ _id: '000000000000000000000101' })
+  RoundModel.findById = async () => ({ _id: '000000000000000000000201', competitionId: '000000000000000000000101', trackId: '000000000000000000000401' })
+  TrackModel.findById = async () => ({ _id: '000000000000000000000401', competitionId: '000000000000000000000101' })
   TeamModel.find = async () => [
-    { _id: '000000000000000000000301', eventId: '000000000000000000000101', trackId: '000000000000000000000401' }
+    { _id: '000000000000000000000301', competitionId: '000000000000000000000101', trackId: '000000000000000000000401' }
   ]
   UserModel.find = async () => [
     { _id: '000000000000000000000501', status: 'ACTIVE', roles: [{ name: 'PARTICIPANT' }] }
@@ -451,7 +459,7 @@ test('createBoard rejects judges without ACTIVE judge role', async () => {
   try {
     await assert.rejects(
       service.createBoard({
-        eventId: '000000000000000000000101',
+        competitionId: '000000000000000000000101',
         roundId: '000000000000000000000201',
         trackId: '000000000000000000000401',
         name: 'Board 1',
@@ -465,7 +473,7 @@ test('createBoard rejects judges without ACTIVE judge role', async () => {
         error.errors.includes('Assigned judges must have ACTIVE accounts and the JUDGE role')
     )
   } finally {
-    EventModel.findById = originalEventFindById
+    CompetitionModel.findById = originalCompetitionFindById
     RoundModel.findById = originalRoundFindById
     TrackModel.findById = originalTrackFindById
     TeamModel.find = originalTeamFind

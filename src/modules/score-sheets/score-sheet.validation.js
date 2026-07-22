@@ -15,7 +15,7 @@ export const SCORE_SHEET_VALIDATION = {
     query: Joi.object({
       page: Joi.number().integer().min(1).default(1),
       limit: Joi.number().integer().min(1).max(100).default(10),
-      eventId: objectId,
+      competitionId: objectId,
       roundId: objectId,
       teamId: objectId,
       judgeId: objectId,
@@ -24,7 +24,7 @@ export const SCORE_SHEET_VALIDATION = {
   },
   createScoreSheet: {
     body: Joi.object({
-      eventId: objectId.required(),
+      competitionId: objectId.required(),
       roundId: objectId.required(),
       boardId: objectId.required(),
       teamId: objectId.required(),

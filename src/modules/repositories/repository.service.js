@@ -3,7 +3,7 @@ import mongoose from 'mongoose'
 import { REPOSITORY_REPOSITORY } from './repository.repository.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
-import Event from '#models/event.model.js'
+import Competition from '#models/competition.model.js'
 import Round from '#models/round.model.js'
 import Team from '#models/team.model.js'
 import Commit from '#models/commit.model.js'
@@ -18,16 +18,16 @@ const ensureObjectId = (id, fieldName = 'repository id') => {
   }
 }
 
-const normalizeEvent = (event) => {
-  if (!event) return null
-  if (typeof event === 'string' || event instanceof mongoose.Types.ObjectId) return { id: event.toString() }
+const normalizeCompetition = (competition) => {
+  if (!competition) return null
+  if (typeof competition === 'string' || competition instanceof mongoose.Types.ObjectId) return { id: competition.toString() }
   return {
-    id: event._id?.toString() || event.id,
-    title: event.title,
-    semester: event.semester,
-    season: event.season,
-    year: event.year,
-    status: event.status
+    id: competition._id?.toString() || competition.id,
+    title: competition.title,
+    semester: competition.semester,
+    season: competition.season,
+    year: competition.year,
+    status: competition.status
   }
 }
 
@@ -64,8 +64,8 @@ const normalizeRepository = (repository) => {
 
   return {
     id: plain._id?.toString() || plain.id,
-    event: normalizeEvent(plain.eventId),
-    eventId: plain.eventId?._id?.toString?.() || plain.eventId?.toString?.() || plain.eventId,
+    competition: normalizeCompetition(plain.competitionId),
+    competitionId: plain.competitionId?._id?.toString?.() || plain.competitionId?.toString?.() || plain.competitionId,
     team: normalizeTeam(plain.teamId),
     teamId: plain.teamId?._id?.toString?.() || plain.teamId?.toString?.() || plain.teamId,
     round: normalizeRound(plain.roundId),
@@ -120,9 +120,9 @@ const normalizeCommit = (commit) => {
 const buildFilter = (query = {}) => {
   const filter = {}
 
-  if (query.eventId) {
-    ensureObjectId(query.eventId, 'event id')
-    filter.eventId = query.eventId
+  if (query.competitionId) {
+    ensureObjectId(query.competitionId, 'competition id')
+    filter.competitionId = query.competitionId
   }
   if (query.teamId) {
     ensureObjectId(query.teamId, 'team id')
@@ -149,19 +149,19 @@ const buildFilter = (query = {}) => {
   return filter
 }
 
-const ensureEventExists = async (eventId) => {
-  ensureObjectId(eventId, 'event id')
-  const event = await Event.findById(eventId)
-  if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
-  return event
+const ensureCompetitionExists = async (competitionId) => {
+  ensureObjectId(competitionId, 'competition id')
+  const competition = await Competition.findById(competitionId)
+  if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
+  return competition
 }
 
-const ensureTeamBelongsToEvent = async ({ eventId, teamId }) => {
+const ensureTeamBelongsToCompetition = async ({ competitionId, teamId }) => {
   ensureObjectId(teamId, 'team id')
   const team = await Team.findById(teamId)
   if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
-  if (team.eventId?.toString() !== eventId.toString()) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified event'])
+  if (team.competitionId?.toString() !== competitionId.toString()) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified competition'])
   }
   return team
 }
@@ -173,13 +173,13 @@ const ensureRepositoryEligibleTeam = ({ team, overrideReason, actor = {} }) => {
   throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Repository linking is only allowed for CONFIRMED teams unless an admin override reason is provided'])
 }
 
-const ensureRoundBelongsToEvent = async ({ eventId, roundId }) => {
+const ensureRoundBelongsToCompetition = async ({ competitionId, roundId }) => {
   if (!roundId) return null
   ensureObjectId(roundId, 'round id')
   const round = await Round.findById(roundId)
   if (!round) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Round not found'])
-  if (round.eventId?.toString() !== eventId.toString()) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round does not belong to the specified event'])
+  if (round.competitionId?.toString() !== competitionId.toString()) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round does not belong to the specified competition'])
   }
   return round
 }
@@ -218,11 +218,11 @@ export const createRepositoryService = ({
 
   const getRepositoryById = async (id) => normalizeRepository(await ensureRepositoryExists(id))
 
-  const listConfirmedTeamsMissingRepositories = async ({ eventId }) => {
-    const event = await ensureEventExists(eventId)
+  const listConfirmedTeamsMissingRepositories = async ({ competitionId }) => {
+    const competition = await ensureCompetitionExists(competitionId)
     const [confirmedTeams, repositories] = await Promise.all([
-      Team.find({ eventId: event._id, status: 'CONFIRMED' }).sort({ name: 1, createdAt: 1 }),
-      repository.findAll({ filter: { eventId: event._id }, skip: 0, limit: 10000 })
+      Team.find({ competitionId: competition._id, status: 'CONFIRMED' }).sort({ name: 1, createdAt: 1 }),
+      repository.findAll({ filter: { competitionId: competition._id }, skip: 0, limit: 10000 })
     ])
     const teamIdsWithRepositories = new Set(repositories
       .map(item => item.teamId?._id?.toString?.() || item.teamId?.toString?.())
@@ -232,7 +232,7 @@ export const createRepositoryService = ({
       .map(normalizeTeam)
 
     return {
-      event: normalizeEvent(event),
+      competition: normalizeCompetition(competition),
       teams,
       summary: {
         confirmedTeamCount: confirmedTeams.length,
@@ -400,14 +400,14 @@ export const createRepositoryService = ({
   }
 
   const createRepository = async (payload = {}, actor = {}) => {
-    const event = await ensureEventExists(payload.eventId)
-    const team = await ensureTeamBelongsToEvent({ eventId: event._id, teamId: payload.teamId })
+    const competition = await ensureCompetitionExists(payload.competitionId)
+    const team = await ensureTeamBelongsToCompetition({ competitionId: competition._id, teamId: payload.teamId })
     ensureRepositoryEligibleTeam({
       team,
       overrideReason: payload.overrideReason,
       actor
     })
-    await ensureRoundBelongsToEvent({ eventId: event._id, roundId: payload.roundId })
+    await ensureRoundBelongsToCompetition({ competitionId: competition._id, roundId: payload.roundId })
 
     const existingRepository = await repository.findByTeamId(payload.teamId)
     if (existingRepository) {
@@ -415,7 +415,7 @@ export const createRepositoryService = ({
     }
 
     const createdRepository = await repository.create({
-      eventId: payload.eventId,
+      competitionId: payload.competitionId,
       teamId: payload.teamId,
       roundId: payload.roundId || undefined,
       githubOwner: payload.githubOwner,
@@ -438,10 +438,10 @@ export const createRepositoryService = ({
 
   const updateRepository = async (id, payload = {}) => {
     const existingRepository = await ensureRepositoryExists(id)
-    const eventId = existingRepository.eventId?._id || existingRepository.eventId
+    const competitionId = existingRepository.competitionId?._id || existingRepository.competitionId
 
     if (payload.roundId !== undefined) {
-      await ensureRoundBelongsToEvent({ eventId, roundId: payload.roundId })
+      await ensureRoundBelongsToCompetition({ competitionId, roundId: payload.roundId })
     }
 
     const githubOwner = payload.githubOwner || existingRepository.githubOwner || existingRepository.githubOrg
@@ -464,7 +464,7 @@ export const createRepositoryService = ({
 
   const syncRepositoryCommits = async ({ repositoryId, requestedBy = null }) => {
     const existingRepository = await ensureRepositoryExists(repositoryId)
-    const eventId = existingRepository.eventId?._id?.toString?.() || existingRepository.eventId?.toString?.() || existingRepository.eventId
+    const competitionId = existingRepository.competitionId?._id?.toString?.() || existingRepository.competitionId?.toString?.() || existingRepository.competitionId
     const githubOwner = existingRepository.githubOwner || existingRepository.githubOrg
     const githubRepo = existingRepository.githubRepo || existingRepository.repoName
     const branch = existingRepository.defaultBranch || 'main'
@@ -473,7 +473,7 @@ export const createRepositoryService = ({
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Repository is missing GitHub owner or repo name'])
     }
 
-    const githubToken = await githubService.getTokenForN8nDispatch({ eventId })
+    const githubToken = await githubService.getTokenForN8nDispatch({ competitionId })
     const { data } = await githubService.requestGithub({
       method: 'GET',
       path: `/repos/${encodeURIComponent(githubOwner)}/${encodeURIComponent(githubRepo)}/commits?sha=${encodeURIComponent(branch)}&per_page=20`,

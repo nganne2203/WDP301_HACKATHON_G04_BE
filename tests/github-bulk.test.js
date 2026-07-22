@@ -24,11 +24,11 @@ const createRepository = () => {
     },
     createRepositoryRecord: async (payload) => {
       const record = { _id: payload.repoName || payload.githubRepo, ...payload }
-      repositories.set(`${payload.eventId}:${payload.githubOwner || payload.githubOrg}:${payload.repoName || payload.githubRepo}`, record)
+      repositories.set(`${payload.competitionId}:${payload.githubOwner || payload.githubOrg}:${payload.repoName || payload.githubRepo}`, record)
       return record
     },
-    findRepositoryByEventAndRepoName: async ({ eventId, repoName, githubOwner }) => {
-      return repositories.get(`${eventId}:${githubOwner}:${repoName}`) || null
+    findRepositoryByCompetitionAndRepoName: async ({ competitionId, repoName, githubOwner }) => {
+      return repositories.get(`${competitionId}:${githubOwner}:${repoName}`) || null
     },
     updateRepositoryById: async (id, updates) => {
       const entry = [...repositories.entries()].find(([, value]) => value._id === id)
@@ -42,12 +42,12 @@ const createRepository = () => {
       auditLogs.push(payload)
       return payload
     },
-    findConfirmedTeamsByEvent: async (eventId) => {
-      return teams.filter(t => t.eventId === eventId)
+    findConfirmedTeamsByCompetition: async (competitionId) => {
+      return teams.filter(t => t.competitionId === competitionId)
     },
     findTeamById: async (teamId) => teams.find(team => team._id === teamId) || null,
-    findRepositoriesByEvent: async (eventId) => {
-      return [...repositories.values()].filter(r => r.eventId === eventId)
+    findRepositoriesByCompetition: async (competitionId) => {
+      return [...repositories.values()].filter(r => r.competitionId === competitionId)
     },
     findTeamMembersGithubUsernames: async (teamId) => {
       return ['user-alpha', 'user-beta']
@@ -66,8 +66,8 @@ const createLogger = () => ({
   error: () => {}
 })
 
-const EVENT_ID = '664c3f6a3a6d4a5f3f93b901'
-const eventConfigKey = `github.event.${EVENT_ID}.organization`
+const COMPETITION_ID = '664c3f6a3a6d4a5f3f93b901'
+const competitionConfigKey = `github.competition.${COMPETITION_ID}.organization`
 
 test('findTeamMembersGithubUsernames reads joined participants, not active user statuses', async () => {
   const originalFind = Participant.find
@@ -99,9 +99,9 @@ test('findTeamMembersGithubUsernames reads joined participants, not active user 
 test('bulkCreateRepositories creates repos only for confirmed teams lacking them', async () => {
   const repository = createRepository()
   await repository.upsertConfig({
-    key: eventConfigKey,
+    key: competitionConfigKey,
     value: {
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       organizationName: 'seal-org',
       ownerUsername: 'owner-user',
       enabled: true,
@@ -112,13 +112,13 @@ test('bulkCreateRepositories creates repos only for confirmed teams lacking them
 
   // Seed two confirmed teams
   repository.teams.push(
-    { _id: 'team-1-id', name: 'Team Alpha', eventId: EVENT_ID },
-    { _id: 'team-2-id', name: 'Team Beta', eventId: EVENT_ID }
+    { _id: 'team-1-id', name: 'Team Alpha', competitionId: COMPETITION_ID },
+    { _id: 'team-2-id', name: 'Team Beta', competitionId: COMPETITION_ID }
   )
 
   // Seed one existing repository for Team Alpha
   await repository.createRepositoryRecord({
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     teamId: 'team-1-id',
     githubOwner: 'seal-org',
     githubRepo: 'team-alpha',
@@ -146,7 +146,7 @@ test('bulkCreateRepositories creates repos only for confirmed teams lacking them
   })
 
   const result = await service.bulkCreateRepositories({
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     roundId: 'none'
   }, { id: 'coordinator-1' })
 
@@ -172,9 +172,9 @@ test('bulkCreateRepositories creates repos only for confirmed teams lacking them
 test('bulkCreateRepositories aggregates errors and continues loop when one team creation fails', async () => {
   const repository = createRepository()
   await repository.upsertConfig({
-    key: eventConfigKey,
+    key: competitionConfigKey,
     value: {
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       organizationName: 'seal-org',
       ownerUsername: 'owner-user',
       enabled: true,
@@ -184,8 +184,8 @@ test('bulkCreateRepositories aggregates errors and continues loop when one team 
   })
 
   repository.teams.push(
-    { _id: 'team-1-id', name: 'Team Fail', eventId: EVENT_ID },
-    { _id: 'team-2-id', name: 'Team Success', eventId: EVENT_ID }
+    { _id: 'team-1-id', name: 'Team Fail', competitionId: COMPETITION_ID },
+    { _id: 'team-2-id', name: 'Team Success', competitionId: COMPETITION_ID }
   )
 
   const service = createGithubService({
@@ -207,7 +207,7 @@ test('bulkCreateRepositories aggregates errors and continues loop when one team 
   })
 
   const result = await service.bulkCreateRepositories({
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     roundId: null
   }, { id: 'coordinator-1' })
 
@@ -222,11 +222,11 @@ test('bulkCreateRepositories aggregates errors and continues loop when one team 
 
 test('createRepository automatically assigns collaborators from team members', async () => {
   const repository = createRepository()
-  repository.teams.push({ _id: 'team-123', name: 'Team Repo', eventId: EVENT_ID, status: 'CONFIRMED' })
+  repository.teams.push({ _id: 'team-123', name: 'Team Repo', competitionId: COMPETITION_ID, status: 'CONFIRMED' })
   await repository.upsertConfig({
-    key: eventConfigKey,
+    key: competitionConfigKey,
     value: {
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       organizationName: 'seal-org',
       ownerUsername: 'owner-user',
       enabled: true,
@@ -253,7 +253,7 @@ test('createRepository automatically assigns collaborators from team members', a
   })
 
   await service.createRepository({
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     teamId: 'team-123',
     repoName: 'team-repo',
     private: true
@@ -272,11 +272,11 @@ test('createRepository automatically assigns collaborators from team members', a
 
 test('createRepository rejects non-confirmed teams unless admin override is provided', async () => {
   const repository = createRepository()
-  repository.teams.push({ _id: 'team-waiting', name: 'Team Waiting', eventId: EVENT_ID, status: 'WAITING_FOR_MEMBERS' })
+  repository.teams.push({ _id: 'team-waiting', name: 'Team Waiting', competitionId: COMPETITION_ID, status: 'WAITING_FOR_MEMBERS' })
   await repository.upsertConfig({
-    key: eventConfigKey,
+    key: competitionConfigKey,
     value: {
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       organizationName: 'seal-org',
       ownerUsername: 'owner-user',
       enabled: true,
@@ -304,7 +304,7 @@ test('createRepository rejects non-confirmed teams unless admin override is prov
 
   await assert.rejects(
     service.createRepository({
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       teamId: 'team-waiting',
       repoName: 'team-waiting'
     }, { id: 'coordinator-1', roles: ['COORDINATOR'] }),
@@ -312,7 +312,7 @@ test('createRepository rejects non-confirmed teams unless admin override is prov
   )
 
   await service.createRepository({
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     teamId: 'team-waiting',
     repoName: 'team-waiting',
     overrideReason: 'Exceptional sponsor demo repository'
@@ -324,9 +324,9 @@ test('createRepository rejects non-confirmed teams unless admin override is prov
 test('bulkGrantAccess skips repositories whose teams are not confirmed', async () => {
   const repository = createRepository()
   await repository.upsertConfig({
-    key: eventConfigKey,
+    key: competitionConfigKey,
     value: {
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       organizationName: 'seal-org',
       ownerUsername: 'owner-user',
       enabled: true,
@@ -335,7 +335,7 @@ test('bulkGrantAccess skips repositories whose teams are not confirmed', async (
     isEncrypted: true
   })
   await repository.createRepositoryRecord({
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     teamId: { _id: 'team-waiting', status: 'WAITLISTED' },
     githubOwner: 'seal-org',
     githubRepo: 'team-waiting',
@@ -355,7 +355,7 @@ test('bulkGrantAccess skips repositories whose teams are not confirmed', async (
   })
 
   const result = await service.bulkGrantAccess({
-    eventId: EVENT_ID
+    competitionId: COMPETITION_ID
   }, { id: 'coordinator-1' })
 
   assert.equal(result.success.length, 0)

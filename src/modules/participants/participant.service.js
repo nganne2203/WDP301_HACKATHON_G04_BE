@@ -14,7 +14,7 @@ import { actorHasRole, getActorId } from '#utils/domainAccessUtil.js'
 import { normalizeLegacyRoleName, PARTICIPANT_ROLE_NAME } from '#utils/userRoleMigrationUtil.js'
 
 const PARTICIPANT_FIELDS = [
-  'eventId',
+  'competitionId',
   'userId',
   'teamId',
   'chapterName',
@@ -72,9 +72,9 @@ const ensureObjectId = (id, fieldName = 'participant id') => {
 const buildParticipantFilter = (query = {}) => {
   const filter = {}
 
-  if (query.eventId) {
-    ensureObjectId(query.eventId, 'event id')
-    filter.eventId = query.eventId
+  if (query.competitionId) {
+    ensureObjectId(query.competitionId, 'competition id')
+    filter.competitionId = query.competitionId
   }
 
   if (query.userId) {
@@ -104,19 +104,19 @@ const buildParticipantFilter = (query = {}) => {
   return filter
 }
 
-const normalizeEvent = (event) => {
-  if (!event) return null
-  if (typeof event === 'string' || event instanceof mongoose.Types.ObjectId) return { id: event.toString() }
+const normalizeCompetition = (competition) => {
+  if (!competition) return null
+  if (typeof competition === 'string' || competition instanceof mongoose.Types.ObjectId) return { id: competition.toString() }
 
   return {
-    id: event._id?.toString() || event.id,
-    title: event.title,
-    semester: event.semester,
-    season: event.season,
-    year: event.year,
-    status: event.status,
-    startDate: event.startDate,
-    endDate: event.endDate
+    id: competition._id?.toString() || competition.id,
+    title: competition.title,
+    semester: competition.semester,
+    season: competition.season,
+    year: competition.year,
+    status: competition.status,
+    startDate: competition.startDate,
+    endDate: competition.endDate
   }
 }
 
@@ -160,8 +160,8 @@ const normalizeParticipant = (participant) => {
 
   return {
     id: plainParticipant._id?.toString() || plainParticipant.id,
-    event: normalizeEvent(plainParticipant.eventId),
-    eventId: plainParticipant.eventId?._id?.toString?.() || plainParticipant.eventId?.toString?.() || plainParticipant.eventId,
+    competition: normalizeCompetition(plainParticipant.competitionId),
+    competitionId: plainParticipant.competitionId?._id?.toString?.() || plainParticipant.competitionId?.toString?.() || plainParticipant.competitionId,
     user: normalizeUser(plainParticipant.userId),
     userId: plainParticipant.userId?._id?.toString?.() || plainParticipant.userId?.toString?.() || plainParticipant.userId,
     team: normalizeTeam(plainParticipant.teamId),
@@ -192,10 +192,10 @@ const userHasRole = (user = {}, roleName) => {
   return (user.roles || []).some(role => normalizeLegacyRoleName(role?.name || role?.code || role) === normalizedRoleName)
 }
 
-const isEventRegistrationOpen = (event, now) => {
-  if (event?.status !== 'OPEN_REGISTRATION') return false
-  if (event.registrationStart && now < new Date(event.registrationStart)) return false
-  if (event.registrationEnd && now > new Date(event.registrationEnd)) return false
+const isCompetitionRegistrationOpen = (competition, now) => {
+  if (competition?.status !== 'OPEN_REGISTRATION') return false
+  if (competition.registrationStart && now < new Date(competition.registrationStart)) return false
+  if (competition.registrationEnd && now > new Date(competition.registrationEnd)) return false
   return true
 }
 
@@ -228,11 +228,11 @@ export const createParticipantService = ({
     }
   }
 
-  const ensureEventExists = async (eventId) => {
-    ensureObjectId(eventId, 'event id')
-    const event = await repository.findEventById(eventId)
-    if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
-    return event
+  const ensureCompetitionExists = async (competitionId) => {
+    ensureObjectId(competitionId, 'competition id')
+    const competition = await repository.findCompetitionById(competitionId)
+    if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
+    return competition
   }
 
   const ensureUserExists = async (userId) => {
@@ -242,27 +242,27 @@ export const createParticipantService = ({
     return user
   }
 
-  const ensureTeamBelongsToEvent = async ({ teamId, eventId }) => {
+  const ensureTeamBelongsToCompetition = async ({ teamId, competitionId }) => {
     if (!teamId) return null
 
     ensureObjectId(teamId, 'team id')
     const team = await repository.findTeamById(teamId)
     if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
 
-    if (team.eventId?.toString() !== eventId.toString()) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified event'])
+    if (team.competitionId?.toString() !== competitionId.toString()) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified competition'])
     }
 
     return team
   }
 
-  const ensureCheckInWindowOpen = async (eventId, { allowOverride = false, overrideReason = null, actor = null } = {}) => {
-    const event = await ensureEventExists(eventId)
+  const ensureCheckInWindowOpen = async (competitionId, { allowOverride = false, overrideReason = null, actor = null } = {}) => {
+    const competition = await ensureCompetitionExists(competitionId)
     const relaxedCheckInStatuses = ['OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING']
-    const checkInOpen = event.status === 'ONGOING' ||
-      (relaxedWorkflow && relaxedCheckInStatuses.includes(event.status))
+    const checkInOpen = competition.status === 'ONGOING' ||
+      (relaxedWorkflow && relaxedCheckInStatuses.includes(competition.status))
 
-    if (checkInOpen) return { event, overridden: false }
+    if (checkInOpen) return { competition, overridden: false }
 
     if (allowOverride) {
       const reason = String(overrideReason || '').trim()
@@ -272,24 +272,24 @@ export const createParticipantService = ({
       await auditLogRepository.create({
         userId: getActorId(actor),
         action: 'CHECK_IN_WINDOW_OVERRIDE',
-        resourceType: 'Event',
-        resourceId: eventId,
+        resourceType: 'Competition',
+        resourceId: competitionId,
         metadata: {
           reason,
-          eventStatus: event.status
+          competitionStatus: competition.status
         }
       })
-      return { event, overridden: true }
+      return { competition, overridden: true }
     }
 
-    if (event.status !== 'ONGOING') {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Check-in is only available while the event is ONGOING'])
+    if (competition.status !== 'ONGOING') {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Check-in is only available while the competition is ONGOING'])
     }
   }
 
-  const ensureUserCanRegisterForEvent = async ({ event, user, actor = {}, overrideReason = null }) => {
+  const ensureUserCanRegisterForCompetition = async ({ competition, user, actor = {}, overrideReason = null }) => {
     if (hasApproverPermission(actor)) {
-      const normalFlow = isEventRegistrationOpen(event, now())
+      const normalFlow = isCompetitionRegistrationOpen(competition, now())
       if (!normalFlow) {
         const reason = String(overrideReason || '').trim()
         if (!reason) {
@@ -300,31 +300,31 @@ export const createParticipantService = ({
           action: 'PARTICIPANT_REGISTRATION_OVERRIDE',
           resourceType: 'Participant',
           metadata: {
-            eventId: event._id || event.id,
+            competitionId: competition._id || competition.id,
             targetUserId: user._id || user.id,
             reason,
-            eventStatus: event.status
+            competitionStatus: competition.status
           }
         })
       }
       return
     }
 
-    if (!isEventRegistrationOpen(event, now())) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Event registration is not open'])
+    if (!isCompetitionRegistrationOpen(competition, now())) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Competition registration is not open'])
     }
     if (user.status !== 'ACTIVE') {
-      throw new ApiError(ERROR_CODES.FORBIDDEN, ['User account must be ACTIVE to register for an event'])
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['User account must be ACTIVE to register for an competition'])
     }
     if (!userHasRole(user, PARTICIPANT_ROLE_NAME)) {
-      throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only participant accounts can register for events'])
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only participant accounts can register for competitions'])
     }
   }
 
-  const ensureUniqueParticipant = async ({ eventId, userId, ignoreParticipantId = null }) => {
-    const existingParticipant = await repository.findByEventAndUser({ eventId, userId })
+  const ensureUniqueParticipant = async ({ competitionId, userId, ignoreParticipantId = null }) => {
+    const existingParticipant = await repository.findByCompetitionAndUser({ competitionId, userId })
     if (existingParticipant && existingParticipant._id.toString() !== ignoreParticipantId) {
-      throw new ApiError(ERROR_CODES.CONFLICT, ['User is already registered as a participant for this event'])
+      throw new ApiError(ERROR_CODES.CONFLICT, ['User is already registered as a participant for this competition'])
     }
   }
 
@@ -332,7 +332,7 @@ export const createParticipantService = ({
     const { page, limit } = normalizePaginationQuery(query)
     const filter = buildParticipantFilter(query)
     if (query.confirmedTeamsOnly) {
-      const confirmedTeamIds = await repository.findConfirmedTeamIds({ eventId: query.eventId })
+      const confirmedTeamIds = await repository.findConfirmedTeamIds({ competitionId: query.competitionId })
       filter.teamId = { $in: confirmedTeamIds }
     }
     const skip = (page - 1) * limit
@@ -358,17 +358,17 @@ export const createParticipantService = ({
     return normalizeParticipant(participant)
   }
 
-  const getMyParticipant = async (eventId, actor = {}) => {
-    await ensureEventExists(eventId)
+  const getMyParticipant = async (competitionId, actor = {}) => {
+    await ensureCompetitionExists(competitionId)
     if (!actor.id) throw new ApiError(ERROR_CODES.UNAUTHORIZED, ['Authentication is required'])
 
-    const participant = await repository.findByEventAndUser({ eventId, userId: actor.id })
+    const participant = await repository.findByCompetitionAndUser({ competitionId, userId: actor.id })
     if (!participant) return null
     return normalizeParticipant(participant)
   }
 
   const createParticipant = async (payload = {}, actor = {}) => {
-    const event = await ensureEventExists(payload.eventId)
+    const competition = await ensureCompetitionExists(payload.competitionId)
 
     const targetUserId = payload.userId || actor.id
     if (!targetUserId) {
@@ -380,17 +380,17 @@ export const createParticipantService = ({
     }
 
     const user = await ensureUserExists(targetUserId)
-    await ensureUserCanRegisterForEvent({
-      event,
+    await ensureUserCanRegisterForCompetition({
+      competition,
       user,
       actor,
       overrideReason: payload.overrideReason
     })
-    const team = await ensureTeamBelongsToEvent({ teamId: payload.teamId, eventId: payload.eventId })
+    const team = await ensureTeamBelongsToCompetition({ teamId: payload.teamId, competitionId: payload.competitionId })
     if (team && !ACTIVE_TEAM_STATUSES.has(team.status)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Participant can only be assigned to an active team'])
     }
-    await ensureUniqueParticipant({ eventId: payload.eventId, userId: targetUserId })
+    await ensureUniqueParticipant({ competitionId: payload.competitionId, userId: targetUserId })
 
     const participant = await repository.create({
       ...pickSafeFields(payload, PARTICIPANT_FIELDS),
@@ -403,20 +403,20 @@ export const createParticipantService = ({
   const updateParticipant = async (id, payload = {}) => {
     const existingParticipant = await ensureParticipantExists(id)
     const safePayload = pickSafeFields(payload, PARTICIPANT_FIELDS)
-    const eventId = existingParticipant.eventId?._id || existingParticipant.eventId
+    const competitionId = existingParticipant.competitionId?._id || existingParticipant.competitionId
     const targetUserId = safePayload.userId || existingParticipant.userId?._id || existingParticipant.userId
 
     if (safePayload.userId) {
       await ensureUserExists(safePayload.userId)
       await ensureUniqueParticipant({
-        eventId,
+        competitionId,
         userId: safePayload.userId,
         ignoreParticipantId: id
       })
     }
 
     if (safePayload.teamId !== undefined && safePayload.teamId !== null) {
-      await ensureTeamBelongsToEvent({ teamId: safePayload.teamId, eventId })
+      await ensureTeamBelongsToCompetition({ teamId: safePayload.teamId, competitionId })
     }
 
     if (safePayload.teamRole === 'LEADER' && !safePayload.teamId && !existingParticipant.teamId) {
@@ -434,9 +434,9 @@ export const createParticipantService = ({
   const updateCheckInStatus = async (id, checkInStatus, actor = {}, options = {}) => {
     const existingParticipant = await ensureParticipantExists(id)
     await ensureParticipantHasConfirmedTeam(existingParticipant)
-    const eventId = existingParticipant.eventId?._id?.toString?.() || existingParticipant.eventId?.toString?.() || existingParticipant.eventId
+    const competitionId = existingParticipant.competitionId?._id?.toString?.() || existingParticipant.competitionId?.toString?.() || existingParticipant.competitionId
     const allowOverride = hasApproverPermission(actor) && actorHasRole(actor, 'ADMIN') && Boolean(options.overrideReason)
-    await ensureCheckInWindowOpen(eventId, {
+    await ensureCheckInWindowOpen(competitionId, {
       allowOverride,
       overrideReason: options.overrideReason,
       actor
@@ -453,11 +453,11 @@ export const createParticipantService = ({
     return normalizeParticipant(participant)
   }
 
-  const generateCheckInQr = async (eventId, actor = {}) => {
+  const generateCheckInQr = async (competitionId, actor = {}) => {
     if (!hasApproverPermission(actor)) {
-      throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only coordinators can generate an event check-in QR'])
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['Only coordinators can generate an competition check-in QR'])
     }
-    await ensureCheckInWindowOpen(eventId)
+    await ensureCheckInWindowOpen(competitionId)
 
     const token = randomToken()
     const tokenPayload = `${CHECK_IN_QR_PREFIX}${token}`
@@ -475,14 +475,14 @@ export const createParticipantService = ({
     })
 
     await repository.upsertCheckInQrSession({
-      eventId,
+      competitionId,
       tokenHash: hashCheckInToken(token),
       expiresAt,
       createdBy: actor.id
     })
 
     return {
-      eventId,
+      competitionId,
       qrCodeDataUrl,
       qrPayload,
       expiresAt
@@ -503,19 +503,19 @@ export const createParticipantService = ({
       throw new ApiError(ERROR_CODES.CHECK_IN_QR_EXPIRED, ['Check-in QR has expired'])
     }
 
-    const eventId = session.eventId?._id?.toString?.() || session.eventId?.toString?.() || session.eventId
-    await ensureCheckInWindowOpen(eventId)
-    const existingParticipant = await repository.findByEventAndUser({ eventId, userId: actor.id })
+    const competitionId = session.competitionId?._id?.toString?.() || session.competitionId?.toString?.() || session.competitionId
+    await ensureCheckInWindowOpen(competitionId)
+    const existingParticipant = await repository.findByCompetitionAndUser({ competitionId, userId: actor.id })
     if (!existingParticipant) {
-      throw new ApiError(ERROR_CODES.NOT_FOUND, ['You are not registered as a participant for this event'])
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['You are not registered as a participant for this competition'])
     }
     await ensureParticipantHasConfirmedTeam(existingParticipant)
     if (existingParticipant.checkInStatus === 'CHECKED_IN') {
-      throw new ApiError(ERROR_CODES.PARTICIPANT_ALREADY_CHECKED_IN, ['You have already checked in for this event'])
+      throw new ApiError(ERROR_CODES.PARTICIPANT_ALREADY_CHECKED_IN, ['You have already checked in for this competition'])
     }
 
-    const participant = await repository.checkInParticipantByEventAndUser({
-      eventId,
+    const participant = await repository.checkInParticipantByCompetitionAndUser({
+      competitionId,
       userId: actor.id,
       now: scannedAt
     })

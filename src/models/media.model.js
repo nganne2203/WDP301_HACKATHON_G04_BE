@@ -4,7 +4,7 @@ const { Schema } = mongoose
 
 const mediaSchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true },
     uploadedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     teamId: { type: Schema.Types.ObjectId, ref: 'Team' },
     title: { type: String, trim: true },
@@ -39,13 +39,13 @@ const mediaSchema = new Schema(
   { timestamps: true }
 )
 
-mediaSchema.index({ eventId: 1 })
+mediaSchema.index({ competitionId: 1 })
 mediaSchema.index({ uploadedBy: 1 })
 mediaSchema.index({ teamId: 1 })
 mediaSchema.index({ mediaType: 1 })
 mediaSchema.index({ status: 1 })
 mediaSchema.index({ uploadedAt: 1 })
-mediaSchema.index({ eventId: 1, uploadedAt: -1 })
+mediaSchema.index({ competitionId: 1, uploadedAt: -1 })
 mediaSchema.index({ uploadedBy: 1, uploadedAt: -1 })
 mediaSchema.index({ tags: 1 })
 

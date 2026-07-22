@@ -1,5 +1,5 @@
 import AuditLog from '#models/auditLog.model.js'
-import Event from '#models/event.model.js'
+import Competition from '#models/competition.model.js'
 import Media from '#models/media.model.js'
 import MediaActivity from '#models/mediaActivity.model.js'
 import Participant from '#models/participant.model.js'
@@ -8,18 +8,18 @@ import Team from '#models/team.model.js'
 import User from '#models/user.model.js'
 
 const mediaPopulate = [
-  { path: 'eventId', select: 'title status startDate endDate' },
+  { path: 'competitionId', select: 'title status startDate endDate' },
   { path: 'uploadedBy', select: 'email fullName' },
   { path: 'teamId', select: 'name status' },
   { path: 'reviewedBy', select: 'email fullName' }
 ]
 
-const findEventById = async (id) => {
-  return await Event.findById(id)
+const findCompetitionById = async (id) => {
+  return await Competition.findById(id)
 }
 
-const findParticipantByEventAndUser = async ({ eventId, userId }) => {
-  return await Participant.findOne({ eventId, userId })
+const findParticipantByCompetitionAndUser = async ({ competitionId, userId }) => {
+  return await Participant.findOne({ competitionId, userId })
 }
 
 const findTeamById = async (id) => {
@@ -115,8 +115,8 @@ const aggregateActivity = async (pipeline = []) => {
 }
 
 export const MEDIA_REPOSITORY = {
-  findEventById,
-  findParticipantByEventAndUser,
+  findCompetitionById,
+  findParticipantByCompetitionAndUser,
   findTeamById,
   findUserById,
   findUsersByIds,

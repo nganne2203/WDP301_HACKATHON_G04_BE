@@ -1,7 +1,7 @@
 import Submission from '#models/submission.model.js'
 
 const submissionPopulate = [
-  { path: 'eventId', select: 'title semester season year status competitionConfig' },
+  { path: 'competitionId', select: 'title semester season year status competitionConfig' },
   { path: 'roundId', select: 'name roundType status assignedTeamIds rubricId submissionDeadline' },
   { path: 'teamId', select: 'name chapterName projectName status boardNumber trackId' },
   { path: 'repositoryId', select: 'repositoryFullName repositoryUrl status accessState' }

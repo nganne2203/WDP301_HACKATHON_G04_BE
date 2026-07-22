@@ -8,10 +8,10 @@ const criterionSchema = new Schema(
     name: { type: String, required: true, trim: true },
     description: { type: String },
     maxScore: { type: Number, required: true, min: 0.01 },
-    weight: { type: Number, default: 1, min: 0.01 },
+    weight: { type: Number, default: 1, min: 1, validate: { validator: Number.isInteger, message: 'weight must be an integer' } },
     order: { type: Number, default: 1, min: 1 },
     judgeOnly: { type: Boolean, default: false },
-    aiSupportForAudit: { type: Boolean, default: true },
+    aiSupportForAudit: { type: Boolean, default: false },
     aiInstruction: { type: String }
   },
   { timestamps: true }

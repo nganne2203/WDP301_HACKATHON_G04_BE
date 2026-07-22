@@ -8,7 +8,7 @@ import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { LOGGER } from '#utils/logger.js'
-import { emitUserSocketEvent, SOCKET_NOTIFICATION_EVENTS } from '#services/socket/socket-emitter.js'
+import { emitUserSocketCompetition, SOCKET_NOTIFICATION_EVENTS } from '#services/socket/socket-emitter.js'
 
 const NOTIFICATION_TYPES = ['DEADLINE', 'WORKSHOP', 'RESULT', 'FEEDBACK', 'SYSTEM']
 const CHANNELS = {
@@ -83,16 +83,16 @@ const appendSearchParams = (urlString, params = {}, logger = LOGGER) => {
   }
 }
 
-const buildRegistrationUrl = (eventId, logger = LOGGER) => {
+const buildRegistrationUrl = (competitionId, logger = LOGGER) => {
   const registrationUrl = getFrontendUrl('/register', logger)
-  return appendSearchParams(registrationUrl, { eventId }, logger)
+  return appendSearchParams(registrationUrl, { competitionId }, logger)
 }
 
 export const createNotificationService = ({
   repository = NOTIFICATION_REPOSITORY,
   emailService = EMAIL_SERVICE,
   socketEmitter = {
-    emitToUser: emitUserSocketEvent
+    emitToUser: emitUserSocketCompetition
   },
   logger = LOGGER
 } = {}) => {
@@ -210,23 +210,23 @@ export const createNotificationService = ({
     return result
   }
 
-  const sendEventInvitations = async ({ event, emails = [], message, actor } = {}) => {
+  const sendCompetitionInvitations = async ({ competition, emails = [], message, actor } = {}) => {
     const uniqueEmails = [...new Set(emails.map((email) => String(email).trim().toLowerCase()).filter(Boolean))]
-    const registrationUrl = buildRegistrationUrl(getId(event), logger)
+    const registrationUrl = buildRegistrationUrl(getId(competition), logger)
     const results = []
 
     for (const email of uniqueEmails) {
       const emailResult = await emailService.sendTemplateEmail({
         to: email,
-        template: EMAIL_TEMPLATE_KEYS.EVENT_INVITATION,
+        template: EMAIL_TEMPLATE_KEYS.COMPETITION_INVITATION,
         context: {
           fullName: email,
-          eventTitle: event?.title,
+          eventTitle: competition?.title,
           message,
           registrationUrl
         },
         metadata: {
-          eventId: getId(event),
+          competitionId: getId(competition),
           invitedBy: actor?.id || actor?.email
         }
       })
@@ -316,7 +316,7 @@ export const createNotificationService = ({
 
   return {
     notifyUser,
-    sendEventInvitations,
+    sendCompetitionInvitations,
     listUserNotifications,
     markAsRead,
     markAllAsRead,

@@ -38,7 +38,7 @@ tags:
       - Review data is advisory only and must not be treated as final judging scores.
   - name: Participants
     description: |
-      Participant registration, event presence, and GitHub-access lifecycle.
+      Participant registration, competition presence, and GitHub-access lifecycle.
   - name: Teams
     description: |
       Team lifecycle, invitations, placement, and capacity-related workflows.
@@ -65,7 +65,7 @@ tags:
   - name: Rankings
     description: Ranking generation based on judge score sheets only.
   - name: Finalists
-    description: Finalist selection endpoints based on event competition configuration.
+    description: Finalist selection endpoints based on competition competition configuration.
   - name: Results
     description: Official round result publication.
   - name: Audit Logs
@@ -83,7 +83,7 @@ tags:
       - These endpoints are designed for admin dashboards, not contestant UI.
       - Redis outages may return degraded queue data instead of crashing the page.
   - name: Timelines
-    description: Event schedule and timeline management endpoints.
+    description: Competition schedule and timeline management endpoints.
   - name: Notifications
     description: Notification inbox endpoints for authenticated users.
   - name: Media
@@ -148,10 +148,10 @@ components:
           nullable: true
     GitHubConfigRequest:
       type: object
-      description: Save or update GitHub org-level configuration for a specific event.
-      required: [eventId, organizationName, ownerUsername, enabled]
+      description: Save or update GitHub org-level configuration for a specific competition.
+      required: [competitionId, organizationName, ownerUsername, enabled]
       properties:
-        eventId:
+        competitionId:
           type: string
           example: 68452b1c4f9a72f84d8a1c10
         organizationName:
@@ -169,9 +169,9 @@ components:
     GitHubRepositoryCreateRequest:
       type: object
       description: Create a real GitHub repository in the configured organization.
-      required: [eventId, repoName]
+      required: [competitionId, repoName]
       properties:
-        eventId:
+        competitionId:
           type: string
           example: 68452b1c4f9a72f84d8a1c10
         repoName:
@@ -191,9 +191,9 @@ components:
           nullable: true
     GitHubCollaboratorRequest:
       type: object
-      required: [eventId]
+      required: [competitionId]
       properties:
-        eventId:
+        competitionId:
           type: string
         permission:
           type: string
@@ -201,15 +201,15 @@ components:
           default: push
     GitHubWebhookRegisterRequest:
       type: object
-      required: [eventId]
+      required: [competitionId]
       properties:
-        eventId:
+        competitionId:
           type: string
     GitHubOrganizationInvitationRequest:
       type: object
-      required: [eventId, email]
+      required: [competitionId, email]
       properties:
-        eventId:
+        competitionId:
           type: string
         email:
           type: string
@@ -220,9 +220,9 @@ components:
           default: direct_member
     GitHubRevokeMembersRequest:
       type: object
-      required: [eventId, confirmationText]
+      required: [competitionId, confirmationText]
       properties:
-        eventId:
+        competitionId:
           type: string
         confirmationText:
           type: string
@@ -233,7 +233,7 @@ components:
       properties:
         id:
           type: string
-        eventId:
+        competitionId:
           type: string
         teamId:
           type: string
@@ -284,9 +284,9 @@ components:
           nullable: true
     RepositoryCreateRequest:
       type: object
-      required: [eventId, teamId, githubOwner, githubRepo, repositoryUrl]
+      required: [competitionId, teamId, githubOwner, githubRepo, repositoryUrl]
       properties:
-        eventId:
+        competitionId:
           type: string
         teamId:
           type: string
@@ -344,10 +344,10 @@ components:
           type: string
     ParticipantRequest:
       type: object
-      description: Create or update a participant registration record for an event.
-      required: [eventId]
+      description: Create or update a participant registration record for an competition.
+      required: [competitionId]
       properties:
-        eventId:
+        competitionId:
           type: string
         userId:
           type: string
@@ -384,9 +384,9 @@ components:
     TeamCreateRequest:
       type: object
       description: Create a team and optionally seed invitation emails in the same request.
-      required: [eventId, name]
+      required: [competitionId, name]
       properties:
-        eventId:
+        competitionId:
           type: string
         name:
           type: string
@@ -457,9 +457,9 @@ components:
     SubmissionRequest:
       type: object
       description: Store or update a submission artifact set for a team in a round.
-      required: [eventId, roundId, teamId]
+      required: [competitionId, roundId, teamId]
       properties:
-        eventId:
+        competitionId:
           type: string
         roundId:
           type: string
@@ -512,9 +512,9 @@ components:
     RubricRequest:
       type: object
       description: Create a rubric that can later be linked to a round.
-      required: [eventId, title]
+      required: [competitionId, title]
       properties:
-        eventId:
+        competitionId:
           type: string
         roundId:
           type: string
@@ -526,8 +526,13 @@ components:
           nullable: true
         totalScore:
           type: number
-        version:
-          type: integer
+          enum: [10, 100]
+          description: Total weight. The sum of all criterion weights must equal this value before the rubric leaves DRAFT.
+        criterionMaxScore:
+          type: number
+          enum: [4, 10, 100]
+          default: 10
+          description: Scoring coefficient automatically applied to every criterion in this rubric.
         status:
           type: string
           enum: [DRAFT, ACTIVE, ARCHIVED]
@@ -539,25 +544,30 @@ components:
         description:
           type: string
           nullable: true
-        version:
-          type: integer
+        totalScore:
+          type: number
+          enum: [10, 100]
+          description: Total weight. The sum of all criterion weights must equal this value before the rubric leaves DRAFT.
+        criterionMaxScore:
+          type: number
+          enum: [4, 10, 100]
+          description: Changing this also updates every criterion that has not been scored.
         status:
           type: string
           enum: [DRAFT, ACTIVE, ARCHIVED]
     CriterionRequest:
       type: object
-      description: Add a criterion to a rubric, including AI-specific audit hints.
-      required: [name, maxScore]
+      description: Add a criterion to a rubric. Its scoring coefficient is set from rubric.criterionMaxScore.
+      required: [name]
       properties:
         name:
           type: string
         description:
           type: string
           nullable: true
-        maxScore:
-          type: number
         weight:
-          type: number
+          type: integer
+          minimum: 1
         order:
           type: integer
         judgeOnly:
@@ -575,10 +585,9 @@ components:
         description:
           type: string
           nullable: true
-        maxScore:
-          type: number
         weight:
-          type: number
+          type: integer
+          minimum: 1
         order:
           type: integer
         judgeOnly:
@@ -590,9 +599,9 @@ components:
           nullable: true
     RoundRequest:
       type: object
-      required: [eventId, name]
+      required: [competitionId, name]
       properties:
-        eventId:
+        competitionId:
           type: string
         trackId:
           type: string
@@ -602,10 +611,6 @@ components:
         roundType:
           type: string
           enum: [PRELIMINARY, FINAL]
-        assignedTeamIds:
-          type: array
-          items:
-            type: string
         promotedTeamIds:
           type: array
           items:
@@ -650,9 +655,9 @@ components:
           enum: [DRAFT, OPEN, CLOSED, SCORING, COMPLETED]
     JudgingBoardRequest:
       type: object
-      required: [eventId, roundId, name, boardNumber]
+      required: [competitionId, roundId, name, boardNumber]
       properties:
-        eventId:
+        competitionId:
           type: string
         roundId:
           type: string
@@ -678,9 +683,9 @@ components:
           enum: [DRAFT, ASSIGNED, SCORING, COMPLETED]
     AutoAssignBoardsRequest:
       type: object
-      required: [eventId, roundId]
+      required: [competitionId, roundId]
       properties:
-        eventId:
+        competitionId:
           type: string
         roundId:
           type: string
@@ -698,9 +703,9 @@ components:
     ScoreSheetRequest:
       type: object
       description: Create a judge score sheet for one team submission in one board/round.
-      required: [eventId, roundId, boardId, teamId, submissionId]
+      required: [competitionId, roundId, boardId, teamId, submissionId]
       properties:
-        eventId:
+        competitionId:
           type: string
         roundId:
           type: string
@@ -732,9 +737,9 @@ components:
             $ref: '#/components/schemas/ScoreItem'
     GenerateRankingsRequest:
       type: object
-      required: [eventId, roundId]
+      required: [competitionId, roundId]
       properties:
-        eventId:
+        competitionId:
           type: string
         roundId:
           type: string
@@ -743,17 +748,17 @@ components:
           enum: [TEAM]
     SelectFinalistsRequest:
       type: object
-      required: [eventId, roundId]
+      required: [competitionId, roundId]
       properties:
-        eventId:
+        competitionId:
           type: string
         roundId:
           type: string
     PublishResultsRequest:
       type: object
-      required: [eventId, roundId]
+      required: [competitionId, roundId]
       properties:
-        eventId:
+        competitionId:
           type: string
         roundId:
           type: string
@@ -816,7 +821,7 @@ components:
         scope:
           type: object
           properties:
-            eventId:
+            competitionId:
               type: string
               nullable: true
             roundId:
@@ -852,7 +857,7 @@ components:
         scope:
           type: object
           properties:
-            eventId:
+            competitionId:
               type: string
               nullable: true
             roundId:
@@ -890,9 +895,9 @@ components:
                 type: integer
     TimelineRequest:
       type: object
-      required: [eventId, title]
+      required: [competitionId, title]
       properties:
-        eventId:
+        competitionId:
           type: string
         title:
           type: string
@@ -1010,9 +1015,9 @@ paths:
 
   /api/github/config:
     get:
-      summary: Get GitHub integration config for an event
+      summary: Get GitHub integration config for an competition
       description: |
-        Load GitHub org configuration for a specific event.
+        Load GitHub org configuration for a specific competition.
 
         FE notes:
         - Use this to prefill admin settings screens.
@@ -1022,7 +1027,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           required: true
           schema:
             type: string
@@ -1032,7 +1037,7 @@ paths:
     post:
       summary: Save GitHub integration config
       description: |
-        Save event-level GitHub organization settings.
+        Save competition-level GitHub organization settings.
 
         FE notes:
         - Token is stored encrypted on the backend.
@@ -1047,7 +1052,7 @@ paths:
             schema:
               $ref: '#/components/schemas/GitHubConfigRequest'
             example:
-              eventId: 68452b1c4f9a72f84d8a1c10
+              competitionId: 68452b1c4f9a72f84d8a1c10
               organizationName: seal-org
               ownerUsername: seal-admin
               githubToken: github_pat_xxx
@@ -1072,9 +1077,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [eventId]
+              required: [competitionId]
               properties:
-                eventId:
+                competitionId:
                   type: string
       responses:
         '200':
@@ -1098,7 +1103,7 @@ paths:
             schema:
               $ref: '#/components/schemas/GitHubRepositoryCreateRequest'
             example:
-              eventId: 68452b1c4f9a72f84d8a1c10
+              competitionId: 68452b1c4f9a72f84d8a1c10
               repoName: seal-runtime-verification
               description: Runtime verification repo
               private: true
@@ -1131,7 +1136,7 @@ paths:
             schema:
               $ref: '#/components/schemas/GitHubCollaboratorRequest'
             example:
-              eventId: 68452b1c4f9a72f84d8a1c10
+              competitionId: 68452b1c4f9a72f84d8a1c10
               permission: push
       responses:
         '200':
@@ -1283,7 +1288,7 @@ paths:
           schema:
             type: integer
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -1327,7 +1332,7 @@ paths:
             schema:
               $ref: '#/components/schemas/RepositoryCreateRequest'
             example:
-              eventId: 68452b1c4f9a72f84d8a1c10
+              competitionId: 68452b1c4f9a72f84d8a1c10
               teamId: 68452c6f4f9a72f84d8a1d55
               roundId: 68452d8a4f9a72f84d8a1f01
               githubOwner: seal-org
@@ -1528,7 +1533,7 @@ paths:
     get:
       summary: List participants
       description: |
-        List participant records for event operations.
+        List participant records for competition operations.
 
         FE notes:
         - Useful for check-in dashboards, eligibility review, and GitHub-access administration.
@@ -1537,7 +1542,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -1566,7 +1571,7 @@ paths:
     post:
       summary: Register a participant
       description: |
-        Create a participant record for an event.
+        Create a participant record for an competition.
 
         FE notes:
         - If `userId` is omitted, the backend registers the current authenticated user.
@@ -1580,7 +1585,7 @@ paths:
             schema:
               $ref: '#/components/schemas/ParticipantRequest'
             example:
-              eventId: 68452b1c4f9a72f84d8a1c10
+              competitionId: 68452b1c4f9a72f84d8a1c10
               chapterName: SE1701
               teamRole: MEMBER
               githubAccessStatus: NOT_GRANTED
@@ -1625,13 +1630,13 @@ paths:
           description: Participant updated
   /api/participants/me:
     get:
-      summary: Get the authenticated user's participant registration for an event
+      summary: Get the authenticated user's participant registration for an competition
       tags: [Participants]
       security:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           required: true
           schema:
             type: string
@@ -1639,7 +1644,7 @@ paths:
         '200':
           description: Current participant returned
         '404':
-          description: User is not registered for the event
+          description: User is not registered for the competition
   /api/participants/{id}/check-in:
     patch:
       summary: Update participant check-in status
@@ -1668,7 +1673,7 @@ paths:
           description: Check-in status updated
   /api/participants/check-in/qr:
     post:
-      summary: Generate a short-lived event check-in QR (coordinator/admin)
+      summary: Generate a short-lived competition check-in QR (coordinator/admin)
       tags: [Participants]
       security:
         - BearerAuth: []
@@ -1678,16 +1683,16 @@ paths:
           application/json:
             schema:
               type: object
-              required: [eventId]
+              required: [competitionId]
               properties:
-                eventId:
+                competitionId:
                   type: string
       responses:
         '200':
           description: QR image, payload, and expiration returned
   /api/participants/check-in/scan:
     post:
-      summary: Participant scans an event QR to check in themselves
+      summary: Participant scans an competition QR to check in themselves
       tags: [Participants]
       security:
         - BearerAuth: []
@@ -1799,7 +1804,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -1830,7 +1835,7 @@ paths:
             schema:
               $ref: '#/components/schemas/TeamCreateRequest'
             example:
-              eventId: 68452b1c4f9a72f84d8a1c10
+              competitionId: 68452b1c4f9a72f84d8a1c10
               name: Team Alpha
               chapterName: SE1701
               projectName: AI Auditor
@@ -1844,15 +1849,15 @@ paths:
           description: Team created
   /api/teams/my:
     get:
-      summary: Get my team for an event
+      summary: Get my team for an competition
       description: |
-        Resolve the current user's team inside one event.
+        Resolve the current user's team inside one competition.
       tags: [Teams]
       security:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           required: true
           schema:
             type: string
@@ -2037,7 +2042,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -2073,7 +2078,7 @@ paths:
             schema:
               $ref: '#/components/schemas/SubmissionRequest'
             example:
-              eventId: 68452b1c4f9a72f84d8a1c10
+              competitionId: 68452b1c4f9a72f84d8a1c10
               roundId: 68452d8a4f9a72f84d8a1f01
               teamId: 68452c6f4f9a72f84d8a1d55
               repositoryId: 6845309c4f9a72f84d8a2220
@@ -2182,7 +2187,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -2228,7 +2233,7 @@ paths:
     patch:
       summary: Update rubric metadata
       description: |
-        Update rubric title, description, version, or lifecycle status without changing criteria rows.
+        Update rubric title, description, total weight, scoring coefficient, or lifecycle status without changing criteria rows.
       tags: [Rubrics]
       security:
         - BearerAuth: []
@@ -2276,7 +2281,7 @@ paths:
               maxScore: 10
               weight: 1
               judgeOnly: false
-              aiSupportForAudit: true
+              aiSupportForAudit: false
               aiInstruction: Focus on evidence from repository structure and changed services.
       responses:
         '201':
@@ -2339,7 +2344,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -2429,7 +2434,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -2509,9 +2514,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [eventId, roundId, boards]
+              required: [competitionId, roundId, boards]
               properties:
-                eventId:
+                competitionId:
                   type: string
                 roundId:
                   type: string
@@ -2595,7 +2600,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -2631,7 +2636,7 @@ paths:
             schema:
               $ref: '#/components/schemas/ScoreSheetRequest'
             example:
-              eventId: 68452b1c4f9a72f84d8a1c10
+              competitionId: 68452b1c4f9a72f84d8a1c10
               roundId: 68452d8a4f9a72f84d8a1f01
               boardId: 684531f54f9a72f84d8a2389
               teamId: 68452c6f4f9a72f84d8a1d55
@@ -2709,7 +2714,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -2761,7 +2766,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -2777,9 +2782,9 @@ paths:
           description: Finalists returned
   /api/finalists/select:
     post:
-      summary: Select finalists from rankings and event competition rules
+      summary: Select finalists from rankings and competition competition rules
       description: |
-        Select finalists according to the event competition configuration and ranking results.
+        Select finalists according to the competition competition configuration and ranking results.
       tags: [Finalists]
       security:
         - BearerAuth: []
@@ -2922,7 +2927,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -2946,7 +2951,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -2965,13 +2970,13 @@ paths:
     get:
       summary: List timeline items
       description: |
-        List event schedule items such as check-in, workshop, round, and ceremony milestones.
+        List competition schedule items such as check-in, workshop, round, and ceremony milestones.
       tags: [Timelines]
       security:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -2988,7 +2993,7 @@ paths:
     post:
       summary: Create a timeline item
       description: |
-        Create a new schedule item for an event timeline.
+        Create a new schedule item for an competition timeline.
       tags: [Timelines]
       security:
         - BearerAuth: []
@@ -3104,7 +3109,7 @@ paths:
 
   /api/media/upload:
     post:
-      summary: Upload event media
+      summary: Upload competition media
       tags: [Media]
       security:
         - BearerAuth: []
@@ -3114,9 +3119,9 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [eventId, file]
+              required: [competitionId, file]
               properties:
-                eventId:
+                competitionId:
                   type: string
                 teamId:
                   type: string
@@ -3147,7 +3152,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -3223,7 +3228,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
@@ -3247,7 +3252,7 @@ paths:
         - BearerAuth: []
       parameters:
         - in: query
-          name: eventId
+          name: competitionId
           schema:
             type: string
         - in: query
