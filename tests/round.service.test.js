@@ -81,6 +81,18 @@ test('createRound and updateRound reject windows outside the competition dates',
         error.code === 'BAD_REQUEST' &&
         error.errors.includes('Round publish time must be within the competition date range')
     )
+
+    await assert.rejects(
+      service.createRound({
+        competitionId: '000000000000000000000101',
+        name: 'Round with submission deadline after competition',
+        startTime: '2026-08-16T01:00:00.000Z',
+        submissionDeadline: '2026-08-17T01:00:00.000Z'
+      }),
+      (error) => error instanceof ApiError &&
+        error.code === 'BAD_REQUEST' &&
+        error.errors.includes('Round submission deadline must be within the competition date range')
+    )
   } finally {
     competitionModel.findById = competitionFindById
     teamModel.find = teamFind
