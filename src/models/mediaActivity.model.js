@@ -5,7 +5,7 @@ const { Schema } = mongoose
 const mediaActivitySchema = new Schema(
   {
     mediaId: { type: Schema.Types.ObjectId, ref: 'Media', required: true },
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true },
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     action: {
       type: String,
@@ -19,7 +19,7 @@ const mediaActivitySchema = new Schema(
 )
 
 mediaActivitySchema.index({ mediaId: 1, createdAt: -1 })
-mediaActivitySchema.index({ eventId: 1, createdAt: -1 })
+mediaActivitySchema.index({ competitionId: 1, createdAt: -1 })
 mediaActivitySchema.index({ userId: 1, createdAt: -1 })
 mediaActivitySchema.index({ action: 1, createdAt: -1 })
 

@@ -8,7 +8,7 @@ const normalizeTeamName = (name) => {
 
 const teamSchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true },
     trackId: { type: Schema.Types.ObjectId, ref: 'Track' },
     leaderId: { type: Schema.Types.ObjectId, ref: 'User' },
     memberIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
@@ -50,16 +50,16 @@ teamSchema.pre('validate', function setNormalizedName(next) {
   next()
 })
 
-teamSchema.index({ eventId: 1, trackId: 1 })
+teamSchema.index({ competitionId: 1, trackId: 1 })
 teamSchema.index(
-  { eventId: 1, name: 1 },
+  { competitionId: 1, name: 1 },
   {
     unique: true,
     partialFilterExpression: { status: { $in: ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED'] } }
   }
 )
 teamSchema.index(
-  { eventId: 1, normalizedName: 1 },
+  { competitionId: 1, normalizedName: 1 },
   {
     unique: true,
     partialFilterExpression: {
@@ -69,7 +69,7 @@ teamSchema.index(
   }
 )
 teamSchema.index(
-  { eventId: 1, leaderId: 1 },
+  { competitionId: 1, leaderId: 1 },
   {
     unique: true,
     partialFilterExpression: {
@@ -78,9 +78,9 @@ teamSchema.index(
     }
   }
 )
-teamSchema.index({ eventId: 1, status: 1 })
-teamSchema.index({ eventId: 1, chapterName: 1 })
-teamSchema.index({ eventId: 1, mentorIds: 1 })
+teamSchema.index({ competitionId: 1, status: 1 })
+teamSchema.index({ competitionId: 1, chapterName: 1 })
+teamSchema.index({ competitionId: 1, mentorIds: 1 })
 teamSchema.index({ qualificationStatus: 1 })
 
 const Team = mongoose.model('Team', teamSchema)

@@ -4,7 +4,7 @@ const { Schema } = mongoose
 
 const checkInQrSessionSchema = new Schema(
   {
-    eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true, unique: true },
+    competitionId: { type: Schema.Types.ObjectId, ref: 'Competition', required: true, unique: true },
     tokenHash: { type: String, required: true, unique: true, select: false },
     expiresAt: { type: Date, required: true },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true }

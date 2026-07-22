@@ -8,7 +8,7 @@ export const RANKING_VALIDATION = {
     query: Joi.object({
       page: Joi.number().integer().min(1).default(1),
       limit: Joi.number().integer().min(1).max(500).default(10),
-      eventId: objectId,
+      competitionId: objectId,
       roundId: objectId,
       trackId: objectId,
       teamId: objectId,
@@ -17,14 +17,14 @@ export const RANKING_VALIDATION = {
   },
   generateRankings: {
     body: Joi.object({
-      eventId: objectId.required(),
+      competitionId: objectId.required(),
       roundId: objectId.required(),
       rankingType: rankingType.default('TEAM')
     })
   },
   resolveTieBreak: {
     body: Joi.object({
-      eventId: objectId.required(),
+      competitionId: objectId.required(),
       roundId: objectId.required(),
       decisions: Joi.array().items(Joi.object({
         teamId: objectId.required(),
@@ -38,7 +38,7 @@ export const RANKING_VALIDATION = {
   },
   publishResults: {
     body: Joi.object({
-      eventId: objectId.required(),
+      competitionId: objectId.required(),
       roundId: objectId.required(),
       repositoryAccessAction: Joi.string().trim().uppercase().valid('NONE', 'FREEZE', 'REVOKE').default('NONE')
     })

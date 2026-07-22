@@ -1,7 +1,7 @@
 import { Router } from 'express'
 
-import { EVENT_CONTROLLER } from './event.controller.js'
-import { EVENT_VALIDATION } from './event.validation.js'
+import { COMPETITION_CONTROLLER } from './competition.controller.js'
+import { COMPETITION_VALIDATION } from './competition.validation.js'
 import { MEDIA_CONTROLLER } from '#modules/media/media.controller.js'
 import { MEDIA_VALIDATION } from '#modules/media/media.validation.js'
 import { TEAM_CONTROLLER } from '#modules/teams/team.controller.js'
@@ -16,12 +16,12 @@ const router = Router()
 /**
  * @swagger
  * tags:
- *   - name: Events
- *     description: Hackathon event lifecycle endpoints
+ *   - name: Competitions
+ *     description: Hackathon competition lifecycle endpoints
  *
  * components:
  *   schemas:
- *     Event:
+ *     Competition:
  *       type: object
  *       properties:
  *         id:
@@ -59,7 +59,7 @@ const router = Router()
  *         updatedAt:
  *           type: string
  *           format: date-time
- *     EventRequest:
+ *     CompetitionRequest:
  *       type: object
  *       required: [title]
  *       properties:
@@ -89,10 +89,10 @@ router.use(authorizationMiddleware)
 
 /**
  * @swagger
- * /api/events:
+ * /api/competitions:
  *   get:
- *     summary: List events
- *     tags: [Events]
+ *     summary: List competitions
+ *     tags: [Competitions]
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -121,21 +121,21 @@ router.use(authorizationMiddleware)
  *           default: 10
  *     responses:
  *       200:
- *         description: Events retrieved successfully
+ *         description: Competitions retrieved successfully
  */
 router.get(
   '/',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
-  validationHandlingMiddleware(EVENT_VALIDATION.listEvents),
-  EVENT_CONTROLLER.listEvents
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
+  validationHandlingMiddleware(COMPETITION_VALIDATION.listCompetitions),
+  COMPETITION_CONTROLLER.listCompetitions
 )
 
 /**
  * @swagger
- * /api/events:
+ * /api/competitions:
  *   post:
- *     summary: Create an event
- *     tags: [Events]
+ *     summary: Create an competition
+ *     tags: [Competitions]
  *     security:
  *       - BearerAuth: []
  *     requestBody:
@@ -143,65 +143,65 @@ router.get(
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/EventRequest'
+ *             $ref: '#/components/schemas/CompetitionRequest'
  *     responses:
  *       201:
- *         description: Event created successfully
+ *         description: Competition created successfully
  *       403:
- *         description: Requires EVENT_CREATE permission
+ *         description: Requires COMPETITION_CREATE permission
  */
 router.post(
   '/',
-  permissionMiddleware(PERMISSIONS.EVENT_CREATE),
-  validationHandlingMiddleware(EVENT_VALIDATION.createEvent),
-  EVENT_CONTROLLER.createEvent
+  permissionMiddleware(PERMISSIONS.COMPETITION_CREATE),
+  validationHandlingMiddleware(COMPETITION_VALIDATION.createCompetition),
+  COMPETITION_CONTROLLER.createCompetition
 )
 
 /**
  * @swagger
- * /api/events/{id}/invitations:
+ * /api/competitions/{id}/invitations:
  *   post:
- *     summary: Send participant invitation emails for an event
- *     tags: [Events]
+ *     summary: Send participant invitation emails for an competition
+ *     tags: [Competitions]
  *     security:
  *       - BearerAuth: []
  */
 router.post(
   '/:id/invitations',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
-  validationHandlingMiddleware(EVENT_VALIDATION.sendInvitations),
-  EVENT_CONTROLLER.sendInvitations
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
+  validationHandlingMiddleware(COMPETITION_VALIDATION.sendInvitations),
+  COMPETITION_CONTROLLER.sendInvitations
 )
 
 /**
  * @swagger
- * /api/events/{id}/gallery:
+ * /api/competitions/{id}/gallery:
  *   get:
- *     summary: Get approved event media gallery
- *     tags: [Events]
+ *     summary: Get approved competition media gallery
+ *     tags: [Competitions]
  *     security:
  *       - BearerAuth: []
  */
 router.get(
   '/:id/gallery',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(MEDIA_VALIDATION.eventGallery),
-  MEDIA_CONTROLLER.getEventGallery
+  MEDIA_CONTROLLER.getCompetitionGallery
 )
 
 router.get(
-  '/:eventId/teams/capacity',
+  '/:competitionId/teams/capacity',
   permissionMiddleware(PERMISSIONS.TEAM_VIEW),
-  validationHandlingMiddleware(TEAM_VALIDATION.getEventCapacity),
-  TEAM_CONTROLLER.getEventTeamCapacity
+  validationHandlingMiddleware(TEAM_VALIDATION.getCompetitionCapacity),
+  TEAM_CONTROLLER.getCompetitionTeamCapacity
 )
 
 /**
  * @swagger
- * /api/events/{id}:
+ * /api/competitions/{id}:
  *   get:
- *     summary: Get an event by id
- *     tags: [Events]
+ *     summary: Get an competition by id
+ *     tags: [Competitions]
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -213,23 +213,23 @@ router.get(
  *           pattern: '^[a-fA-F0-9]{24}$'
  *     responses:
  *       200:
- *         description: Event retrieved successfully
+ *         description: Competition retrieved successfully
  *       404:
- *         description: Event not found
+ *         description: Competition not found
  */
 router.get(
   '/:id',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
-  validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
-  EVENT_CONTROLLER.getEventById
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
+  validationHandlingMiddleware(COMPETITION_VALIDATION.getCompetitionById),
+  COMPETITION_CONTROLLER.getCompetitionById
 )
 
 /**
  * @swagger
- * /api/events/{id}:
+ * /api/competitions/{id}:
  *   patch:
- *     summary: Update an event
- *     tags: [Events]
+ *     summary: Update an competition
+ *     tags: [Competitions]
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -244,26 +244,26 @@ router.get(
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/EventRequest'
+ *             $ref: '#/components/schemas/CompetitionRequest'
  *     responses:
  *       200:
- *         description: Event updated successfully
+ *         description: Competition updated successfully
  *       403:
- *         description: Requires EVENT_UPDATE permission
+ *         description: Requires COMPETITION_UPDATE permission
  */
 router.patch(
   '/:id',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
-  validationHandlingMiddleware(EVENT_VALIDATION.updateEvent),
-  EVENT_CONTROLLER.updateEvent
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
+  validationHandlingMiddleware(COMPETITION_VALIDATION.updateCompetition),
+  COMPETITION_CONTROLLER.updateCompetition
 )
 
 /**
  * @swagger
- * /api/events/{id}/status:
+ * /api/competitions/{id}/status:
  *   patch:
- *     summary: Update an event status
- *     tags: [Events]
+ *     summary: Update an competition status
+ *     tags: [Competitions]
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -286,63 +286,63 @@ router.patch(
  *                 enum: [DRAFT, OPEN_REGISTRATION, ONGOING, SCORING, COMPLETED, ARCHIVED]
  *     responses:
  *       200:
- *         description: Event status updated successfully
+ *         description: Competition status updated successfully
  */
 router.patch(
   '/:id/status',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
-  validationHandlingMiddleware(EVENT_VALIDATION.updateEventStatus),
-  EVENT_CONTROLLER.updateEventStatus
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
+  validationHandlingMiddleware(COMPETITION_VALIDATION.updateCompetitionStatus),
+  COMPETITION_CONTROLLER.updateCompetitionStatus
 )
 
 router.post(
   '/:id/open-registration',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
-  validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
-  EVENT_CONTROLLER.openRegistration
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
+  validationHandlingMiddleware(COMPETITION_VALIDATION.getCompetitionById),
+  COMPETITION_CONTROLLER.openRegistration
 )
 
 router.post(
   '/:id/close-registration',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
-  validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
-  EVENT_CONTROLLER.closeRegistration
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
+  validationHandlingMiddleware(COMPETITION_VALIDATION.getCompetitionById),
+  COMPETITION_CONTROLLER.closeRegistration
 )
 
 router.post(
   '/:id/start',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
-  validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
-  EVENT_CONTROLLER.startEvent
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
+  validationHandlingMiddleware(COMPETITION_VALIDATION.getCompetitionById),
+  COMPETITION_CONTROLLER.startCompetition
 )
 
 router.post(
   '/:id/start-scoring',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
-  validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
-  EVENT_CONTROLLER.startScoring
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
+  validationHandlingMiddleware(COMPETITION_VALIDATION.getCompetitionById),
+  COMPETITION_CONTROLLER.startScoring
 )
 
 router.post(
   '/:id/complete',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
-  validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
-  EVENT_CONTROLLER.completeEvent
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
+  validationHandlingMiddleware(COMPETITION_VALIDATION.getCompetitionById),
+  COMPETITION_CONTROLLER.completeCompetition
 )
 
 router.post(
   '/:id/archive',
-  permissionMiddleware(PERMISSIONS.EVENT_UPDATE),
-  validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
-  EVENT_CONTROLLER.archiveEvent
+  permissionMiddleware(PERMISSIONS.COMPETITION_UPDATE),
+  validationHandlingMiddleware(COMPETITION_VALIDATION.getCompetitionById),
+  COMPETITION_CONTROLLER.archiveCompetition
 )
 
 /**
  * @swagger
- * /api/events/{id}:
+ * /api/competitions/{id}:
  *   delete:
- *     summary: Delete an event
- *     tags: [Events]
+ *     summary: Delete an competition
+ *     tags: [Competitions]
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -354,15 +354,15 @@ router.post(
  *           pattern: '^[a-fA-F0-9]{24}$'
  *     responses:
  *       200:
- *         description: Event deleted successfully
+ *         description: Competition deleted successfully
  *       403:
- *         description: Requires EVENT_DELETE permission
+ *         description: Requires COMPETITION_DELETE permission
  */
 router.delete(
   '/:id',
-  permissionMiddleware(PERMISSIONS.EVENT_DELETE),
-  validationHandlingMiddleware(EVENT_VALIDATION.getEventById),
-  EVENT_CONTROLLER.deleteEvent
+  permissionMiddleware(PERMISSIONS.COMPETITION_DELETE),
+  validationHandlingMiddleware(COMPETITION_VALIDATION.getCompetitionById),
+  COMPETITION_CONTROLLER.deleteCompetition
 )
 
 export default router

@@ -21,11 +21,11 @@ const createRepository = () => {
     },
     createRepositoryRecord: async (payload) => {
       const record = { _id: payload.repoName || payload.githubRepo, ...payload }
-      repositories.set(`${payload.eventId}:${payload.githubOwner || payload.githubOrg}:${payload.repoName || payload.githubRepo}`, record)
+      repositories.set(`${payload.competitionId}:${payload.githubOwner || payload.githubOrg}:${payload.repoName || payload.githubRepo}`, record)
       return record
     },
-    findRepositoryByEventAndRepoName: async ({ eventId, repoName, githubOwner }) => {
-      return repositories.get(`${eventId}:${githubOwner}:${repoName}`) || null
+    findRepositoryByCompetitionAndRepoName: async ({ competitionId, repoName, githubOwner }) => {
+      return repositories.get(`${competitionId}:${githubOwner}:${repoName}`) || null
     },
     updateRepositoryById: async (id, updates) => {
       const entry = [...repositories.entries()].find(([, value]) => value._id === id)
@@ -53,10 +53,10 @@ const createLogger = () => ({
   error: () => {}
 })
 
-const EVENT_ID = '664c3f6a3a6d4a5f3f93b901'
-const SECOND_EVENT_ID = '664c3f6a3a6d4a5f3f93b902'
-const eventConfigKey = `github.event.${EVENT_ID}.organization`
-const secondEventConfigKey = `github.event.${SECOND_EVENT_ID}.organization`
+const COMPETITION_ID = '664c3f6a3a6d4a5f3f93b901'
+const SECOND_COMPETITION_ID = '664c3f6a3a6d4a5f3f93b902'
+const competitionConfigKey = `github.competition.${COMPETITION_ID}.organization`
+const secondCompetitionConfigKey = `github.competition.${SECOND_COMPETITION_ID}.organization`
 
 test('GitHub config is stored safely and does not expose token', async () => {
   const repository = createRepository()
@@ -68,7 +68,7 @@ test('GitHub config is stored safely and does not expose token', async () => {
   })
 
   const saved = await service.saveConfig({
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     organizationName: 'seal-org',
     ownerUsername: 'owner-user',
     githubToken: 'github_pat_secret',
@@ -76,53 +76,53 @@ test('GitHub config is stored safely and does not expose token', async () => {
   }, { id: 'admin-1' })
 
   assert.deepEqual(saved, {
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     organizationName: 'seal-org',
     ownerUsername: 'owner-user',
     enabled: true,
     hasToken: true
   })
-  assert.equal(repository.configs.get(eventConfigKey).value.tokenEncrypted, 'encrypted:github_pat_secret')
-  assert.equal(repository.configs.get(eventConfigKey).isEncrypted, true)
+  assert.equal(repository.configs.get(competitionConfigKey).value.tokenEncrypted, 'encrypted:github_pat_secret')
+  assert.equal(repository.configs.get(competitionConfigKey).isEncrypted, true)
   assert.equal(Object.hasOwn(saved, 'githubToken'), false)
   assert.equal(repository.configs.size, 1)
 
   await service.saveConfig({
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     organizationName: 'seal-org-2',
     ownerUsername: 'owner-user',
     githubToken: '',
     enabled: true
   }, { id: 'admin-1' })
 
-  assert.equal(repository.configs.get(eventConfigKey).value.tokenEncrypted, 'encrypted:github_pat_secret')
+  assert.equal(repository.configs.get(competitionConfigKey).value.tokenEncrypted, 'encrypted:github_pat_secret')
   assert.equal(repository.configs.size, 1)
 
   await service.saveConfig({
-    eventId: SECOND_EVENT_ID,
-    organizationName: 'seal-org-event-2',
+    competitionId: SECOND_COMPETITION_ID,
+    organizationName: 'seal-org-competition-2',
     ownerUsername: 'owner-user',
     githubToken: 'second-token',
     enabled: true
   }, { id: 'admin-1' })
 
   assert.equal(repository.configs.size, 2)
-  assert.equal(repository.configs.get(secondEventConfigKey).value.organizationName, 'seal-org-event-2')
+  assert.equal(repository.configs.get(secondCompetitionConfigKey).value.organizationName, 'seal-org-competition-2')
 })
 
-test('n8n dispatch token resolver prefers stored event token over env fallback', async () => {
+test('n8n dispatch token resolver prefers stored competition token over env fallback', async () => {
   const repository = createRepository()
   const originalGithubToken = env.github.token
   env.github.token = 'env-fallback-token'
 
   await repository.upsertConfig({
-    key: eventConfigKey,
+    key: competitionConfigKey,
     value: {
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       organizationName: 'seal-org',
       ownerUsername: 'owner-user',
       enabled: true,
-      tokenEncrypted: 'encrypted:stored-event-token'
+      tokenEncrypted: 'encrypted:stored-competition-token'
     },
     isEncrypted: true
   })
@@ -135,8 +135,8 @@ test('n8n dispatch token resolver prefers stored event token over env fallback',
       logger: createLogger()
     })
 
-    assert.equal(await service.getTokenForN8nDispatch({ eventId: EVENT_ID }), 'stored-event-token')
-    assert.equal(await service.getTokenForN8nDispatch({ eventId: SECOND_EVENT_ID }), 'env-fallback-token')
+    assert.equal(await service.getTokenForN8nDispatch({ competitionId: COMPETITION_ID }), 'stored-competition-token')
+    assert.equal(await service.getTokenForN8nDispatch({ competitionId: SECOND_COMPETITION_ID }), 'env-fallback-token')
   } finally {
     env.github.token = originalGithubToken
   }
@@ -145,9 +145,9 @@ test('n8n dispatch token resolver prefers stored event token over env fallback',
 test('createRepository calls GitHub org repos API with auto_init', async () => {
   const repository = createRepository()
   await repository.upsertConfig({
-    key: eventConfigKey,
+    key: competitionConfigKey,
     value: {
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       organizationName: 'seal-org',
       ownerUsername: 'owner-user',
       enabled: true,
@@ -176,7 +176,7 @@ test('createRepository calls GitHub org repos API with auto_init', async () => {
   })
 
   const result = await service.createRepository({
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     repoName: 'team-alpha-project',
     description: 'Repository for Team Alpha',
     private: true
@@ -198,9 +198,9 @@ test('createRepository calls GitHub org repos API with auto_init', async () => {
 test('registerRepositoryWebhook stores repository webhook status when callback URL and secret are configured', async () => {
   const repository = createRepository()
   await repository.upsertConfig({
-    key: eventConfigKey,
+    key: competitionConfigKey,
     value: {
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       organizationName: 'seal-org',
       ownerUsername: 'owner-user',
       enabled: true,
@@ -210,7 +210,7 @@ test('registerRepositoryWebhook stores repository webhook status when callback U
   })
 
   await repository.createRepositoryRecord({
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     githubOwner: 'seal-org',
     githubRepo: 'team-alpha',
     repoName: 'team-alpha',
@@ -244,14 +244,14 @@ test('registerRepositoryWebhook stores repository webhook status when callback U
 
   try {
     const result = await service.registerRepositoryWebhook({
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       repoName: 'team-alpha'
     }, { id: 'coordinator-1' })
 
     assert.equal(calls[0].path, '/repos/seal-org/team-alpha/hooks')
     assert.equal(calls[0].body.config.url, 'https://seal.example.com/api/github/webhooks')
     assert.equal(result.hookId, 99)
-    assert.equal(repository.repositories.get(`${EVENT_ID}:seal-org:team-alpha`).webhookStatus, 'REGISTERED')
+    assert.equal(repository.repositories.get(`${COMPETITION_ID}:seal-org:team-alpha`).webhookStatus, 'REGISTERED')
   } finally {
     env.server.publicUrl = originalPublicUrl
     env.github.webhookSecret = originalWebhookSecret
@@ -262,9 +262,9 @@ test('registerRepositoryWebhook stores repository webhook status when callback U
 test('revokeCollaborator removes collaborator and marks linked repository as revoked', async () => {
   const repository = createRepository()
   await repository.upsertConfig({
-    key: eventConfigKey,
+    key: competitionConfigKey,
     value: {
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       organizationName: 'seal-org',
       ownerUsername: 'owner-user',
       enabled: true,
@@ -273,7 +273,7 @@ test('revokeCollaborator removes collaborator and marks linked repository as rev
     isEncrypted: true
   })
   await repository.createRepositoryRecord({
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     githubOwner: 'seal-org',
     githubRepo: 'team-alpha',
     repoName: 'team-alpha',
@@ -292,7 +292,7 @@ test('revokeCollaborator removes collaborator and marks linked repository as rev
   })
 
   const result = await service.revokeCollaborator({
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     repoName: 'team-alpha',
     username: 'dev-user'
   }, { id: 'admin-1' })
@@ -300,15 +300,15 @@ test('revokeCollaborator removes collaborator and marks linked repository as rev
   assert.equal(calls[0].method, 'DELETE')
   assert.equal(calls[0].path, '/repos/seal-org/team-alpha/collaborators/dev-user')
   assert.equal(result.status, 'revoked')
-  assert.equal(repository.repositories.get(`${EVENT_ID}:seal-org:team-alpha`).accessState, 'REVOKED')
+  assert.equal(repository.repositories.get(`${COMPETITION_ID}:seal-org:team-alpha`).accessState, 'REVOKED')
 })
 
 test('revokeMembers paginates and continues when one removal fails', async () => {
   const repository = createRepository()
   await repository.upsertConfig({
-    key: eventConfigKey,
+    key: competitionConfigKey,
     value: {
-      eventId: EVENT_ID,
+      competitionId: COMPETITION_ID,
       organizationName: 'seal-org',
       ownerUsername: 'owner-user',
       enabled: true,
@@ -338,7 +338,7 @@ test('revokeMembers paginates and continues when one removal fails', async () =>
   })
 
   const result = await service.revokeMembers({
-    eventId: EVENT_ID,
+    competitionId: COMPETITION_ID,
     confirmationText: 'REVOKE MEMBERS'
   }, { id: 'admin-1' })
 

@@ -13,9 +13,9 @@ const ids = {
   room: '000000000000000000000301'
 }
 
-const makeTeam = ({ _id = ids.team, eventStatus = 'ONGOING' } = {}) => ({
+const makeTeam = ({ _id = ids.team, competitionStatus = 'ONGOING' } = {}) => ({
   _id,
-  eventId: { _id: '000000000000000000000401', status: eventStatus },
+  competitionId: { _id: '000000000000000000000401', status: competitionStatus },
   leaderId: ids.actor,
   memberIds: [],
   mentorIds: [ids.mentor],
@@ -24,10 +24,10 @@ const makeTeam = ({ _id = ids.team, eventStatus = 'ONGOING' } = {}) => ({
   status: 'CONFIRMED'
 })
 
-test('completed event team chat is read-only while archived event chat is hidden', async () => {
+test('completed competition team chat is read-only while archived competition chat is hidden', async () => {
   let upsertCount = 0
-  const completedTeam = makeTeam({ _id: ids.completedTeam, eventStatus: 'COMPLETED' })
-  const archivedTeam = makeTeam({ _id: ids.archivedTeam, eventStatus: 'ARCHIVED' })
+  const completedTeam = makeTeam({ _id: ids.completedTeam, competitionStatus: 'COMPLETED' })
+  const archivedTeam = makeTeam({ _id: ids.archivedTeam, competitionStatus: 'ARCHIVED' })
   const room = {
     _id: ids.room,
     teamId: completedTeam,
@@ -73,7 +73,7 @@ test('completed event team chat is read-only while archived event chat is hidden
   })
   assert.equal(rooms.length, 1)
   assert.equal(rooms[0].teamId, ids.completedTeam)
-  assert.equal(rooms[0].team.eventStatus, 'COMPLETED')
+  assert.equal(rooms[0].team.competitionStatus, 'COMPLETED')
 
   const beforeSendUpserts = upsertCount
   await assert.rejects(
@@ -85,7 +85,7 @@ test('completed event team chat is read-only while archived event chat is hidden
     }),
     error => error instanceof ApiError &&
       error.code === 'BAD_REQUEST' &&
-      error.errors.includes('Chat room is read-only after event completion')
+      error.errors.includes('Chat room is read-only after competition completion')
   )
   assert.equal(upsertCount, beforeSendUpserts)
 })

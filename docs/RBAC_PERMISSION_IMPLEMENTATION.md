@@ -23,7 +23,7 @@ Authorization never checks `if (user.role === 'ADMIN')`.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `code` | String (unique, uppercase) | Machine-readable identifier, e.g. `EVENT_CREATE` |
+| `code` | String (unique, uppercase) | Machine-readable identifier, e.g. `COMPETITION_CREATE` |
 | `name` | String | Human-readable label |
 | `description` | String | Explanation of what the permission allows |
 | `module` | String | Grouping prefix, e.g. `EVENT`, `ROLE`, `USER` |
@@ -79,7 +79,7 @@ const getPermissionCodes = (user) => {
 **Permission Middleware:** `src/middlewares/permission.middleware.js`
 
 ```js
-permissionMiddleware('EVENT_CREATE')  // checks req.user.effectivePermissions
+permissionMiddleware('COMPETITION_CREATE')  // checks req.user.effectivePermissions
 ```
 
 ---
@@ -90,7 +90,7 @@ All permission codes are defined in `src/constants/permissions.js`:
 
 | Module | Codes |
 |--------|-------|
-| EVENT | `EVENT_CREATE`, `EVENT_VIEW`, `EVENT_UPDATE`, `EVENT_DELETE` |
+| EVENT | `COMPETITION_CREATE`, `COMPETITION_VIEW`, `COMPETITION_UPDATE`, `COMPETITION_DELETE` |
 | TRACK | `TRACK_CREATE`, `TRACK_VIEW`, `TRACK_UPDATE`, `TRACK_DELETE` |
 | WORKSHOP | `WORKSHOP_CREATE`, `WORKSHOP_VIEW`, `WORKSHOP_UPDATE`, `WORKSHOP_DELETE`, ... |
 | TEAM | `TEAM_CREATE`, `TEAM_VIEW`, `TEAM_UPDATE`, `TEAM_DELETE` |
@@ -179,11 +179,11 @@ This means:
       "name": "ADMIN",
       "code": "ADMIN",
       "isSystemRole": true,
-      "permissions": [{ "id": "...", "code": "EVENT_CREATE", "module": "EVENT" }]
+      "permissions": [{ "id": "...", "code": "COMPETITION_CREATE", "module": "EVENT" }]
     }
   ],
-  "permissions": ["EVENT_CREATE", "ROLE_VIEW", ...],
-  "effectivePermissions": ["EVENT_CREATE", "ROLE_VIEW", ...]
+  "permissions": ["COMPETITION_CREATE", "ROLE_VIEW", ...],
+  "effectivePermissions": ["COMPETITION_CREATE", "ROLE_VIEW", ...]
 }
 ```
 
@@ -271,7 +271,7 @@ New permissions added to `constants/permissions.js` will be:
 
 ## 12. System Role Protection
 
-System roles (`ADMIN`, `COORDINATOR`, `JUDGE`, `MENTOR`, `SPEAKER`, `PARTICIPANT`, `EVENT_COORDINATOR`) **cannot be deleted** or renamed via API.
+System roles (`ADMIN`, `COORDINATOR`, `JUDGE`, `MENTOR`, `SPEAKER`, `PARTICIPANT`, `COMPETITION_COORDINATOR`) **cannot be deleted** or renamed via API.
 
 Attempting to delete or rename a system role returns `403 FORBIDDEN`.
 

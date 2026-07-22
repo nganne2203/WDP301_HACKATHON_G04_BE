@@ -16,7 +16,7 @@ router.use(authorizationMiddleware)
 
 router.get(
   '/',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(REPOSITORY_VALIDATION.listRepositories),
   REPOSITORY_CONTROLLER.listRepositories
 )
@@ -38,21 +38,21 @@ router.get(
 
 router.get(
   '/:id',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(REPOSITORY_VALIDATION.getRepositoryById),
   REPOSITORY_CONTROLLER.getRepositoryById
 )
 
 router.get(
   '/:id/commits',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(REPOSITORY_VALIDATION.listRepositoryCommits),
   REPOSITORY_CONTROLLER.listRepositoryCommits
 )
 
 router.get(
   '/:id/static-analysis',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(REPOSITORY_VALIDATION.listRepositoryCommits),
   REPOSITORY_CONTROLLER.listStaticAnalysis
 )
@@ -66,14 +66,14 @@ router.get(
 
 router.get(
   '/:id/commit-diffs',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(REPOSITORY_VALIDATION.listRepositoryCommits),
   REPOSITORY_CONTROLLER.listCommitDiffs
 )
 
 router.get(
   '/:id/impact-decisions',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(REPOSITORY_VALIDATION.listRepositoryCommits),
   REPOSITORY_CONTROLLER.listImpactDecisions
 )
@@ -81,7 +81,7 @@ router.get(
 router.post(
   '/:id/sync-commits',
   sensitiveRateLimiter,
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(REPOSITORY_VALIDATION.syncRepositoryCommits),
   REPOSITORY_CONTROLLER.syncRepositoryCommits
 )

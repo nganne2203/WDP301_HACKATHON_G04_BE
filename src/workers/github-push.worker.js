@@ -11,12 +11,12 @@ const createConnection = () => new IORedis(env.redis.url, {
   maxRetriesPerRequest: null
 })
 
-export const processGithubPushEventJob = async (job) => {
+export const processGithubPushCompetitionJob = async (job) => {
   if (job.name !== JOB_TYPES.PROCESS_GITHUB_PUSH_EVENT) {
     return null
   }
 
-  LOGGER.info('Queued GitHub push event received by worker', {
+  LOGGER.info('Queued GitHub push competition received by worker', {
     deliveryId: job.data?.deliveryId,
     repositoryId: job.data?.repositoryId,
     repositoryFullName: job.data?.repositoryFullName
@@ -27,7 +27,7 @@ export const processGithubPushEventJob = async (job) => {
     commitSha: job.data?.afterCommitSha,
     branch: job.data?.branch,
     beforeCommitSha: job.data?.beforeCommitSha,
-    deliveryEventId: job.data?.deliveryEventId,
+    deliveryCompetitionId: job.data?.deliveryCompetitionId,
     deliveryId: job.data?.deliveryId,
     source: 'github-webhook',
     requestedBy: null
@@ -44,7 +44,7 @@ export const processGithubIngestionJob = async (job, {
   aiReviewService = AI_REVIEW_SERVICE
 } = {}) => {
   if (job.name === JOB_TYPES.PROCESS_GITHUB_PUSH_EVENT) {
-    return await processGithubPushEventJob(job)
+    return await processGithubPushCompetitionJob(job)
   }
 
   if (job.name === JOB_TYPES.RUN_PER_PUSH_AUDIT) {

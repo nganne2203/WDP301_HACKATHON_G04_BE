@@ -13,7 +13,7 @@ router.use(authorizationMiddleware)
 
 router.get(
   '/',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(JUDGING_BOARD_VALIDATION.listBoards),
   JUDGING_BOARD_CONTROLLER.listBoards
 )
@@ -48,7 +48,7 @@ router.post(
 
 router.get(
   '/:id',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(JUDGING_BOARD_VALIDATION.getBoardById),
   JUDGING_BOARD_CONTROLLER.getBoardById
 )

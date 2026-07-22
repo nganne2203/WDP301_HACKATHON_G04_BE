@@ -49,8 +49,32 @@ const markAllAsRead = async (req, res, next) => {
   }
 }
 
+const registerPushToken = async (req, res, next) => {
+  try {
+    const result = await NOTIFICATION_SERVICE.registerPushToken({
+      userId: req.user.id,
+      token: req.body.token,
+      platform: req.body.platform
+    })
+    res.status(200).json(responseSuccess({ message: 'Register push token successfully', data: result }))
+  } catch (error) {
+    next(error)
+  }
+}
+
+const unregisterPushToken = async (req, res, next) => {
+  try {
+    const result = await NOTIFICATION_SERVICE.unregisterPushToken(req.user.id)
+    res.status(200).json(responseSuccess({ message: 'Unregister push token successfully', data: result }))
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const NOTIFICATION_CONTROLLER = {
   listMine,
   markAsRead,
-  markAllAsRead
+  markAllAsRead,
+  registerPushToken,
+  unregisterPushToken
 }

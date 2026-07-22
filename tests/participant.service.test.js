@@ -6,34 +6,34 @@ import ApiError from '../src/utils/ApiError.js'
 import { createParticipantService } from '../src/modules/participants/participant.service.js'
 
 const createRepository = ({
-  eventOverrides = {}
+  competitionOverrides = {}
 } = {}) => {
   const records = new Map()
   let checkInQrSession = null
   let sequence = 1
 
-  const event = {
+  const competition = {
     _id: '000000000000000000000201',
-    title: 'SEAL Event',
+    title: 'SEAL Competition',
     status: 'OPEN_REGISTRATION',
     registrationStart: new Date('2026-06-01T00:00:00.000Z'),
     registrationEnd: new Date('2026-06-30T00:00:00.000Z'),
     startDate: new Date('2026-06-22T07:00:00.000Z'),
     endDate: new Date('2026-06-22T18:00:00.000Z'),
-    ...eventOverrides
+    ...competitionOverrides
   }
   const participantRole = { name: 'PARTICIPANT' }
   const userA = { _id: '000000000000000000000301', email: 'a@example.com', fullName: 'User A', status: 'ACTIVE', roles: [participantRole] }
   const userB = { _id: '000000000000000000000302', email: 'b@example.com', fullName: 'User B', status: 'ACTIVE', roles: [participantRole] }
-  const team = { _id: '000000000000000000000401', eventId: event._id, name: 'Code Wizards', status: 'CONFIRMED' }
+  const team = { _id: '000000000000000000000401', competitionId: competition._id, name: 'Code Wizards', status: 'CONFIRMED' }
   const auditLogs = []
 
   return {
     count: async () => records.size,
     findAll: async () => [...records.values()],
     findById: async (id) => records.get(id) || null,
-    findByEventAndUser: async ({ eventId, userId }) => {
-      return [...records.values()].find(record => record.eventId === eventId && record.userId === userId) || null
+    findByCompetitionAndUser: async ({ competitionId, userId }) => {
+      return [...records.values()].find(record => record.competitionId === competitionId && record.userId === userId) || null
     },
     create: async (data) => {
       const id = String(sequence).padStart(24, '0')
@@ -68,8 +68,8 @@ const createRepository = ({
     findCheckInQrSessionByTokenHash: async (tokenHash) => {
       return checkInQrSession?.tokenHash === tokenHash ? checkInQrSession : null
     },
-    checkInParticipantByEventAndUser: async ({ eventId, userId, now }) => {
-      const record = [...records.values()].find(item => item.eventId === eventId && item.userId === userId)
+    checkInParticipantByCompetitionAndUser: async ({ competitionId, userId, now }) => {
+      const record = [...records.values()].find(item => item.competitionId === competitionId && item.userId === userId)
       if (!record || record.checkInStatus !== 'NOT_CHECKED_IN') {
         return null
       }
@@ -85,14 +85,14 @@ const createRepository = ({
     },
     getCheckInQrSession: () => checkInQrSession,
     deleteById: async (id) => records.delete(id),
-    findEventById: async (id) => id === event._id ? event : null,
+    findCompetitionById: async (id) => id === competition._id ? competition : null,
     findUserById: async (id) => {
       if (id === userA._id) return userA
       if (id === userB._id) return userB
       return null
     },
     findTeamById: async (id) => id === team._id ? team : null,
-    findConfirmedTeamIds: async ({ eventId } = {}) => eventId === event._id ? [team._id] : [],
+    findConfirmedTeamIds: async ({ competitionId } = {}) => competitionId === competition._id ? [team._id] : [],
     createAuditLog: async (entry) => {
       auditLogs.push(entry)
       return entry
@@ -119,29 +119,29 @@ test('listParticipants can limit check-in data to confirmed teams', async () => 
   const service = createParticipantService({ repository, now: () => new Date('2026-06-10T00:00:00.000Z') })
 
   await service.listParticipants({
-    eventId: '000000000000000000000201',
+    competitionId: '000000000000000000000201',
     confirmedTeamsOnly: true
   })
 
   assert.deepEqual(receivedFilter.teamId, { $in: ['000000000000000000000401'] })
 })
 
-test('createParticipant lets a user register themselves for an event', async () => {
+test('createParticipant lets a user register themselves for an competition', async () => {
   const service = createParticipantService({
     repository: createRepository(),
     now: () => new Date('2026-06-10T00:00:00.000Z')
   })
 
   const participant = await service.createParticipant({
-    eventId: '000000000000000000000201',
+    competitionId: '000000000000000000000201',
     consentMediaUse: true
   }, {
     id: '000000000000000000000301',
-    permissions: ['EVENT_VIEW']
+    permissions: ['COMPETITION_VIEW']
   })
 
   assert.equal(participant.userId, '000000000000000000000301')
-  assert.equal(participant.eventId, '000000000000000000000201')
+  assert.equal(participant.competitionId, '000000000000000000000201')
   assert.equal(participant.consentMediaUse, true)
   assert.equal(participant.status, 'INVITED')
 })
@@ -154,11 +154,11 @@ test('createParticipant rejects registering another user without approver permis
 
   await assert.rejects(
     service.createParticipant({
-      eventId: '000000000000000000000201',
+      competitionId: '000000000000000000000201',
       userId: '000000000000000000000302'
     }, {
       id: '000000000000000000000301',
-      permissions: ['EVENT_VIEW']
+      permissions: ['COMPETITION_VIEW']
     }),
     (error) => error instanceof ApiError &&
       error.code === 'FORBIDDEN' &&
@@ -166,16 +166,16 @@ test('createParticipant rejects registering another user without approver permis
   )
 })
 
-test('getMyParticipant returns only the authenticated user registration for an event', async () => {
+test('getMyParticipant returns only the authenticated user registration for an competition', async () => {
   const service = createParticipantService({
     repository: createRepository(),
     now: () => new Date('2026-06-10T00:00:00.000Z')
   })
   await service.createParticipant({
-    eventId: '000000000000000000000201'
+    competitionId: '000000000000000000000201'
   }, {
     id: '000000000000000000000301',
-    permissions: ['EVENT_VIEW']
+    permissions: ['COMPETITION_VIEW']
   })
 
   const participant = await service.getMyParticipant('000000000000000000000201', {
@@ -193,7 +193,7 @@ test('updateAttendance and updateGithubAccessStatus persist participant lifecycl
   })
 
   const created = await service.createParticipant({
-    eventId: '000000000000000000000201',
+    competitionId: '000000000000000000000201',
     userId: '000000000000000000000301'
   }, {
     id: '000000000000000000000301',
@@ -209,7 +209,7 @@ test('updateAttendance and updateGithubAccessStatus persist participant lifecycl
 
 const createQrTestService = ({ currentTime = new Date('2026-06-22T08:00:00.000Z') } = {}) => {
   const repository = createRepository({
-    eventOverrides: { status: 'ONGOING' }
+    competitionOverrides: { status: 'ONGOING' }
   })
   let nowValue = currentTime
   const auditLogs = []
@@ -233,7 +233,7 @@ const createQrTestService = ({ currentTime = new Date('2026-06-22T08:00:00.000Z'
 
 const createQrParticipant = async (service) => {
   return await service.createParticipant({
-    eventId: '000000000000000000000201',
+    competitionId: '000000000000000000000201',
     teamId: '000000000000000000000401',
     overrideReason: 'seed participant for check-in test'
   }, {
@@ -242,7 +242,7 @@ const createQrParticipant = async (service) => {
   })
 }
 
-test('generateCheckInQr lets a coordinator generate an expiring event QR without storing the raw token', async () => {
+test('generateCheckInQr lets a coordinator generate an expiring competition QR without storing the raw token', async () => {
   const { repository, service } = createQrTestService()
 
   const qr = await service.generateCheckInQr('000000000000000000000201', {
@@ -252,7 +252,7 @@ test('generateCheckInQr lets a coordinator generate an expiring event QR without
   const stored = repository.getCheckInQrSession()
   const qrUrl = new URL(qr.qrPayload)
 
-  assert.equal(qr.eventId, '000000000000000000000201')
+  assert.equal(qr.competitionId, '000000000000000000000201')
   assert.equal(qrUrl.origin, 'https://app.example.test')
   assert.equal(qrUrl.pathname, '/participant')
   assert.equal(qrUrl.searchParams.get('checkInToken'), 'wdp301-checkin:fixed-check-in-token-with-enough-entropy-123456789')
@@ -262,10 +262,10 @@ test('generateCheckInQr lets a coordinator generate an expiring event QR without
   assert.equal(stored.tokenHash.includes('fixed-check-in-token'), false)
 })
 
-test('participant scans the event QR to check in themselves and cannot check in twice', async () => {
+test('participant scans the competition QR to check in themselves and cannot check in twice', async () => {
   const { service } = createQrTestService()
   const participant = await createQrParticipant(service)
-  const qr = await service.generateCheckInQr(participant.eventId, {
+  const qr = await service.generateCheckInQr(participant.competitionId, {
     id: '000000000000000000000999',
     permissions: ['PARTICIPANT_APPROVE']
   })
@@ -284,18 +284,18 @@ test('participant scans the event QR to check in themselves and cannot check in 
   )
 })
 
-test('the same event QR checks in multiple different participants', async () => {
+test('the same competition QR checks in multiple different participants', async () => {
   const { service } = createQrTestService()
   const participantA = await createQrParticipant(service)
   const participantB = await service.createParticipant({
-    eventId: participantA.eventId,
+    competitionId: participantA.competitionId,
     teamId: '000000000000000000000401',
     overrideReason: 'seed participant for check-in test'
   }, {
     id: '000000000000000000000302',
     permissions: ['PARTICIPANT_APPROVE']
   })
-  const qr = await service.generateCheckInQr(participantA.eventId, {
+  const qr = await service.generateCheckInQr(participantA.competitionId, {
     id: '000000000000000000000999',
     permissions: ['PARTICIPANT_APPROVE']
   })
@@ -310,7 +310,7 @@ test('the same event QR checks in multiple different participants', async () => 
 test('scanCheckInQr rejects an expired token', async () => {
   const { service, setNow } = createQrTestService()
   const participant = await createQrParticipant(service)
-  const qr = await service.generateCheckInQr(participant.eventId, {
+  const qr = await service.generateCheckInQr(participant.competitionId, {
     id: '000000000000000000000999',
     permissions: ['PARTICIPANT_APPROVE']
   })
@@ -326,13 +326,13 @@ test('scanCheckInQr rejects an expired token', async () => {
 test('QR and manual check-in reject participants outside confirmed teams', async () => {
   const { service } = createQrTestService()
   const participant = await service.createParticipant({
-    eventId: '000000000000000000000201',
+    competitionId: '000000000000000000000201',
     overrideReason: 'seed participant for check-in test'
   }, {
     id: '000000000000000000000301',
     permissions: ['PARTICIPANT_APPROVE']
   })
-  const qr = await service.generateCheckInQr(participant.eventId, {
+  const qr = await service.generateCheckInQr(participant.competitionId, {
     id: '000000000000000000000999',
     permissions: ['PARTICIPANT_APPROVE']
   })
@@ -347,9 +347,9 @@ test('QR and manual check-in reject participants outside confirmed teams', async
   )
 })
 
-test('check-in QR can be generated while event is ONGOING without a CHECK_IN timeline', async () => {
+test('check-in QR can be generated while competition is ONGOING without a CHECK_IN timeline', async () => {
   const repository = createRepository({
-    eventOverrides: { status: 'ONGOING' }
+    competitionOverrides: { status: 'ONGOING' }
   })
   const service = createParticipantService({
     repository,
@@ -361,12 +361,12 @@ test('check-in QR can be generated while event is ONGOING without a CHECK_IN tim
     permissions: ['PARTICIPANT_APPROVE']
   })
 
-  assert.equal(qr.eventId, '000000000000000000000201')
+  assert.equal(qr.competitionId, '000000000000000000000201')
 })
 
 test('manual admin check-in override requires a reason and writes audit log', async () => {
   const repository = createRepository({
-    eventOverrides: { status: 'COMPLETED' }
+    competitionOverrides: { status: 'COMPLETED' }
   })
   const auditLogs = []
   const service = createParticipantService({
@@ -375,7 +375,7 @@ test('manual admin check-in override requires a reason and writes audit log', as
     now: () => new Date('2026-06-22T10:00:00.000Z')
   })
   const participant = await service.createParticipant({
-    eventId: '000000000000000000000201',
+    competitionId: '000000000000000000000201',
     teamId: '000000000000000000000401',
     overrideReason: 'late registration correction'
   }, {
@@ -391,7 +391,7 @@ test('manual admin check-in override requires a reason and writes audit log', as
     }),
     error => error instanceof ApiError &&
       error.code === 'BAD_REQUEST' &&
-      error.errors.includes('Check-in is only available while the event is ONGOING')
+      error.errors.includes('Check-in is only available while the competition is ONGOING')
   )
 
   const checkedIn = await service.updateCheckInStatus(participant.id, 'CHECKED_IN', {

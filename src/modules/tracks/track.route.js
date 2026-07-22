@@ -23,7 +23,7 @@ const router = Router()
  *         id:
  *           type: string
  *           example: 664c3f6a3a6d4a5f3f93b201
- *         event:
+ *         competition:
  *           type: object
  *           nullable: true
  *         code:
@@ -65,9 +65,9 @@ const router = Router()
  *           format: date-time
  *     TrackRequest:
  *       type: object
- *       required: [eventId, name]
+ *       required: [competitionId, name]
  *       properties:
- *         eventId:
+ *         competitionId:
  *           type: string
  *           example: 664c3f6a3a6d4a5f3f93b101
  *         code:
@@ -113,7 +113,7 @@ router.use(authorizationMiddleware)
  *       - BearerAuth: []
  *     parameters:
  *       - in: query
- *         name: eventId
+ *         name: competitionId
  *         schema:
  *           type: string
  *           pattern: '^[a-fA-F0-9]{24}$'
@@ -162,7 +162,7 @@ router.get(
  *       403:
  *         description: Requires TRACK_CREATE permission
  *       409:
- *         description: Track name already exists in this event
+ *         description: Track name already exists in this competition
  */
 router.post(
   '/',

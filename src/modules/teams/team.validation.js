@@ -29,7 +29,7 @@ const tokenParam = Joi.object({
 
 const listTeams = {
   query: Joi.object({
-    eventId: objectId,
+    competitionId: objectId,
     trackId: objectId,
     boardNumber: Joi.number().integer().min(1),
     status: teamStatus,
@@ -40,7 +40,7 @@ const listTeams = {
 
 const createTeam = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     name: Joi.string().trim().min(2).max(120).required(),
     trackId: objectId.allow(null),
     chapterName: Joi.string().trim().max(120).allow('', null),
@@ -65,20 +65,20 @@ const inviteMembers = {
 
 const getMyTeam = {
   query: Joi.object({
-    eventId: objectId.required()
+    competitionId: objectId.required()
   })
 }
 
 const checkTeamAvailability = {
   query: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     name: Joi.string().trim().min(2).max(120).required()
   })
 }
 
 const checkInviteEligibility = {
   query: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     email: email.required(),
     githubUsername: githubUsername.allow('', null)
   })
@@ -129,15 +129,15 @@ const updateTeamMentors = {
 
 const assignMentorsByBoard = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     boardNumber: Joi.number().integer().min(1).required(),
     mentorIds: Joi.array().items(objectId).unique().required()
   })
 }
 
-const getEventCapacity = {
+const getCompetitionCapacity = {
   params: Joi.object({
-    eventId: objectId.required()
+    competitionId: objectId.required()
   })
 }
 
@@ -164,7 +164,7 @@ export const TEAM_VALIDATION = {
   updateTeamPlacement,
   updateTeamMentors,
   assignMentorsByBoard,
-  getEventCapacity,
+  getCompetitionCapacity,
   acceptInvitation,
   declineInvitation
 }

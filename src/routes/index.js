@@ -7,7 +7,7 @@ import auditLogRoutes from '#modules/audit-logs/audit-log.route.js'
 import authRoutes from '#modules/auth/auth.route.js'
 import chatRoutes from '#modules/chat/chat.route.js'
 import aiReviewRoutes from '#modules/ai-reviews/ai-review.route.js'
-import eventRoutes from '#modules/events/event.route.js'
+import competitionRoutes from '#modules/competitions/competition.route.js'
 import githubRoutes from '#modules/github/github.route.js'
 import githubWebhookRoutes from '#modules/github-webhooks/github-webhook.route.js'
 import googleRoutes from '#modules/google/google.route.js'
@@ -75,7 +75,7 @@ router.use('/audit-logs', auditLogRoutes)
 router.use('/ai-reviews', aiReviewRoutes)
 router.use('/auth', authRoutes)
 router.use('/chat', chatRoutes)
-router.use('/events', eventRoutes)
+router.use('/competitions', competitionRoutes)
 router.use('/github/webhooks', githubWebhookRoutes)
 router.use('/github', githubRoutes)
 router.use('/google', googleRoutes)

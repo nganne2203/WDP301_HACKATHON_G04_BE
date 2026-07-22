@@ -33,8 +33,8 @@ const CONFIG_KEYS = {
 const CONFIG_KEY_LIST = Object.values(CONFIG_KEYS)
 const DEFAULT_CONFIG = {
   provider: 'CLOUDINARY',
-  bucket: 'event-media',
-  cloudinaryFolder: 'event-media',
+  bucket: 'competition-media',
+  cloudinaryFolder: 'competition-media',
   visibility: 'private',
   maxImageSizeMb: 10,
   maxVideoSizeMb: 200,
@@ -46,10 +46,10 @@ const DEFAULT_CONFIG = {
 
 const MEDIA_STATUSES = ['PENDING', 'APPROVED', 'REJECTED']
 const ACTIVE_PARTICIPANT_STATUSES = ['JOINED']
-const UPLOAD_ENABLED_EVENT_STATUSES = ['OPEN_REGISTRATION', 'ONGOING', 'SCORING', 'COMPLETED']
+const UPLOAD_ENABLED_COMPETITION_STATUSES = ['OPEN_REGISTRATION', 'ONGOING', 'SCORING', 'COMPLETED']
 const SIGNED_URL_EXPIRES_IN = 600
 const DISALLOWED_EXTENSIONS = new Set(['exe', 'bat', 'sh', 'js'])
-const FILE_FIELDS = ['eventId', 'teamId', 'title', 'description']
+const FILE_FIELDS = ['competitionId', 'teamId', 'title', 'description']
 const STORAGE_PROVIDERS = ['SUPABASE', 'CLOUDINARY']
 
 const EXTENSION_RULES = {
@@ -95,7 +95,7 @@ const normalizePermissionCodes = (actor = {}) => {
 }
 
 const canModerateMedia = (actor = {}) => {
-  return normalizePermissionCodes(actor).has(PERMISSIONS.EVENT_UPDATE)
+  return normalizePermissionCodes(actor).has(PERMISSIONS.COMPETITION_UPDATE)
 }
 
 const normalizeTypeList = (value, fallback = []) => {
@@ -191,14 +191,14 @@ const normalizeActorSummary = (value) => {
   }
 }
 
-const normalizeEventSummary = (event) => {
-  if (!event) return null
-  if (typeof event === 'string' || event instanceof mongoose.Types.ObjectId) return { id: event.toString() }
+const normalizeCompetitionSummary = (competition) => {
+  if (!competition) return null
+  if (typeof competition === 'string' || competition instanceof mongoose.Types.ObjectId) return { id: competition.toString() }
 
   return {
-    id: getId(event),
-    title: event.title,
-    status: event.status
+    id: getId(competition),
+    title: competition.title,
+    status: competition.status
   }
 }
 
@@ -233,8 +233,8 @@ const normalizeMedia = (media) => {
 
   return {
     id: getId(plainMedia._id) || plainMedia.id,
-    eventId: getId(plainMedia.eventId),
-    event: normalizeEventSummary(plainMedia.eventId),
+    competitionId: getId(plainMedia.competitionId),
+    competition: normalizeCompetitionSummary(plainMedia.competitionId),
     uploadedBy: normalizeActorSummary(plainMedia.uploadedBy),
     uploadedById: getId(plainMedia.uploadedBy),
     teamId: getId(plainMedia.teamId),
@@ -316,7 +316,7 @@ const buildMediaFilter = (query = {}) => {
     ...buildDateRange(query)
   }
 
-  if (query.eventId) filter.eventId = query.eventId
+  if (query.competitionId) filter.competitionId = query.competitionId
   if (query.uploadedBy) filter.uploadedBy = query.uploadedBy
   if (query.teamId) filter.teamId = query.teamId
   if (query.mediaType) filter.mediaType = query.mediaType
@@ -341,9 +341,9 @@ const buildMediaFilter = (query = {}) => {
   return filter
 }
 
-const buildGalleryFilter = ({ eventId, query = {} }) => {
+const buildGalleryFilter = ({ competitionId, query = {} }) => {
   const filter = {
-    eventId,
+    competitionId,
     status: 'APPROVED'
   }
 
@@ -438,8 +438,8 @@ const sanitizeFileName = (originalFileName) => {
   return safeName || `media-${Date.now()}`
 }
 
-const buildStoragePath = ({ eventId, userId, originalFileName }) => {
-  return `events/${eventId}/users/${userId}/${Date.now()}-${sanitizeFileName(originalFileName)}`
+const buildStoragePath = ({ competitionId, userId, originalFileName }) => {
+  return `competitions/${competitionId}/users/${userId}/${Date.now()}-${sanitizeFileName(originalFileName)}`
 }
 
 const buildAvatarStoragePath = ({ userId, originalFileName }) => {
@@ -640,32 +640,32 @@ export const createMediaService = ({
     return await getStorageConfig()
   }
 
-  const ensureEventExists = async (eventId) => {
-    ensureObjectId(eventId, 'event id')
-    const event = await repository.findEventById(eventId)
-    if (!event) {
-      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
+  const ensureCompetitionExists = async (competitionId) => {
+    ensureObjectId(competitionId, 'competition id')
+    const competition = await repository.findCompetitionById(competitionId)
+    if (!competition) {
+      throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
     }
 
-    return event
+    return competition
   }
 
-  const ensureParticipantJoinedEvent = async ({ eventId, userId }) => {
-    const participant = await repository.findParticipantByEventAndUser({ eventId, userId })
+  const ensureParticipantJoinedCompetition = async ({ competitionId, userId }) => {
+    const participant = await repository.findParticipantByCompetitionAndUser({ competitionId, userId })
     if (!participant || !ACTIVE_PARTICIPANT_STATUSES.includes(participant.status)) {
-      throw new ApiError(ERROR_CODES.FORBIDDEN, ['You must join this event before uploading media'])
+      throw new ApiError(ERROR_CODES.FORBIDDEN, ['You must join this competition before uploading media'])
     }
 
     return participant
   }
 
-  const ensureUploadsEnabled = (event) => {
-    if (!UPLOAD_ENABLED_EVENT_STATUSES.includes(event.status)) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Media uploads are not enabled for this event status'])
+  const ensureUploadsEnabled = (competition) => {
+    if (!UPLOAD_ENABLED_COMPETITION_STATUSES.includes(competition.status)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Media uploads are not enabled for this competition status'])
     }
   }
 
-  const resolveTeamId = async ({ payloadTeamId, participant, eventId }) => {
+  const resolveTeamId = async ({ payloadTeamId, participant, competitionId }) => {
     const participantTeamId = getId(participant?.teamId)
     const requestedTeamId = payloadTeamId || participantTeamId
 
@@ -673,8 +673,8 @@ export const createMediaService = ({
 
     ensureObjectId(requestedTeamId, 'team id')
     const team = await repository.findTeamById(requestedTeamId)
-    if (!team || !isSameId(team.eventId, eventId)) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to this event'])
+    if (!team || !isSameId(team.competitionId, competitionId)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to this competition'])
     }
 
     if (participant && (!participantTeamId || participantTeamId !== requestedTeamId)) {
@@ -686,27 +686,27 @@ export const createMediaService = ({
 
   const uploadMedia = async (payload = {}, file, actor = {}) => {
     const safePayload = pickSafeFields(payload, FILE_FIELDS)
-    const event = await ensureEventExists(safePayload.eventId)
-    ensureUploadsEnabled(event)
-    const canUploadForEvent = canModerateMedia(actor)
+    const competition = await ensureCompetitionExists(safePayload.competitionId)
+    ensureUploadsEnabled(competition)
+    const canUploadForCompetition = canModerateMedia(actor)
 
-    const participant = canUploadForEvent
+    const participant = canUploadForCompetition
       ? null
-      : await ensureParticipantJoinedEvent({
-        eventId: safePayload.eventId,
+      : await ensureParticipantJoinedCompetition({
+        competitionId: safePayload.competitionId,
         userId: actor.id
       })
-    const teamId = canUploadForEvent && !safePayload.teamId
+    const teamId = canUploadForCompetition && !safePayload.teamId
       ? undefined
       : await resolveTeamId({
         payloadTeamId: safePayload.teamId,
         participant,
-        eventId: safePayload.eventId
+        competitionId: safePayload.competitionId
       })
     const config = await loadOperationalConfig()
     const fileMetadata = validateMediaFile({ file, config })
     const storagePath = buildStoragePath({
-      eventId: safePayload.eventId,
+      competitionId: safePayload.competitionId,
       userId: actor.id,
       originalFileName: fileMetadata.originalFileName
     })
@@ -738,7 +738,7 @@ export const createMediaService = ({
     let media
     try {
       media = await repository.createMedia({
-        eventId: safePayload.eventId,
+        competitionId: safePayload.competitionId,
         uploadedBy: actor.id,
         teamId,
         title: safePayload.title,
@@ -782,7 +782,7 @@ export const createMediaService = ({
 
     await repository.createActivity({
       mediaId: media._id,
-      eventId: media.eventId,
+      competitionId: media.competitionId,
       userId: actor.id,
       action: 'UPLOAD',
       metadata: {
@@ -797,7 +797,7 @@ export const createMediaService = ({
       action: 'MEDIA_UPLOADED',
       resourceId: media._id,
       metadata: {
-        eventId: getId(media.eventId),
+        competitionId: getId(media.competitionId),
         teamId,
         mediaType: media.mediaType,
         fileSize: media.fileSize
@@ -887,10 +887,10 @@ export const createMediaService = ({
     }
   }
 
-  const getEventGallery = async (eventId, query = {}) => {
-    await ensureEventExists(eventId)
+  const getCompetitionGallery = async (competitionId, query = {}) => {
+    await ensureCompetitionExists(competitionId)
 
-    const filter = buildGalleryFilter({ eventId, query })
+    const filter = buildGalleryFilter({ competitionId, query })
     const media = await repository.findMedia({
       filter,
       skip: 0,
@@ -934,7 +934,7 @@ export const createMediaService = ({
   const getSignedUrl = async (mediaId, actor = {}) => {
     const media = await ensureMediaExists(mediaId)
     ensureCanAccessMedia(media, actor)
-    await ensureEventExists(getId(media.eventId))
+    await ensureCompetitionExists(getId(media.competitionId))
 
     const config = await loadOperationalConfig()
     const storageClient = resolvedStorageClients[config.provider]
@@ -957,7 +957,7 @@ export const createMediaService = ({
 
     await repository.createActivity({
       mediaId: media._id,
-      eventId: media.eventId,
+      competitionId: media.competitionId,
       userId: actor.id,
       action: 'VIEW',
       metadata: {
@@ -970,7 +970,7 @@ export const createMediaService = ({
       action: 'MEDIA_VIEWED',
       resourceId: media._id,
       metadata: {
-        eventId: getId(media.eventId),
+        competitionId: getId(media.competitionId),
         expiresIn: SIGNED_URL_EXPIRES_IN
       }
     })
@@ -1014,7 +1014,7 @@ export const createMediaService = ({
 
     await repository.createActivity({
       mediaId: media._id,
-      eventId: media.eventId,
+      competitionId: media.competitionId,
       userId: actor.id,
       action: 'DELETE',
       metadata: {
@@ -1030,7 +1030,7 @@ export const createMediaService = ({
       action: 'MEDIA_DELETED',
       resourceId: media._id,
       metadata: {
-        eventId: getId(media.eventId),
+        competitionId: getId(media.competitionId),
         storagePath: media.storagePath,
         statusBeforeDelete: media.status
       }
@@ -1048,7 +1048,7 @@ export const createMediaService = ({
 
     await repository.createActivity({
       mediaId: media._id,
-      eventId: media.eventId,
+      competitionId: media.competitionId,
       userId: actor.id,
       action: 'APPROVE',
       metadata: {}
@@ -1059,7 +1059,7 @@ export const createMediaService = ({
       action: 'MEDIA_APPROVED',
       resourceId: media._id,
       metadata: {
-        eventId: getId(media.eventId)
+        competitionId: getId(media.competitionId)
       }
     })
 
@@ -1077,7 +1077,7 @@ export const createMediaService = ({
 
     await repository.createActivity({
       mediaId: media._id,
-      eventId: media.eventId,
+      competitionId: media.competitionId,
       userId: actor.id,
       action: 'REJECT',
       metadata: { reason }
@@ -1088,7 +1088,7 @@ export const createMediaService = ({
       action: 'MEDIA_REJECTED',
       resourceId: media._id,
       metadata: {
-        eventId: getId(media.eventId),
+        competitionId: getId(media.competitionId),
         reason
       }
     })
@@ -1121,18 +1121,18 @@ export const createMediaService = ({
     const filter = {
       ...buildDateRange(query)
     }
-    if (query.eventId) filter.eventId = new mongoose.Types.ObjectId(query.eventId)
+    if (query.competitionId) filter.competitionId = new mongoose.Types.ObjectId(query.competitionId)
 
     const activityFilter = {
       action: 'VIEW',
       ...buildDateRange(query, 'createdAt')
     }
-    if (query.eventId) activityFilter.eventId = new mongoose.Types.ObjectId(query.eventId)
+    if (query.competitionId) activityFilter.competitionId = new mongoose.Types.ObjectId(query.competitionId)
 
     const [
       totalUploads,
       byStatus,
-      byEvent,
+      byCompetition,
       byTeam,
       byParticipant,
       byMediaType,
@@ -1143,7 +1143,7 @@ export const createMediaService = ({
     ] = await Promise.all([
       repository.countMedia(filter),
       aggregateCounts({ filter, groupField: 'status' }),
-      aggregateCounts({ filter, groupField: 'eventId' }),
+      aggregateCounts({ filter, groupField: 'competitionId' }),
       aggregateCounts({ filter: { ...filter, teamId: { $exists: true, $ne: null } }, groupField: 'teamId' }),
       aggregateCounts({ filter, groupField: 'uploadedBy' }),
       aggregateCounts({ filter, groupField: 'mediaType' }),
@@ -1183,7 +1183,7 @@ export const createMediaService = ({
       pending: statusCounts.PENDING,
       approved: statusCounts.APPROVED,
       rejected: statusCounts.REJECTED,
-      uploadsByEvent: byEvent.map(item => ({ eventId: getId(item._id), count: item.count })),
+      uploadsByCompetition: byCompetition.map(item => ({ competitionId: getId(item._id), count: item.count })),
       uploadsByTeam: byTeam.map(item => ({ teamId: getId(item._id), count: item.count })),
       uploadsByParticipant: byParticipant.map(item => ({ participantId: getId(item._id), count: item.count })),
       uploadsByDay: byDay.map(item => ({ day: item._id, count: item.count })),
@@ -1216,7 +1216,7 @@ export const createMediaService = ({
     uploadProfileAvatar,
     listMyHistory,
     listAdminMedia,
-    getEventGallery,
+    getCompetitionGallery,
     getSignedUrl,
     deleteMedia,
     approveMedia,

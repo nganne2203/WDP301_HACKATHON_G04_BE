@@ -6,7 +6,7 @@ import { createRankingService } from '../src/modules/rankings/ranking.service.js
 import { createScoreSheetService } from '../src/modules/score-sheets/score-sheet.service.js'
 
 const ids = {
-  event: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+  competition: 'aaaaaaaaaaaaaaaaaaaaaaaa',
   round: 'bbbbbbbbbbbbbbbbbbbbbbbb',
   board1: 'cccccccccccccccccccccccc',
   board2: 'dddddddddddddddddddddddd',
@@ -66,7 +66,7 @@ const createScoreSheetFixture = ({
   judgeStatus = 'ACTIVE',
   judgeRoles = [{ name: 'JUDGE' }]
 } = {}) => {
-  const events = new Map()
+  const competitions = new Map()
   const rounds = new Map()
   const boards = new Map()
   const teams = new Map()
@@ -76,8 +76,8 @@ const createScoreSheetFixture = ({
   const scores = new Map()
   const auditLogs = []
 
-  events.set(ids.event, {
-    _id: ids.event,
+  competitions.set(ids.competition, {
+    _id: ids.competition,
     competitionConfig: {
       finalistCount: 2,
       finalistsPerBoard: 1,
@@ -87,24 +87,24 @@ const createScoreSheetFixture = ({
   })
   rounds.set(ids.round, {
     _id: ids.round,
-    eventId: ids.event,
+    competitionId: ids.competition,
     rubricId: ids.rubric,
     tieBreakRule: '10-minute mini test',
     status: roundStatus
   })
   teams.set(ids.team1, {
     _id: ids.team1,
-    eventId: ids.event,
+    competitionId: ids.competition,
     name: 'Team One',
     boardNumber: 1,
     chapterName: 'A',
     status: teamStatus
   })
-  teams.set(ids.team2, { _id: ids.team2, eventId: ids.event, name: 'Team Two', boardNumber: 1, chapterName: 'B' })
+  teams.set(ids.team2, { _id: ids.team2, competitionId: ids.competition, name: 'Team Two', boardNumber: 1, chapterName: 'B' })
   users.set(ids.judge1, { _id: ids.judge1, fullName: 'Judge One', status: judgeStatus, roles: judgeRoles })
   boards.set(ids.board1, {
     _id: ids.board1,
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     boardNumber: 1,
     teamIds: allowTeam ? [ids.team1] : [ids.team2],
@@ -113,7 +113,7 @@ const createScoreSheetFixture = ({
   })
   submissions.set(ids.submission1, {
     _id: ids.submission1,
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     teamId: ids.team1,
     status: submissionStatus
@@ -192,7 +192,7 @@ const createScoreSheetFixture = ({
           return entry
         }
       },
-      eventModel: createModel(events),
+      competitionModel: createModel(competitions),
       roundModel: createModel(rounds),
       boardModel: createModel(boards),
       teamModel: createModel(teams),
@@ -211,9 +211,9 @@ const createRankingFixture = ({
   finalistsPerBoard = 1,
   finalistSelectionMode = 'FIXED_PER_BOARD',
   roundType = 'FINAL',
-  eventStatus = 'SCORING'
+  competitionStatus = 'SCORING'
 } = {}) => {
-  const events = new Map()
+  const competitions = new Map()
   const rounds = new Map()
   const teams = new Map()
   const repositories = new Map()
@@ -222,9 +222,9 @@ const createRankingFixture = ({
   const boards = []
   const auditLogs = []
 
-  events.set(ids.event, {
-    _id: ids.event,
-    status: eventStatus,
+  competitions.set(ids.competition, {
+    _id: ids.competition,
+    status: competitionStatus,
     competitionConfig: {
       finalistCount,
       finalistsPerBoard,
@@ -235,7 +235,7 @@ const createRankingFixture = ({
   })
   rounds.set(ids.round, {
     _id: ids.round,
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundType,
     tieBreakRule: '10-minute mini test'
   })
@@ -250,21 +250,21 @@ const createRankingFixture = ({
   teams.set(ids.team2, { _id: ids.team2, name: 'Beta', boardNumber: 1, chapterName: 'B' })
   teams.set(ids.team3, { _id: ids.team3, name: 'Gamma', boardNumber: 2, chapterName: 'C' })
   teams.set(ids.team4, { _id: ids.team4, name: 'Delta', boardNumber: 2, chapterName: 'D' })
-  repositories.set('repo-1', { _id: 'repo-1', eventId: ids.event, teamId: ids.team1, status: 'ACTIVE', accessState: 'GRANTED' })
-  repositories.set('repo-2', { _id: 'repo-2', eventId: ids.event, teamId: ids.team2, status: 'ACTIVE', accessState: 'GRANTED' })
-  repositories.set('repo-3', { _id: 'repo-3', eventId: ids.event, teamId: ids.team3, status: 'ACTIVE', accessState: 'GRANTED' })
-  repositories.set('repo-4', { _id: 'repo-4', eventId: ids.event, teamId: ids.team4, status: 'ACTIVE', accessState: 'GRANTED' })
+  repositories.set('repo-1', { _id: 'repo-1', competitionId: ids.competition, teamId: ids.team1, status: 'ACTIVE', accessState: 'GRANTED' })
+  repositories.set('repo-2', { _id: 'repo-2', competitionId: ids.competition, teamId: ids.team2, status: 'ACTIVE', accessState: 'GRANTED' })
+  repositories.set('repo-3', { _id: 'repo-3', competitionId: ids.competition, teamId: ids.team3, status: 'ACTIVE', accessState: 'GRANTED' })
+  repositories.set('repo-4', { _id: 'repo-4', competitionId: ids.competition, teamId: ids.team4, status: 'ACTIVE', accessState: 'GRANTED' })
 
   scoreSheets.push(
-    { _id: 'sheet-1', eventId: ids.event, roundId: ids.round, teamId: teams.get(ids.team1), judgeId: { _id: ids.judge1 }, boardId: { boardNumber: 1 }, finalScore: 95, status: 'LOCKED' },
-    { _id: 'sheet-2', eventId: ids.event, roundId: ids.round, teamId: teams.get(ids.team2), judgeId: { _id: ids.judge1 }, boardId: { boardNumber: 1 }, finalScore: 90, status: 'LOCKED' },
-    { _id: 'sheet-3', eventId: ids.event, roundId: ids.round, teamId: teams.get(ids.team3), judgeId: { _id: ids.judge1 }, boardId: { boardNumber: 2 }, finalScore: 88, status: 'LOCKED' },
-    { _id: 'sheet-4', eventId: ids.event, roundId: ids.round, teamId: teams.get(ids.team4), judgeId: { _id: ids.judge1 }, boardId: { boardNumber: 2 }, finalScore: 70, status: 'LOCKED' }
+    { _id: 'sheet-1', competitionId: ids.competition, roundId: ids.round, teamId: teams.get(ids.team1), judgeId: { _id: ids.judge1 }, boardId: { boardNumber: 1 }, finalScore: 95, status: 'LOCKED' },
+    { _id: 'sheet-2', competitionId: ids.competition, roundId: ids.round, teamId: teams.get(ids.team2), judgeId: { _id: ids.judge1 }, boardId: { boardNumber: 1 }, finalScore: 90, status: 'LOCKED' },
+    { _id: 'sheet-3', competitionId: ids.competition, roundId: ids.round, teamId: teams.get(ids.team3), judgeId: { _id: ids.judge1 }, boardId: { boardNumber: 2 }, finalScore: 88, status: 'LOCKED' },
+    { _id: 'sheet-4', competitionId: ids.competition, roundId: ids.round, teamId: teams.get(ids.team4), judgeId: { _id: ids.judge1 }, boardId: { boardNumber: 2 }, finalScore: 70, status: 'LOCKED' }
   )
   boards.push(
     {
       _id: ids.board1,
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       boardNumber: 1,
       teamIds: [teams.get(ids.team1), teams.get(ids.team2)],
@@ -272,7 +272,7 @@ const createRankingFixture = ({
     },
     {
       _id: ids.board2,
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       boardNumber: 2,
       teamIds: [teams.get(ids.team3), teams.get(ids.team4)],
@@ -286,7 +286,7 @@ const createRankingFixture = ({
     },
     async deleteRankings(filter) {
       for (const [id, ranking] of rankings.entries()) {
-        if (ranking.eventId === filter.eventId && ranking.roundId === filter.roundId && ranking.rankingType === filter.rankingType) {
+        if (ranking.competitionId === filter.competitionId && ranking.roundId === filter.roundId && ranking.rankingType === filter.rankingType) {
           rankings.delete(id)
         }
       }
@@ -340,7 +340,7 @@ const createRankingFixture = ({
           return entry
         }
       },
-      eventModel: createModel(events),
+      competitionModel: createModel(competitions),
       roundModel: createModel(rounds),
       teamModel: createModel(teams),
       notificationService,
@@ -352,8 +352,8 @@ const createRankingFixture = ({
             const matchesTeam = Array.isArray(filter.teamId?.$in)
               ? filter.teamId.$in.includes(repositoryRecord.teamId)
               : true
-            const matchesEvent = filter.eventId ? repositoryRecord.eventId === filter.eventId : true
-            if (matchesEvent && matchesTeam) {
+            const matchesCompetition = filter.competitionId ? repositoryRecord.competitionId === filter.competitionId : true
+            if (matchesCompetition && matchesTeam) {
               repositories.set(id, { ...repositoryRecord, ...data })
               modifiedCount += 1
             }
@@ -372,7 +372,7 @@ const createRankingFixture = ({
         }
       }
     }),
-    stores: { rankings, auditLogs, scoreSheets, boards, events, rounds, repositories }
+    stores: { rankings, auditLogs, scoreSheets, boards, competitions, rounds, repositories }
   }
 }
 
@@ -381,7 +381,7 @@ test('judge cannot score unassigned team', async () => {
 
   await assert.rejects(
     () => service.createScoreSheet({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       boardId: ids.board1,
       teamId: ids.team1,
@@ -397,7 +397,7 @@ test('scoreValue cannot exceed criterion maxScore', async () => {
 
   await assert.rejects(
     () => service.createScoreSheet({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       boardId: ids.board1,
       teamId: ids.team1,
@@ -413,7 +413,7 @@ test('judge cannot create score sheet until round and board are in SCORING', asy
 
   await assert.rejects(
     () => service.createScoreSheet({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       boardId: ids.board1,
       teamId: ids.team1,
@@ -429,7 +429,7 @@ test('judge cannot create score sheet for draft submission or inactive judge acc
 
   await assert.rejects(
     () => draftSubmission.service.createScoreSheet({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       boardId: ids.board1,
       teamId: ids.team1,
@@ -442,7 +442,7 @@ test('judge cannot create score sheet for draft submission or inactive judge acc
   const suspendedJudge = createScoreSheetFixture({ judgeStatus: 'SUSPENDED' })
   await assert.rejects(
     () => suspendedJudge.service.createScoreSheet({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       boardId: ids.board1,
       teamId: ids.team1,
@@ -455,7 +455,7 @@ test('judge cannot create score sheet for draft submission or inactive judge acc
   const nonJudge = createScoreSheetFixture({ judgeRoles: [{ name: 'PARTICIPANT' }] })
   await assert.rejects(
     () => nonJudge.service.createScoreSheet({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       boardId: ids.board1,
       teamId: ids.team1,
@@ -470,7 +470,7 @@ test('raw score sheet reads are scoped to owning judge and hidden from participa
   const { service, stores } = createScoreSheetFixture()
 
   const created = await service.createScoreSheet({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     boardId: ids.board1,
     teamId: ids.team1,
@@ -480,7 +480,7 @@ test('raw score sheet reads are scoped to owning judge and hidden from participa
 
   stores.scoreSheets.set('aaaaaaaaaaaaaaaaaaaaaa99', {
     _id: 'aaaaaaaaaaaaaaaaaaaaaa99',
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     boardId: ids.board1,
     teamId: ids.team1,
@@ -490,12 +490,12 @@ test('raw score sheet reads are scoped to owning judge and hidden from participa
     status: 'DRAFT'
   })
 
-  const judgeResult = await service.listScoreSheets({ eventId: ids.event }, judgeActor)
+  const judgeResult = await service.listScoreSheets({ competitionId: ids.competition }, judgeActor)
   assert.equal(judgeResult.scoreSheets.length, 1)
   assert.equal(judgeResult.scoreSheets[0].judgeId, ids.judge1)
 
   await assert.rejects(
-    () => service.listScoreSheets({ eventId: ids.event }, participantActor),
+    () => service.listScoreSheets({ competitionId: ids.competition }, participantActor),
     (error) => error instanceof ApiError && error.code === 'FORBIDDEN'
   )
 
@@ -514,7 +514,7 @@ test('submitted score sheet is locked', async () => {
   const { service, stores } = createScoreSheetFixture()
 
   const created = await service.createScoreSheet({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     boardId: ids.board1,
     teamId: ids.team1,
@@ -544,7 +544,7 @@ test('submitScoreSheet requires exactly one score for every rubric criterion', a
   const { service } = createScoreSheetFixture()
 
   const created = await service.createScoreSheet({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     boardId: ids.board1,
     teamId: ids.team1,
@@ -568,7 +568,7 @@ test('ranking uses judge scores only and ignores AiReview completely', async () 
   ]
 
   const result = await service.generateRankings({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     rankingType: 'TEAM'
   }, { id: ids.judge1, aiReviews })
@@ -585,7 +585,7 @@ test('generateRankings requires a locked score sheet from every assigned judge f
 
   await assert.rejects(
     service.generateRankings({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round,
       rankingType: 'TEAM'
     }, { id: ids.judge1 }),
@@ -595,16 +595,16 @@ test('generateRankings requires a locked score sheet from every assigned judge f
   )
 })
 
-test('finalist selection respects event competitionConfig FIXED_PER_BOARD', async () => {
+test('finalist selection respects competition competitionConfig FIXED_PER_BOARD', async () => {
   const { service } = createRankingFixture()
   await service.generateRankings({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     rankingType: 'TEAM'
   }, { id: ids.judge1 })
 
   const result = await service.selectFinalists({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round
   }, { id: ids.judge1 })
 
@@ -623,13 +623,13 @@ test('ranking uses round-scoped placement before legacy team board fields', asyn
     ]
   })
   await service.generateRankings({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     rankingType: 'TEAM'
   }, { id: ids.judge1 })
 
   const result = await service.selectFinalists({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round
   }, { id: ids.judge1 })
 
@@ -642,7 +642,7 @@ test('tie-break manual resolution is traceable', async () => {
   stores.scoreSheets[1].finalScore = 95
 
   const result = await service.generateRankings({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     rankingType: 'TEAM'
   }, { id: ids.judge1 })
@@ -661,14 +661,14 @@ test('finalist selection is blocked when an unresolved tie crosses the cutoff', 
   })
   stores.scoreSheets[1].finalScore = 95
   await service.generateRankings({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     rankingType: 'TEAM'
   }, { id: ids.judge1 })
 
   await assert.rejects(
     service.selectFinalists({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round
     }, { id: ids.judge1 }),
     error => error instanceof ApiError &&
@@ -684,13 +684,13 @@ test('resolveTieBreak stores tie-break decision and allows cutoff selection', as
   })
   stores.scoreSheets[1].finalScore = 95
   await service.generateRankings({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     rankingType: 'TEAM'
   }, { id: ids.judge1 })
 
   const resolved = await service.resolveTieBreak({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     decisions: [
       {
@@ -711,7 +711,7 @@ test('resolveTieBreak stores tie-break decision and allows cutoff selection', as
   assert.equal(resolved.rankings[0].tieBreakResolvedBy, ids.judge1)
 
   const result = await service.selectFinalists({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round
   }, { id: ids.judge1 })
 
@@ -724,14 +724,14 @@ test('CUSTOM finalist mode requires manual finalist selection', async () => {
     finalistSelectionMode: 'CUSTOM'
   })
   await service.generateRankings({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     rankingType: 'TEAM'
   }, { id: ids.judge1 })
 
   await assert.rejects(
     service.selectFinalists({
-      eventId: ids.event,
+      competitionId: ids.competition,
       roundId: ids.round
     }, { id: ids.judge1 }),
     error => error instanceof ApiError &&
@@ -742,17 +742,17 @@ test('CUSTOM finalist mode requires manual finalist selection', async () => {
 test('result publication works and audit log is written for critical ranking actions', async () => {
   const { service, stores } = createRankingFixture()
   await service.generateRankings({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     rankingType: 'TEAM'
   }, { id: ids.judge1 })
   await service.selectFinalists({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round
   }, { id: ids.judge1 })
 
   const result = await service.publishResults({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round
   }, { id: ids.judge1 })
 
@@ -762,7 +762,7 @@ test('result publication works and audit log is written for critical ranking act
     'RANKING_GENERATED',
     'FINALISTS_SELECTED',
     'RESULTS_PUBLISHED',
-    'EVENT_COMPLETED_AFTER_FINAL_RESULTS'
+    'COMPETITION_COMPLETED_AFTER_FINAL_RESULTS'
   ])
 })
 
@@ -778,17 +778,17 @@ test('publishResults notifies ranked team members', async () => {
   })
 
   await service.generateRankings({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     rankingType: 'TEAM'
   }, { id: ids.judge1 })
   await service.selectFinalists({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round
   }, { id: ids.judge1 })
 
   await service.publishResults({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round
   }, { id: ids.judge1 })
 
@@ -803,17 +803,17 @@ test('publishResults notifies ranked team members', async () => {
 test('publishResults can revoke repository access for ranked teams', async () => {
   const { service, stores } = createRankingFixture()
   await service.generateRankings({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     rankingType: 'TEAM'
   }, { id: ids.judge1 })
   await service.selectFinalists({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round
   }, { id: ids.judge1 })
 
   const result = await service.publishResults({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     repositoryAccessAction: 'REVOKE'
   }, { id: ids.judge1 })
@@ -824,27 +824,27 @@ test('publishResults can revoke repository access for ranked teams', async () =>
   assert.equal([...stores.repositories.values()].every(item => item.accessState === 'REVOKE_PENDING'), true)
 })
 
-test('publishResults completes the event after final round publication', async () => {
+test('publishResults completes the competition after final round publication', async () => {
   const { service, stores } = createRankingFixture({
     roundType: 'FINAL',
-    eventStatus: 'SCORING'
+    competitionStatus: 'SCORING'
   })
   await service.generateRankings({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round,
     rankingType: 'TEAM'
   }, { id: ids.judge1 })
   await service.selectFinalists({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round
   }, { id: ids.judge1 })
 
   const result = await service.publishResults({
-    eventId: ids.event,
+    competitionId: ids.competition,
     roundId: ids.round
   }, { id: ids.judge1 })
 
-  assert.equal(result.eventCompleted, true)
-  assert.equal(stores.events.get(ids.event).status, 'COMPLETED')
-  assert.equal(stores.auditLogs.at(-1).action, 'EVENT_COMPLETED_AFTER_FINAL_RESULTS')
+  assert.equal(result.competitionCompleted, true)
+  assert.equal(stores.competitions.get(ids.competition).status, 'COMPLETED')
+  assert.equal(stores.auditLogs.at(-1).action, 'COMPETITION_COMPLETED_AFTER_FINAL_RESULTS')
 })

@@ -10,6 +10,16 @@ const createLogger = () => ({
   error: () => {}
 })
 
+const createQuery = (value) => ({
+  select () { return this },
+  lean: async () => value,
+  then: (resolve, reject) => Promise.resolve(value).then(resolve, reject)
+})
+
+const noPushUserModel = {
+  findById: () => createQuery(null)
+}
+
 test('notifyUser creates in-app notification and sends email', async () => {
   const created = []
   const sent = []
@@ -33,11 +43,12 @@ test('notifyUser creates in-app notification and sends email', async () => {
       }
     },
     socketEmitter: {
-      emitToUser: (userId, event, payload) => {
-        emitted.push({ userId, event, payload })
+      emitToUser: (userId, competition, payload) => {
+        emitted.push({ userId, competition, payload })
         return true
       }
     },
+    userModel: noPushUserModel,
     logger: createLogger()
   })
 
@@ -56,12 +67,172 @@ test('notifyUser creates in-app notification and sends email', async () => {
   assert.equal(created[0].userId, 'user-1')
   assert.equal(result.notification.title, 'Account approved')
   assert.equal(result.email.sent, true)
+  assert.equal(result.push.status, 'SKIPPED')
   assert.equal(sent[0].to, 'participant@example.com')
   assert.equal(sent[0].template, EMAIL_TEMPLATE_KEYS.ACCOUNT_APPROVED)
   assert.equal(emitted.length, 1)
   assert.equal(emitted[0].userId, 'user-1')
-  assert.equal(emitted[0].event, 'notification_created')
+  assert.equal(emitted[0].competition, 'notification_created')
   assert.equal(emitted[0].payload.title, 'Account approved')
+})
+
+test('notifyUser sends Expo push when a new in-app notification is created', async () => {
+  const requests = []
+  const service = createNotificationService({
+    repository: {
+      create: async (payload) => ({
+        _id: 'notification-1',
+        ...payload,
+        status: 'UNREAD'
+      })
+    },
+    emailService: {
+      sendTemplateEmail: async () => ({ sent: false, status: 'SKIPPED' })
+    },
+    userModel: {
+      findById: () => createQuery({
+        pushToken: 'ExponentPushToken[device-token]',
+        pushPlatform: 'android'
+      })
+    },
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options })
+      return {
+        ok: true,
+        json: async () => ({ data: { status: 'ok', id: 'expo-ticket-1' } })
+      }
+    },
+    logger: createLogger()
+  })
+
+  const result = await service.notifyUser({
+    user: { _id: 'user-1' },
+    title: 'Results published',
+    message: 'Preliminary Round results are available.',
+    type: 'RESULT',
+    metadata: {
+      action: 'RESULTS_PUBLISHED',
+      competitionId: 'competition-1',
+      roundId: 'round-1',
+      targetPath: '/participant/results'
+    },
+    channels: ['IN_APP']
+  })
+
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].url, 'https://exp.host/--/api/v2/push/send')
+  const body = JSON.parse(requests[0].options.body)
+  assert.equal(body.to, 'ExponentPushToken[device-token]')
+  assert.equal(body.data.notificationId, 'notification-1')
+  assert.equal(body.data.action, 'RESULTS_PUBLISHED')
+  assert.equal(result.push.sent, true)
+  assert.equal(result.push.ticketId, 'expo-ticket-1')
+})
+
+test('notifyUser keeps the in-app notification when Expo delivery fails', async () => {
+  const service = createNotificationService({
+    repository: {
+      create: async (payload) => ({ _id: 'notification-1', ...payload, status: 'UNREAD' })
+    },
+    emailService: {
+      sendTemplateEmail: async () => ({ sent: false, status: 'SKIPPED' })
+    },
+    userModel: {
+      findById: () => createQuery({ pushToken: 'ExponentPushToken[device-token]' })
+    },
+    fetchImpl: async () => {
+      throw new Error('Expo unavailable')
+    },
+    logger: createLogger()
+  })
+
+  const result = await service.notifyUser({
+    user: { _id: 'user-1' },
+    title: 'Team invitation',
+    message: 'You were invited to a team.',
+    channels: ['IN_APP']
+  })
+
+  assert.equal(result.notification.id, 'notification-1')
+  assert.equal(result.push.sent, false)
+  assert.equal(result.push.status, 'FAILED')
+  assert.deepEqual(result.errors, ['Expo unavailable'])
+})
+
+test('notifyUser clears a DeviceNotRegistered Expo token', async () => {
+  const updates = []
+  const service = createNotificationService({
+    repository: {
+      create: async (payload) => ({ _id: 'notification-1', ...payload, status: 'UNREAD' })
+    },
+    emailService: {
+      sendTemplateEmail: async () => ({ sent: false, status: 'SKIPPED' })
+    },
+    userModel: {
+      findById: () => createQuery({ pushToken: 'ExponentPushToken[expired-token]' }),
+      updateOne: async (...args) => {
+        updates.push(args)
+      }
+    },
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        data: {
+          status: 'error',
+          message: 'The device is not registered',
+          details: { error: 'DeviceNotRegistered' }
+        }
+      })
+    }),
+    logger: createLogger()
+  })
+
+  const result = await service.notifyUser({
+    user: { _id: 'user-1' },
+    title: 'Workshop assignment',
+    message: 'You were assigned as a speaker.',
+    channels: ['IN_APP']
+  })
+
+  assert.equal(result.notification.id, 'notification-1')
+  assert.equal(result.push.sent, false)
+  assert.equal(updates.length, 1)
+  assert.deepEqual(updates[0][0], {
+    _id: 'user-1',
+    pushToken: 'ExponentPushToken[expired-token]'
+  })
+})
+
+test('register and unregister push token update the authenticated user', async () => {
+  const updates = []
+  const userModel = {
+    findByIdAndUpdate: (id, update) => {
+      updates.push({ id, update })
+      return createQuery(update.$set
+        ? { _id: id, ...update.$set }
+        : { _id: id })
+    }
+  }
+  const service = createNotificationService({ userModel, logger: createLogger() })
+  const userId = '000000000000000000000001'
+
+  const registered = await service.registerPushToken({
+    userId,
+    token: 'ExponentPushToken[new-token]',
+    platform: 'android'
+  })
+  const unregistered = await service.unregisterPushToken(userId)
+
+  assert.equal(registered.registered, true)
+  assert.equal(registered.platform, 'android')
+  assert.equal(unregistered.unregistered, true)
+  assert.equal(updates.length, 2)
+  assert.equal(updates[0].update.$set.pushToken, 'ExponentPushToken[new-token]')
+  assert.deepEqual(updates[1].update.$unset, {
+    pushToken: 1,
+    pushPlatform: 1,
+    pushTokenUpdatedAt: 1
+  })
 })
 
 test('notifyUser does not fail main flow when notification repository fails', async () => {
@@ -96,14 +267,15 @@ test('notifyUser does not fail main flow when notification repository fails', as
 test('notifyUser reuses existing in-app notification when dedupeKey matches', async () => {
   const created = []
   const emitted = []
+  const pushRequests = []
   const existing = {
     _id: 'notification-1',
     userId: 'user-1',
-    title: 'Event starts soon',
-    message: 'Your event starts in 1 hour.',
+    title: 'Competition starts soon',
+    message: 'Your competition starts in 1 hour.',
     type: 'DEADLINE',
     status: 'UNREAD',
-    dedupeKey: 'event-start:event-1:1h:user-1',
+    dedupeKey: 'competition-start:competition-1:1h:user-1',
     createdAt: new Date('2026-05-30T00:00:00.000Z')
   }
 
@@ -119,10 +291,17 @@ test('notifyUser reuses existing in-app notification when dedupeKey matches', as
       sendTemplateEmail: async () => ({ sent: true, status: 'SENT', accepted: ['participant@example.com'] })
     },
     socketEmitter: {
-      emitToUser: (userId, event, payload) => {
-        emitted.push({ userId, event, payload })
+      emitToUser: (userId, competition, payload) => {
+        emitted.push({ userId, competition, payload })
         return true
       }
+    },
+    userModel: {
+      findById: () => createQuery({ pushToken: 'ExponentPushToken[device-token]' })
+    },
+    fetchImpl: async (...args) => {
+      pushRequests.push(args)
+      return { ok: true, json: async () => ({ data: { status: 'ok' } }) }
     },
     logger: createLogger()
   })
@@ -133,8 +312,8 @@ test('notifyUser reuses existing in-app notification when dedupeKey matches', as
       email: 'participant@example.com',
       fullName: 'Participant User'
     },
-    title: 'Event starts soon',
-    message: 'Your event starts in 1 hour.',
+    title: 'Competition starts soon',
+    message: 'Your competition starts in 1 hour.',
     type: 'DEADLINE',
     dedupeKey: existing.dedupeKey,
     channels: ['IN_APP']
@@ -145,9 +324,10 @@ test('notifyUser reuses existing in-app notification when dedupeKey matches', as
   assert.equal(result.notification.dedupeKey, existing.dedupeKey)
   assert.equal(result.email, null)
   assert.equal(emitted.length, 0)
+  assert.equal(pushRequests.length, 0)
 })
 
-test('mark read operations emit notification socket events', async () => {
+test('mark read operations emit notification socket competitions', async () => {
   const emitted = []
   const service = createNotificationService({
     repository: {
@@ -163,8 +343,8 @@ test('mark read operations emit notification socket events', async () => {
       markAllAsRead: async () => ({ matchedCount: 3, modifiedCount: 2 })
     },
     socketEmitter: {
-      emitToUser: (userId, event, payload) => {
-        emitted.push({ userId, event, payload })
+      emitToUser: (userId, competition, payload) => {
+        emitted.push({ userId, competition, payload })
         return true
       }
     },
@@ -178,13 +358,13 @@ test('mark read operations emit notification socket events', async () => {
   await service.markAllAsRead('000000000000000000000002')
 
   assert.equal(emitted.length, 2)
-  assert.equal(emitted[0].event, 'notification_read')
+  assert.equal(emitted[0].competition, 'notification_read')
   assert.equal(emitted[0].payload.status, 'READ')
-  assert.equal(emitted[1].event, 'notifications_read_all')
+  assert.equal(emitted[1].competition, 'notifications_read_all')
   assert.equal(emitted[1].payload.modifiedCount, 2)
 })
 
-test('sendEventInvitations deduplicates recipients and summarizes delivery', async () => {
+test('sendCompetitionInvitations deduplicates recipients and summarizes delivery', async () => {
   const sent = []
   const service = createNotificationService({
     emailService: {
@@ -198,9 +378,9 @@ test('sendEventInvitations deduplicates recipients and summarizes delivery', asy
     logger: createLogger()
   })
 
-  const result = await service.sendEventInvitations({
-    event: {
-      _id: 'event-1',
+  const result = await service.sendCompetitionInvitations({
+    competition: {
+      _id: 'competition-1',
       title: 'SEAL Hackathon'
     },
     emails: ['participant@example.com', 'participant@example.com', 'bad@example.com'],
@@ -211,5 +391,5 @@ test('sendEventInvitations deduplicates recipients and summarizes delivery', asy
   assert.equal(result.sent, 1)
   assert.equal(result.failed, 1)
   assert.equal(sent.length, 2)
-  assert.equal(sent[0].template, EMAIL_TEMPLATE_KEYS.EVENT_INVITATION)
+  assert.equal(sent[0].template, EMAIL_TEMPLATE_KEYS.COMPETITION_INVITATION)
 })

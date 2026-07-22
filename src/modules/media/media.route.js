@@ -22,7 +22,7 @@ router.use(authorizationMiddleware)
 
 router.post(
   '/upload',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   uploadRateLimiter,
   MEDIA_MULTIPART.multipartBodyParser,
   MEDIA_MULTIPART.mediaMultipartMiddleware,
@@ -32,21 +32,21 @@ router.post(
 
 router.get(
   '/my-history',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(MEDIA_VALIDATION.listMyHistory),
   MEDIA_CONTROLLER.listMyHistory
 )
 
 router.get(
   '/:mediaId/view-url',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(MEDIA_VALIDATION.viewUrl),
   MEDIA_CONTROLLER.getSignedUrl
 )
 
 router.delete(
   '/:mediaId',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(MEDIA_VALIDATION.deleteMedia),
   MEDIA_CONTROLLER.deleteMedia
 )

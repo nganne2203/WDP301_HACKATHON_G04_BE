@@ -1,5 +1,5 @@
 export const QUEUE_NAMES = {
-  GITHUB_PUSH_EVENTS: 'github-push-events'
+  GITHUB_PUSH_EVENTS: 'github-push-competitions'
 }
 
 export const JOB_TYPES = {

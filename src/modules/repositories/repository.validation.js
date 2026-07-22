@@ -12,7 +12,7 @@ const listRepositories = {
   query: Joi.object({
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10),
-    eventId: objectId,
+    competitionId: objectId,
     teamId: objectId,
     roundId: objectId,
     status: repositoryStatus,
@@ -31,7 +31,7 @@ const repositoryEvidenceQuery = {
 
 const createRepository = {
   body: Joi.object({
-    eventId: objectId.required(),
+    competitionId: objectId.required(),
     teamId: objectId.required(),
     roundId: objectId.allow(null),
     githubOwner: Joi.string().trim().min(1).max(100).required(),
@@ -69,7 +69,7 @@ const getRepositoryById = {
 
 const missingConfirmedTeams = {
   query: Joi.object({
-    eventId: objectId.required()
+    competitionId: objectId.required()
   })
 }
 

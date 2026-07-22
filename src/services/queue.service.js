@@ -62,7 +62,7 @@ export const QUEUE_SERVICE = {
     }
   },
 
-  async enqueueGithubPushEvent(data) {
+  async enqueueGithubPushCompetition(data) {
     return await getGithubPushQueue().add(JOB_TYPES.PROCESS_GITHUB_PUSH_EVENT, data, {
       jobId: data.deliveryId
     })

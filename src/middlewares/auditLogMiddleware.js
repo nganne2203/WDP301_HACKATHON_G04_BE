@@ -15,13 +15,25 @@ const SKIP_PATHS = [
   '/api-docs'
 ]
 
+const STATIC_BROWSER_ASSET_PATHS = new Set([
+  '/favicon.ico',
+  '/favicon.svg',
+  '/favicon.png',
+  '/robots.txt',
+  '/site.webmanifest',
+  '/manifest.json',
+  '/browserconfig.xml',
+  '/apple-touch-icon.png',
+  '/apple-touch-icon-precomposed.png'
+])
+
 const MODULE_ENTITY_MAP = {
   auth: AUDIT_ENTITY_TYPES.AUTH,
   users: AUDIT_ENTITY_TYPES.USER,
   roles: AUDIT_ENTITY_TYPES.ROLE,
   permissions: AUDIT_ENTITY_TYPES.PERMISSION,
   teams: AUDIT_ENTITY_TYPES.TEAM,
-  events: AUDIT_ENTITY_TYPES.EVENT,
+  competitions: AUDIT_ENTITY_TYPES.EVENT,
   rounds: AUDIT_ENTITY_TYPES.ROUND,
   rubrics: AUDIT_ENTITY_TYPES.RUBRIC,
   submissions: AUDIT_ENTITY_TYPES.SUBMISSION,
@@ -137,7 +149,10 @@ const deriveAction = ({ req, result, statusCode }) => {
 }
 
 const shouldAudit = ({ req, statusCode }) => {
+  const pathname = req.originalUrl.split('?')[0].toLowerCase()
   if (SKIP_PATHS.some(path => req.originalUrl.startsWith(path))) return false
+  if ((req.method === 'GET' || req.method === 'HEAD') &&
+    (STATIC_BROWSER_ASSET_PATHS.has(pathname) || pathname.startsWith('/.well-known/'))) return false
   if (req.originalUrl.startsWith('/api/audit-logs')) return false
   if (req.originalUrl.startsWith('/api-docs')) return false
   if (MUTATION_METHODS.has(req.method)) return true

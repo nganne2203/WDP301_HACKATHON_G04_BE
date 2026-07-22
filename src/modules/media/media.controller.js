@@ -56,12 +56,12 @@ const listMyHistory = async (req, res, next) => {
   }
 }
 
-const getEventGallery = async (req, res, next) => {
+const getCompetitionGallery = async (req, res, next) => {
   try {
-    const gallery = await MEDIA_SERVICE.getEventGallery(req.params.id, req.validated?.query || req.query)
+    const gallery = await MEDIA_SERVICE.getCompetitionGallery(req.params.id, req.validated?.query || req.query)
 
     res.status(StatusCodes.OK).json(responseSuccess({
-      message: 'Get event gallery successfully',
+      message: 'Get competition gallery successfully',
       data: gallery
     }))
   } catch (error) {
@@ -153,7 +153,7 @@ export const MEDIA_CONTROLLER = {
   saveStorageConfig,
   uploadMedia,
   listMyHistory,
-  getEventGallery,
+  getCompetitionGallery,
   getSignedUrl,
   deleteMedia,
   listAdminMedia,

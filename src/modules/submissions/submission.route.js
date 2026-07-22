@@ -13,7 +13,7 @@ router.use(authorizationMiddleware)
 
 router.get(
   '/',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(SUBMISSION_VALIDATION.listSubmissions),
   SUBMISSION_CONTROLLER.listSubmissions
 )
@@ -27,7 +27,7 @@ router.post(
 
 router.get(
   '/:id',
-  permissionMiddleware(PERMISSIONS.EVENT_VIEW),
+  permissionMiddleware(PERMISSIONS.COMPETITION_VIEW),
   validationHandlingMiddleware(SUBMISSION_VALIDATION.getSubmissionById),
   SUBMISSION_CONTROLLER.getSubmissionById
 )

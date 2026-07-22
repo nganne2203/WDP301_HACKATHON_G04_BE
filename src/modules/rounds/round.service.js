@@ -1,30 +1,31 @@
 import mongoose from 'mongoose'
 
 import { ROUND_REPOSITORY } from './round.repository.js'
+import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
-import Event from '#models/event.model.js'
+import Competition from '#models/competition.model.js'
 import Rubric from '#models/rubric.model.js'
 import Team from '#models/team.model.js'
 import Track from '#models/track.model.js'
 import User from '#models/user.model.js'
 import Submission from '#models/submission.model.js'
 import ScoreSheet from '#models/scoreSheet.model.js'
+import { isWithinCompetitionDateWindow } from '#utils/competitionDateWindow.js'
 import Ranking from '#models/ranking.model.js'
 import { JUDGING_BOARD_REPOSITORY } from '#modules/judging-boards/judging-board.repository.js'
-import { actorHasRole, getActorId, isActiveJudge, isParticipantOnlyActor, isPrivilegedEventActor } from '#utils/domainAccessUtil.js'
+import { actorHasRole, getActorId, isActiveJudge, isParticipantOnlyActor, isPrivilegedCompetitionActor } from '#utils/domainAccessUtil.js'
 
 const ROUND_FIELDS = [
-  'eventId',
+  'competitionId',
   'trackId',
   'name',
   'roundType',
   'problemStatement',
   'examDriveUrl',
-  'assignedTeamIds',
   'promotedTeamIds',
   'maxPromotedTeams',
   'startTime',
@@ -42,7 +43,6 @@ const ROUND_FIELDS = [
 ]
 
 const ROUND_ASSIGNABLE_TEAM_STATUSES = ['CONFIRMED']
-const EVENT_TIME_ZONE = 'Asia/Ho_Chi_Minh'
 
 const ensureObjectId = (id, fieldName = 'round id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -83,55 +83,34 @@ const ensureDateOrder = (payload = {}) => {
   }
 }
 
-const formatDateKeyInEventTimeZone = (value) => {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: EVENT_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).formatToParts(date)
-
-  const lookup = Object.fromEntries(parts.map(part => [part.type, part.value]))
-  return `${lookup.year}-${lookup.month}-${lookup.day}`
-}
-
-const ensureRoundWindowWithinEvent = (event, payload = {}) => {
-  const eventStartKey = formatDateKeyInEventTimeZone(event?.startDate)
-  const eventEndKey = formatDateKeyInEventTimeZone(event?.endDate)
+const ensureRoundWindowWithinCompetition = (competition, payload = {}) => {
   const fields = [
     ['startTime', 'Round start time'],
-    ['endTime', 'Round end time']
+    ['endTime', 'Round end time'],
+    ['submissionOpenAt', 'Round submission open time'],
+    ['submissionCloseAt', 'Round submission close time'],
+    ['submissionDeadline', 'Round submission deadline'],
+    ['publishTime', 'Round publish time']
   ]
 
   for (const [field, label] of fields) {
     if (!payload[field]) continue
-    const roundKey = formatDateKeyInEventTimeZone(payload[field])
-    if (!roundKey) continue
-
-    if (eventStartKey && roundKey < eventStartKey) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`${label} must be within the event date range`])
-    }
-
-    if (eventEndKey && roundKey > eventEndKey) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`${label} must be within the event date range`])
+    if (!isWithinCompetitionDateWindow({ competition, value: payload[field] })) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`${label} must be within the competition date range`])
     }
   }
 }
 
-const normalizeEvent = (event) => {
-  if (!event) return null
-  if (typeof event === 'string' || event instanceof mongoose.Types.ObjectId) return { id: event.toString() }
+const normalizeCompetition = (competition) => {
+  if (!competition) return null
+  if (typeof competition === 'string' || competition instanceof mongoose.Types.ObjectId) return { id: competition.toString() }
   return {
-    id: event._id?.toString() || event.id,
-    title: event.title,
-    semester: event.semester,
-    season: event.season,
-    year: event.year,
-    status: event.status
+    id: competition._id?.toString() || competition.id,
+    title: competition.title,
+    semester: competition.semester,
+    season: competition.season,
+    year: competition.year,
+    status: competition.status
   }
 }
 
@@ -194,8 +173,8 @@ const normalizeRound = (round) => {
 
   return {
     id: plainRound._id?.toString() || plainRound.id,
-    event: normalizeEvent(plainRound.eventId),
-    eventId: plainRound.eventId?._id?.toString?.() || plainRound.eventId?.toString?.() || plainRound.eventId,
+    competition: normalizeCompetition(plainRound.competitionId),
+    competitionId: plainRound.competitionId?._id?.toString?.() || plainRound.competitionId?.toString?.() || plainRound.competitionId,
     track: normalizeTrack(plainRound.trackId),
     trackId: plainRound.trackId?._id?.toString?.() || plainRound.trackId?.toString?.() || plainRound.trackId || null,
     name: plainRound.name,
@@ -228,9 +207,9 @@ const normalizeRound = (round) => {
 
 const buildRoundFilter = (query = {}) => {
   const filter = {}
-  if (query.eventId) {
-    ensureObjectId(query.eventId, 'event id')
-    filter.eventId = query.eventId
+  if (query.competitionId) {
+    ensureObjectId(query.competitionId, 'competition id')
+    filter.competitionId = query.competitionId
   }
   if (query.trackId) {
     ensureObjectId(query.trackId, 'track id')
@@ -245,31 +224,31 @@ const buildRoundFilter = (query = {}) => {
   return filter
 }
 
-const ensureEventExists = async (eventId) => {
-  ensureObjectId(eventId, 'event id')
-  const event = await Event.findById(eventId)
-  if (!event) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Event not found'])
-  return event
+const ensureCompetitionExists = async (competitionId) => {
+  ensureObjectId(competitionId, 'competition id')
+  const competition = await Competition.findById(competitionId)
+  if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
+  return competition
 }
 
-const ensureTrackBelongsToEvent = async ({ eventId, trackId }) => {
+const ensureTrackBelongsToCompetition = async ({ competitionId, trackId }) => {
   if (!trackId) return null
   ensureObjectId(trackId, 'track id')
   const track = await Track.findById(trackId)
   if (!track) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Track not found'])
-  if (track.eventId?.toString() !== eventId.toString()) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Track does not belong to the specified event'])
+  if (track.competitionId?.toString() !== competitionId.toString()) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Track does not belong to the specified competition'])
   }
   return track
 }
 
-const ensureRubricBelongsToEvent = async ({ eventId, rubricId }) => {
+const ensureRubricBelongsToCompetition = async ({ competitionId, rubricId }) => {
   if (!rubricId) return null
   ensureObjectId(rubricId, 'rubric id')
   const rubric = await Rubric.findById(rubricId)
   if (!rubric) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Rubric not found'])
-  if (rubric.eventId && rubric.eventId.toString() !== eventId.toString()) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric does not belong to the specified event'])
+  if (rubric.competitionId && rubric.competitionId.toString() !== competitionId.toString()) {
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric does not belong to the specified competition'])
   }
   return rubric
 }
@@ -292,7 +271,7 @@ const ensureUsersExist = async (userIds = []) => {
   }
 }
 
-const ensureTeamsBelongToRoundContext = async ({ eventId, trackId, teamIds = [] }) => {
+const ensureTeamsBelongToRoundContext = async ({ competitionId, trackId, teamIds = [] }) => {
   for (const teamId of teamIds) {
     ensureObjectId(teamId, 'team id')
   }
@@ -303,8 +282,8 @@ const ensureTeamsBelongToRoundContext = async ({ eventId, trackId, teamIds = [] 
   }
 
   for (const team of teams) {
-    if (team.eventId?.toString() !== eventId.toString()) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned teams must belong to the specified event'])
+    if (team.competitionId?.toString() !== competitionId.toString()) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned teams must belong to the specified competition'])
     }
     if (trackId && team.trackId?.toString() !== trackId.toString()) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned teams must belong to the selected track'])
@@ -332,7 +311,7 @@ const syncSingleJudgingBoardForRound = async (round) => {
   if (!round) return
 
   const roundId = round._id?.toString?.() || round.id?.toString?.() || round._id || round.id
-  const eventId = round.eventId?._id?.toString?.() || round.eventId?.toString?.() || round.eventId
+  const competitionId = round.competitionId?._id?.toString?.() || round.competitionId?.toString?.() || round.competitionId
   const trackId = round.trackId?._id?.toString?.() || round.trackId?.toString?.() || round.trackId || null
   const teamIds = extractIds(round.assignedTeamIds || [])
   const judgeIds = extractIds(round.assignedJudgeIds || [])
@@ -341,7 +320,7 @@ const syncSingleJudgingBoardForRound = async (round) => {
   if (existingBoards.length > 1) return
 
   const boardPayload = {
-    eventId,
+    competitionId,
     roundId,
     trackId,
     name: existingBoards[0]?.name || `${round.name} Board`,
@@ -361,8 +340,28 @@ const syncSingleJudgingBoardForRound = async (round) => {
 }
 
 export const createRoundService = ({
-  repository = ROUND_REPOSITORY
+  repository = ROUND_REPOSITORY,
+  notificationService = NOTIFICATION_SERVICE
 } = {}) => {
+  const notifyAssignedJudges = async (round, previousJudgeIds = []) => {
+    const previousIds = new Set(previousJudgeIds.map(id => id?.toString?.() || String(id)))
+    const roundId = round?._id?.toString?.() || round?.id
+    const competitionId = round?.competitionId?._id?.toString?.() || round?.competitionId?.id || round?.competitionId?.toString?.()
+    const addedJudges = (round?.assignedJudgeIds || []).filter(judge => {
+      const judgeId = judge?._id?.toString?.() || judge?.id || judge?.toString?.()
+      return judgeId && !previousIds.has(judgeId)
+    })
+
+    await Promise.all(addedJudges.map(judge => notificationService.notifyUser({
+      user: judge,
+      title: 'Round assignment',
+      message: `You were assigned as a judge for ${round.name || 'a competition round'}.`,
+      type: 'SYSTEM',
+      dedupeKey: `judge-round-assigned:${roundId}:${judge?._id?.toString?.() || judge?.id}`,
+      metadata: { action: 'JUDGE_ROUND_ASSIGNED', competitionId, roundId, targetPath: '/judge' },
+      channels: ['IN_APP']
+    })))
+  }
   const ensureRoundExists = async (id) => {
     ensureObjectId(id)
     const round = await repository.findById(id)
@@ -382,7 +381,7 @@ export const createRoundService = ({
       status: 'CONFIRMED',
       $or: [{ leaderId: actorId }, { memberIds: actorId }]
     }
-    if (filter.eventId) teamFilter.eventId = filter.eventId
+    if (filter.competitionId) teamFilter.competitionId = filter.competitionId
 
     const teams = await Team.find(teamFilter).select('_id')
     const teamIds = teams.map(team => team._id)
@@ -390,7 +389,7 @@ export const createRoundService = ({
   }
 
   const applyJudgeRoundScope = async (filter = {}, actor = {}) => {
-    if (!actorHasRole(actor, 'JUDGE') || isPrivilegedEventActor(actor)) return filter
+    if (!actorHasRole(actor, 'JUDGE') || isPrivilegedCompetitionActor(actor)) return filter
 
     const actorId = getActorId(actor)
     if (!actorId) {
@@ -398,7 +397,7 @@ export const createRoundService = ({
     }
 
     const boardFilter = { judgeIds: actorId }
-    if (filter.eventId) boardFilter.eventId = filter.eventId
+    if (filter.competitionId) boardFilter.competitionId = filter.competitionId
     const boards = await JUDGING_BOARD_REPOSITORY.findAll({ filter: boardFilter, limit: 100 })
     const roundIds = [...new Set(boards.map(board => board.roundId?._id?.toString?.() || board.roundId?.id || board.roundId?.toString?.()).filter(Boolean))]
 
@@ -426,7 +425,7 @@ export const createRoundService = ({
   }
 
   const ensureJudgeCanReadRound = async (round, actor = {}) => {
-    if (!actorHasRole(actor, 'JUDGE') || isPrivilegedEventActor(actor)) return
+    if (!actorHasRole(actor, 'JUDGE') || isPrivilegedCompetitionActor(actor)) return
 
     const actorId = getActorId(actor)
     if (!actorId) {
@@ -492,18 +491,13 @@ export const createRoundService = ({
 
   const createRound = async (payload = {}) => {
     ensureDateOrder(payload)
-    const event = await ensureEventExists(payload.eventId)
-    ensureRoundWindowWithinEvent(event, payload)
-    await ensureTrackBelongsToEvent({ eventId: event._id, trackId: payload.trackId })
-    await ensureRubricBelongsToEvent({ eventId: event._id, rubricId: payload.rubricId })
+    const competition = await ensureCompetitionExists(payload.competitionId)
+    ensureRoundWindowWithinCompetition(competition, payload)
+    await ensureTrackBelongsToCompetition({ competitionId: competition._id, trackId: payload.trackId })
+    await ensureRubricBelongsToCompetition({ competitionId: competition._id, rubricId: payload.rubricId })
     await ensureUsersExist(payload.assignedJudgeIds || [])
     await ensureTeamsBelongToRoundContext({
-      eventId: event._id,
-      trackId: payload.trackId,
-      teamIds: payload.assignedTeamIds || []
-    })
-    await ensureTeamsBelongToRoundContext({
-      eventId: event._id,
+      competitionId: competition._id,
       trackId: payload.trackId,
       teamIds: payload.promotedTeamIds || []
     })
@@ -511,6 +505,7 @@ export const createRoundService = ({
 
     const round = await repository.create(pickSafeFields(payload, ROUND_FIELDS))
     const hydratedRound = await repository.findById(round._id)
+    await notifyAssignedJudges(hydratedRound)
     await syncSingleJudgingBoardForRound(hydratedRound)
     return normalizeRound(await repository.findById(round._id))
   }
@@ -518,7 +513,7 @@ export const createRoundService = ({
   const updateRound = async (id, payload = {}) => {
     const existingRound = await ensureRoundExists(id)
     const safePayload = pickSafeFields(payload, ROUND_FIELDS)
-    const eventId = safePayload.eventId || existingRound.eventId?._id || existingRound.eventId
+    const competitionId = safePayload.competitionId || existingRound.competitionId?._id || existingRound.competitionId
     const trackId = safePayload.trackId !== undefined ? safePayload.trackId : (existingRound.trackId?._id || existingRound.trackId)
     const mergedPayload = {
       startTime: safePayload.startTime ?? existingRound.startTime,
@@ -530,20 +525,17 @@ export const createRoundService = ({
     }
 
     ensureDateOrder(mergedPayload)
-    const event = await ensureEventExists(eventId)
-    ensureRoundWindowWithinEvent(event, mergedPayload)
-    await ensureTrackBelongsToEvent({ eventId, trackId })
-    await ensureRubricBelongsToEvent({
-      eventId,
+    const competition = await ensureCompetitionExists(competitionId)
+    ensureRoundWindowWithinCompetition(competition, mergedPayload)
+    await ensureTrackBelongsToCompetition({ competitionId, trackId })
+    await ensureRubricBelongsToCompetition({
+      competitionId,
       rubricId: safePayload.rubricId !== undefined ? safePayload.rubricId : (existingRound.rubricId?._id || existingRound.rubricId)
     })
 
     if (safePayload.assignedJudgeIds) await ensureUsersExist(safePayload.assignedJudgeIds)
-    if (safePayload.assignedTeamIds) {
-      await ensureTeamsBelongToRoundContext({ eventId, trackId, teamIds: safePayload.assignedTeamIds })
-    }
     if (safePayload.promotedTeamIds) {
-      await ensureTeamsBelongToRoundContext({ eventId, trackId, teamIds: safePayload.promotedTeamIds })
+      await ensureTeamsBelongToRoundContext({ competitionId, trackId, teamIds: safePayload.promotedTeamIds })
     }
 
     ensurePromotionRuleConsistency({
@@ -551,7 +543,11 @@ export const createRoundService = ({
       maxPromotedTeams: safePayload.maxPromotedTeams ?? existingRound.maxPromotedTeams
     })
 
+    const previousJudgeIds = (existingRound.assignedJudgeIds || [])
+      .map(judge => judge?._id?.toString?.() || judge?.id || judge?.toString?.())
+      .filter(Boolean)
     const round = await repository.updateById(id, safePayload)
+    if (safePayload.assignedJudgeIds !== undefined) await notifyAssignedJudges(round, previousJudgeIds)
     await syncSingleJudgingBoardForRound(round)
     return normalizeRound(await repository.findById(id))
   }
