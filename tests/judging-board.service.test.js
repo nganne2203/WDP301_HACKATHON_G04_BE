@@ -480,3 +480,75 @@ test('createBoard rejects judges without ACTIVE judge role', async () => {
     UserModel.find = originalUserFind
   }
 })
+
+test('updateBoard sends an in-app notification only to newly assigned judges', async () => {
+  const competitionModule = await import('../src/models/competition.model.js')
+  const roundModule = await import('../src/models/round.model.js')
+  const trackModule = await import('../src/models/track.model.js')
+  const userModule = await import('../src/models/user.model.js')
+
+  const CompetitionModel = competitionModule.default
+  const RoundModel = roundModule.default
+  const TrackModel = trackModule.default
+  const UserModel = userModule.default
+
+  const originalCompetitionFindById = CompetitionModel.findById
+  const originalRoundFindById = RoundModel.findById
+  const originalTrackFindById = TrackModel.findById
+  const originalUserFind = UserModel.find
+
+  const competitionId = '000000000000000000000101'
+  const roundId = '000000000000000000000201'
+  const trackId = '000000000000000000000401'
+  const boardId = '000000000000000000000601'
+  const judgeOne = { _id: '000000000000000000000501', fullName: 'Judge One', email: 'judge.one@example.com', status: 'ACTIVE', roles: [{ name: 'JUDGE' }] }
+  const judgeTwo = { _id: '000000000000000000000502', fullName: 'Judge Two', email: 'judge.two@example.com', status: 'ACTIVE', roles: [{ name: 'JUDGE' }] }
+  const existingBoard = {
+    _id: boardId,
+    competitionId: { _id: competitionId, title: 'SEAL Hackathon', status: 'ONGOING' },
+    roundId: { _id: roundId, name: 'Preliminary', status: 'OPEN', trackId },
+    trackId,
+    name: 'Board A',
+    boardNumber: 1,
+    teamIds: [],
+    judgeIds: [judgeOne],
+    status: 'ASSIGNED'
+  }
+  const notifications = []
+  const repository = {
+    findById: async () => existingBoard,
+    findByRoundAndBoardNumber: async () => null,
+    updateById: async (_id, data) => ({
+      ...existingBoard,
+      ...data,
+      judgeIds: [judgeOne, judgeTwo]
+    })
+  }
+  const notificationService = {
+    notifyUser: async payload => {
+      notifications.push(payload)
+      return { notification: {}, email: null, errors: [] }
+    }
+  }
+
+  CompetitionModel.findById = async () => ({ _id: competitionId, title: 'SEAL Hackathon', status: 'ONGOING' })
+  RoundModel.findById = async () => ({ _id: roundId, competitionId, name: 'Preliminary', status: 'OPEN', trackId })
+  TrackModel.findById = async () => ({ _id: trackId, competitionId })
+  UserModel.find = async () => [judgeOne, judgeTwo]
+
+  const service = createJudgingBoardService({ repository, notificationService })
+
+  try {
+    await service.updateBoard(boardId, { judgeIds: [judgeOne._id, judgeTwo._id] })
+
+    assert.equal(notifications.length, 1)
+    assert.equal(notifications[0].user.email, 'judge.two@example.com')
+    assert.deepEqual(notifications[0].channels, ['IN_APP'])
+    assert.equal(notifications[0].metadata.action, 'JUDGE_BOARD_ASSIGNED')
+  } finally {
+    CompetitionModel.findById = originalCompetitionFindById
+    RoundModel.findById = originalRoundFindById
+    TrackModel.findById = originalTrackFindById
+    UserModel.find = originalUserFind
+  }
+})

@@ -4,7 +4,10 @@ import { REPOSITORY_REPOSITORY } from './repository.repository.js'
 import ApiError from '#utils/ApiError.js'
 import { ERROR_CODES } from '#constants/errorCode.js'
 import Competition from '#models/competition.model.js'
+import CommitDiff from '#models/commitDiff.model.js'
+import ImpactDecision from '#models/impactDecision.model.js'
 import Round from '#models/round.model.js'
+import StaticAnalysisResult from '#models/staticAnalysisResult.model.js'
 import Team from '#models/team.model.js'
 import Commit from '#models/commit.model.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
@@ -16,6 +19,64 @@ const ensureObjectId = (id, fieldName = 'repository id') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Invalid ${fieldName}`])
   }
+}
+
+const SENSITIVE_PATH_PATTERN = /(auth|session|token|password|credential|security)/i
+const SECRET_PATTERNS = [
+  { pattern: /(?:api[_-]?key|secret|token|password)\s*[:=]\s*['"][^'"\s]{8,}/i, title: 'Potential hard-coded credential' },
+  { pattern: /gh[pousr]_[A-Za-z0-9_]{20,}/, title: 'Potential GitHub token' },
+  { pattern: /AIza[\w-]{20,}/, title: 'Potential Google API key' }
+]
+
+const buildDiffFiles = (files = []) => files.map((file) => ({
+  filePath: file.filename || null,
+  previousFilePath: file.previous_filename || null,
+  fileName: file.filename ? file.filename.split('/').pop() : null,
+  language: file.filename?.split('.').pop()?.toLowerCase() || null,
+  status: file.status || 'modified',
+  additions: Number(file.additions) || 0,
+  deletions: Number(file.deletions) || 0,
+  changes: Number(file.changes) || 0,
+  patch: file.patch || null,
+  cleanPatch: file.patch || null,
+  patchSummary: null,
+  excludedReason: file.patch ? null : 'Binary or patch unavailable',
+  isBinary: !file.patch,
+  isExcluded: false,
+  rawPatchSize: String(file.patch || '').length,
+  cleanPatchSize: String(file.patch || '').length
+}))
+
+const buildSecretScanFindings = (files = []) => files.flatMap((file) => {
+  const patch = String(file.patch || '')
+  return SECRET_PATTERNS.flatMap(({ pattern, title }) => {
+    const match = patch.match(pattern)
+    if (!match) return []
+    return [{
+      type: 'SECRET',
+      severity: 'HIGH',
+      filePath: file.filename || null,
+      title,
+      message: 'Review this changed value to ensure no credential is committed.',
+      evidence: [match[0].slice(0, 120)]
+    }]
+  })
+})
+
+const buildImpactDecision = ({ files, additions, deletions }) => {
+  const sensitiveFiles = files.filter((file) => SENSITIVE_PATH_PATTERN.test(file.filename || ''))
+  const impactScore = Math.min(100, additions + deletions + (files.length * 5) + (sensitiveFiles.length * 20))
+  const impactLevel = impactScore >= 80 ? 'CRITICAL' : impactScore >= 50 ? 'HIGH' : impactScore >= 20 ? 'MEDIUM' : 'LOW'
+  const decision = impactLevel === 'CRITICAL'
+    ? 'URGENT_AUDIT_AND_HUMAN_REVIEW'
+    : impactLevel === 'HIGH'
+      ? 'CALL_PER_PUSH_AUDIT'
+      : impactLevel === 'MEDIUM'
+        ? 'BATCH_HOURLY_AUDIT'
+        : 'SKIP_LLM'
+  const reasons = [`${additions} additions, ${deletions} deletions across ${files.length} changed file(s).`]
+  if (sensitiveFiles.length > 0) reasons.push(`Sensitive path(s) changed: ${sensitiveFiles.map((file) => file.filename).join(', ')}.`)
+  return { impactScore, impactLevel, decision, reasons, needsHumanReview: sensitiveFiles.length > 0 || impactLevel === 'CRITICAL' }
 }
 
 const normalizeCompetition = (competition) => {
@@ -476,13 +537,28 @@ export const createRepositoryService = ({
     const githubToken = await githubService.getTokenForN8nDispatch({ competitionId })
     const { data } = await githubService.requestGithub({
       method: 'GET',
-      path: `/repos/${encodeURIComponent(githubOwner)}/${encodeURIComponent(githubRepo)}/commits?sha=${encodeURIComponent(branch)}&per_page=20`,
+      path: `/repos/${encodeURIComponent(githubOwner)}/${encodeURIComponent(githubRepo)}/commits?sha=${encodeURIComponent(branch)}&per_page=100`,
       token: githubToken
     })
 
     const commits = Array.isArray(data) ? data : []
-    for (const commit of commits) {
-      await Commit.findOneAndUpdate(
+    const commitsWithDetails = await Promise.all(commits.map(async (commit) => {
+      try {
+        const { data: detail } = await githubService.requestGithub({
+          method: 'GET',
+          path: `/repos/${encodeURIComponent(githubOwner)}/${encodeURIComponent(githubRepo)}/commits/${encodeURIComponent(commit.sha)}`,
+          token: githubToken
+        })
+        return { commit, detail }
+      } catch {
+        // The list endpoint is still enough to retain commit history when a detail lookup is unavailable.
+        return { commit, detail: null }
+      }
+    }))
+
+    for (const { commit, detail } of commitsWithDetails) {
+      const stats = detail?.stats || {}
+      const storedCommit = await Commit.findOneAndUpdate(
         {
           repositoryId,
           commitSha: commit.sha
@@ -501,10 +577,10 @@ export const createRepositoryService = ({
             timestamp: commit.commit?.author?.date || null,
             message: commit.commit?.message || null,
             commitUrl: commit.html_url || null,
-            linesAdded: 0,
-            linesRemoved: 0,
-            filesChanged: 0,
-            rawStats: null
+            linesAdded: Number(stats.additions) || 0,
+            linesRemoved: Number(stats.deletions) || 0,
+            filesChanged: Array.isArray(detail?.files) ? detail.files.length : 0,
+            rawStats: detail?.stats || null
           }
         },
         {
@@ -513,6 +589,64 @@ export const createRepositoryService = ({
           runValidators: true
         }
       )
+
+      if (!detail) continue
+
+      const files = Array.isArray(detail.files) ? detail.files : []
+      const diffFiles = buildDiffFiles(files)
+      const diffText = diffFiles.map((file) => file.patch).filter(Boolean).join('\n')
+      const additions = Number(stats.additions) || 0
+      const deletions = Number(stats.deletions) || 0
+      const secretFindings = buildSecretScanFindings(files)
+      const impact = buildImpactDecision({ files, additions, deletions })
+
+      await Promise.all([
+        CommitDiff.findOneAndUpdate(
+          { repositoryId, headCommitSha: commit.sha },
+          {
+            $set: {
+              repositoryId,
+              commitId: storedCommit._id,
+              baseCommitSha: commit.parents?.[0]?.sha || null,
+              headCommitSha: commit.sha,
+              provider: 'GITHUB',
+              status: 'READY',
+              diffText,
+              cleanDiffText: diffText,
+              totalRawPatchSize: diffText.length,
+              totalCleanPatchSize: diffText.length,
+              totalFiles: diffFiles.length,
+              includedFiles: diffFiles.length,
+              excludedFiles: 0,
+              files: diffFiles,
+              fetchedAt: new Date(),
+              lastError: null
+            }
+          },
+          { upsert: true, new: true, runValidators: true }
+        ),
+        StaticAnalysisResult.findOneAndUpdate(
+          { repositoryId, commitSha: commit.sha, source: 'SECRET_SCAN' },
+          {
+            $set: {
+              repositoryId,
+              commitSha: commit.sha,
+              source: 'SECRET_SCAN',
+              status: 'COMPLETED',
+              errorCount: secretFindings.length,
+              warningCount: 0,
+              findings: secretFindings,
+              rawOutput: { scannedChangedFiles: files.length }
+            }
+          },
+          { upsert: true, new: true, runValidators: true }
+        ),
+        ImpactDecision.findOneAndUpdate(
+          { repositoryId, commitSha: commit.sha },
+          { $set: { repositoryId, commitSha: commit.sha, ...impact } },
+          { upsert: true, new: true, runValidators: true }
+        )
+      ])
     }
 
     const latestCommitSha = commits[0]?.sha || existingRepository.latestCommitSha || null
