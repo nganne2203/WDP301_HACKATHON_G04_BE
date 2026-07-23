@@ -62,6 +62,7 @@ const normalizeRanking = (ranking) => {
       }
       : null,
     score: plainRanking.score,
+    pointDelta: plainRanking.pointDelta ?? 0,
     rank: plainRanking.rank,
     tieBreakMethod: plainRanking.tieBreakMethod,
     tieBreakScore: plainRanking.tieBreakScore,

@@ -106,7 +106,6 @@ const revokeMembers = {
 const bulkCreateRepositories = {
   body: Joi.object({
     competitionId: objectId.required(),
-    roundId: objectId.allow(null, 'none'),
     assignCollaborators: Joi.boolean().default(true)
   })
 }
