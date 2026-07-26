@@ -160,7 +160,7 @@ const ensureCompetitionExists = async (competitionId) => {
 
 const ensureCompetitionAllowsBoardChanges = (competition) => {
   if (BOARD_LOCKED_COMPETITION_STATUSES.has(String(competition?.status || '').toUpperCase())) {
-    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Judging board assignments cannot be changed after the competition has been completed'])
+    throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Judging board assignments cannot be changed after the competition has been completed or archived'])
   }
 }
 
@@ -379,7 +379,7 @@ export const createJudgingBoardService = ({
 
   const createBoard = async (payload = {}) => {
     const competition = await ensureCompetitionExists(payload.competitionId)
-    if (!relaxedWorkflow) ensureCompetitionAllowsBoardChanges(competition)
+    ensureCompetitionAllowsBoardChanges(competition)
     const round = await ensureRoundBelongsToCompetition({ competitionId: competition._id, roundId: payload.roundId })
     const trackId = payload.trackId || round.trackId
     await ensureTrackBelongsToCompetition({ competitionId: competition._id, trackId })
@@ -411,9 +411,10 @@ export const createJudgingBoardService = ({
     const roundId = safePayload.roundId || existingBoard.roundId?._id || existingBoard.roundId
     const round = await ensureRoundBelongsToCompetition({ competitionId, roundId })
     const eventForUpdate = await ensureCompetitionExists(competitionId)
-    if (!relaxedWorkflow &&
-      (existingBoard.status === 'COMPLETED' || round.status === 'COMPLETED' || BOARD_LOCKED_COMPETITION_STATUSES.has(String(eventForUpdate.status || '').toUpperCase()))) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Judging board assignments cannot be changed after the competition or judging round is completed'])
+    if (existingBoard.status === 'COMPLETED' ||
+      round.status === 'COMPLETED' ||
+      BOARD_LOCKED_COMPETITION_STATUSES.has(String(eventForUpdate.status || '').toUpperCase())) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Judging board assignments cannot be changed after the competition is completed or archived, or the judging round is completed'])
     }
     const trackId = safePayload.trackId !== undefined ? safePayload.trackId : (existingBoard.trackId?._id || existingBoard.trackId || round.trackId)
 
@@ -445,7 +446,7 @@ export const createJudgingBoardService = ({
   const deleteBoard = async (id) => {
     const board = await ensureBoardExists(id)
     const competitionId = board.competitionId?._id || board.competitionId
-    if (!relaxedWorkflow && competitionId) {
+    if (competitionId) {
       ensureCompetitionAllowsBoardChanges(await ensureCompetitionExists(competitionId))
     }
     await ensureBoardCanBeDeleted(board)
@@ -454,7 +455,7 @@ export const createJudgingBoardService = ({
 
   const getRandomizationContext = async ({ competitionId, roundId }) => {
     const competition = await ensureCompetitionExists(competitionId)
-    if (!relaxedWorkflow) ensureCompetitionAllowsBoardChanges(competition)
+    ensureCompetitionAllowsBoardChanges(competition)
     const round = await ensureRoundBelongsToCompetition({ competitionId: competition._id, roundId })
     const boardCount = Number(competition.competitionConfig?.boardCount || competition.competitionConfig?.trackCount || 0)
     if (!boardCount) {
