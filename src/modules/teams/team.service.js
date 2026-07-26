@@ -16,6 +16,7 @@ import { PERMISSIONS } from '#constants/permissions.js'
 import { GITHUB_SERVICE } from '#modules/github/github.service.js'
 import { ACCESSIBLE_USER_STATUSES, REGISTRATION_SOURCES } from '#utils/userAccountUtil.js'
 import { normalizeLegacyRoleName, PARTICIPANT_ROLE_NAME } from '#utils/userRoleMigrationUtil.js'
+import { ensureCompetitionAllowsChildMutations } from '#utils/competitionLifecycleUtil.js'
 
 export const TEAM_STATUSES = {
   WAITING_FOR_MEMBERS: 'WAITING_FOR_MEMBERS',
@@ -2428,6 +2429,10 @@ export const createTeamService = ({
         const team = await repository.findTeamById(teamId, { session })
         if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
         ensureConfirmedTeamForMentorAssignment(team)
+        const competition = team.competitionId?.status
+          ? team.competitionId
+          : await repository.findCompetitionById(team.competitionId, { session })
+        ensureCompetitionAllowsChildMutations(competition, 'Mentor assignments')
 
         const previousMentorIds = uniqueIds(team.mentorIds || [])
         const { mentorIds } = await validateMentorAssignments({
@@ -2463,6 +2468,7 @@ export const createTeamService = ({
       work: async (session) => {
         const competition = await repository.findCompetitionById(payload.competitionId, { session })
         if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
+        ensureCompetitionAllowsChildMutations(competition, 'Mentor assignments')
 
         const { mentorIds } = await validateMentorAssignments({
           repository,

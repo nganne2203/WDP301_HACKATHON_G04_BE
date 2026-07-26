@@ -1018,6 +1018,50 @@ test('updateTeamMentors rejects teams that are not confirmed', async () => {
   )
 })
 
+test('mentor assignment rejects completed competitions', async () => {
+  const teamId = '000000000000000000000113'
+  const competitionId = '000000000000000000000211'
+  const completedCompetition = { _id: competitionId, title: 'Completed Competition', status: 'COMPLETED' }
+  const repository = {
+    createSession,
+    findCompetitionById: async () => completedCompetition,
+    findTeamById: async () => ({
+      _id: teamId,
+      competitionId: completedCompetition,
+      status: 'CONFIRMED',
+      mentorIds: []
+    }),
+    findUsersByIds: async () => {
+      throw new Error('should not validate mentors for a completed competition')
+    }
+  }
+  const service = createTeamService({ repository, logger: createLogger() })
+
+  await assert.rejects(
+    service.updateTeamMentors(teamId, { mentorIds: [] }, {
+      id: 'coord-1',
+      permissions: ['TEAM_UPDATE']
+    }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Mentor assignments cannot be changed after the competition has been completed or archived')
+  )
+
+  await assert.rejects(
+    service.assignMentorsByBoard({
+      competitionId,
+      boardNumber: 1,
+      mentorIds: []
+    }, {
+      id: 'coord-1',
+      permissions: ['TEAM_UPDATE']
+    }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Mentor assignments cannot be changed after the competition has been completed or archived')
+  )
+})
+
 test('assignMentorsByBoard accepts active mentor accounts and rejects inaccessible statuses', async () => {
   const competitionId = '000000000000000000000211'
   const repository = {

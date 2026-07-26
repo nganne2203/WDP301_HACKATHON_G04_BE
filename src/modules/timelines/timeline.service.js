@@ -8,6 +8,7 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
+import { ensureCompetitionAllowsChildMutations } from '#utils/competitionLifecycleUtil.js'
 import Workshop from '#models/workshop.model.js'
 import {
   applyCompetitionVisibilityScope,
@@ -187,6 +188,7 @@ export const createTimelineService = ({
   const createTimeline = async (payload = {}) => {
     ensureDateRange(payload)
     const competition = await competitionService.getRawCompetitionById(payload.competitionId)
+    ensureCompetitionAllowsChildMutations(competition, 'Timeline')
     ensureTimelineWithinCompetitionWindow({
       competition,
       startTime: payload.startTime,
@@ -204,9 +206,13 @@ export const createTimelineService = ({
   const updateTimeline = async (id, payload = {}) => {
     const existingTimeline = await ensureTimelineExists(id)
     const safePayload = pickSafeFields(payload, TIMELINE_FIELDS)
+    const currentCompetitionId = existingTimeline.competitionId?._id?.toString?.() || existingTimeline.competitionId?.toString?.()
+    const currentCompetition = await competitionService.getRawCompetitionById(currentCompetitionId)
+    ensureCompetitionAllowsChildMutations(currentCompetition, 'Timeline')
 
     if (safePayload.competitionId) {
-      await competitionService.getRawCompetitionById(safePayload.competitionId)
+      const nextCompetition = await competitionService.getRawCompetitionById(safePayload.competitionId)
+      ensureCompetitionAllowsChildMutations(nextCompetition, 'Timeline')
     }
     const competitionId = safePayload.competitionId || existingTimeline.competitionId?._id?.toString?.() || existingTimeline.competitionId?.toString?.()
     const competition = await competitionService.getRawCompetitionById(competitionId)
@@ -228,6 +234,9 @@ export const createTimelineService = ({
 
   const deleteTimeline = async (id) => {
     const timeline = await ensureTimelineExists(id)
+    const competitionId = timeline.competitionId?._id?.toString?.() || timeline.competitionId?.toString?.()
+    const competition = await competitionService.getRawCompetitionById(competitionId)
+    ensureCompetitionAllowsChildMutations(competition, 'Timeline')
     await ensureTimelineCanBeDeleted(timeline)
     await repository.deleteById(id)
   }

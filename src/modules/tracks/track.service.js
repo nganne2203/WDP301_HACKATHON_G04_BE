@@ -7,6 +7,7 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
+import { ensureCompetitionAllowsChildMutations } from '#utils/competitionLifecycleUtil.js'
 import Team from '#models/team.model.js'
 import Round from '#models/round.model.js'
 import {
@@ -190,7 +191,8 @@ export const createTrackService = ({
   }
 
   const createTrack = async (payload = {}) => {
-    await competitionService.getRawCompetitionById(payload.competitionId)
+    const competition = await competitionService.getRawCompetitionById(payload.competitionId)
+    ensureCompetitionAllowsChildMutations(competition, 'Tracks')
     ensureTrackStatusTransition({
       toStatus: payload.status || 'DRAFT',
       isCreate: true
@@ -204,9 +206,12 @@ export const createTrackService = ({
   const updateTrack = async (id, payload = {}) => {
     const existingTrack = await ensureTrackExistsWithRepository(id)
     const safePayload = pickSafeFields(payload, TRACK_FIELDS)
+    const currentCompetition = await competitionService.getRawCompetitionById(getCompetitionIdValue(existingTrack.competitionId))
+    ensureCompetitionAllowsChildMutations(currentCompetition, 'Tracks')
 
     if (safePayload.competitionId) {
-      await competitionService.getRawCompetitionById(safePayload.competitionId)
+      const nextCompetition = await competitionService.getRawCompetitionById(safePayload.competitionId)
+      ensureCompetitionAllowsChildMutations(nextCompetition, 'Tracks')
     }
     ensureTrackStatusTransition({
       fromStatus: existingTrack.status || 'DRAFT',
@@ -225,6 +230,8 @@ export const createTrackService = ({
 
   const deleteTrack = async (id) => {
     const track = await ensureTrackExistsWithRepository(id)
+    const competition = await competitionService.getRawCompetitionById(getCompetitionIdValue(track.competitionId))
+    ensureCompetitionAllowsChildMutations(competition, 'Tracks')
     await ensureTrackCanBeDeleted(track)
     await repository.deleteById(id)
   }

@@ -134,3 +134,41 @@ test('track status follows the configured workflow', async () => {
   const opened = await service.updateTrack(created.id, { status: 'OPEN' })
   assert.equal(opened.status, 'OPEN')
 })
+
+test('track mutations reject completed or archived competitions', async () => {
+  const repository = createRepository()
+  const openCompetitionService = {
+    getRawCompetitionById: async (id) => ({ _id: id, title: 'Open Competition', status: 'ONGOING' })
+  }
+  const lockedCompetitionService = {
+    getRawCompetitionById: async (id) => ({ _id: id, title: 'Completed Competition', status: 'COMPLETED' })
+  }
+  const openService = createTrackService({ repository, competitionService: openCompetitionService })
+  const lockedService = createTrackService({ repository, competitionService: lockedCompetitionService })
+
+  const created = await openService.createTrack({
+    competitionId: '000000000000000000000101',
+    name: 'Locked Track'
+  })
+
+  await assert.rejects(
+    lockedService.createTrack({
+      competitionId: '000000000000000000000101',
+      name: 'Late Track'
+    }),
+    error => error instanceof ApiError &&
+      error.errors.includes('Tracks cannot be changed after the competition has been completed or archived')
+  )
+
+  await assert.rejects(
+    lockedService.updateTrack(created.id, { name: 'Renamed Track' }),
+    error => error instanceof ApiError &&
+      error.errors.includes('Tracks cannot be changed after the competition has been completed or archived')
+  )
+
+  await assert.rejects(
+    lockedService.deleteTrack(created.id),
+    error => error instanceof ApiError &&
+      error.errors.includes('Tracks cannot be changed after the competition has been completed or archived')
+  )
+})
