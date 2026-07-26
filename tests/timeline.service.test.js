@@ -185,3 +185,57 @@ test('timeline validates competition window and status transitions', async () =>
       error.errors.includes('Invalid timeline status transition from SCHEDULED to COMPLETED')
   )
 })
+
+test('timeline mutations reject completed or archived competitions', async () => {
+  const repository = createRepository()
+  const openCompetitionService = {
+    getRawCompetitionById: async (id) => ({
+      _id: id,
+      title: 'Open Competition',
+      status: 'ONGOING',
+      startDate: new Date('2026-06-01T00:00:00.000Z'),
+      endDate: new Date('2026-06-30T23:59:59.000Z')
+    })
+  }
+  const lockedCompetitionService = {
+    getRawCompetitionById: async (id) => ({
+      _id: id,
+      title: 'Completed Competition',
+      status: 'ARCHIVED',
+      startDate: new Date('2026-06-01T00:00:00.000Z'),
+      endDate: new Date('2026-06-30T23:59:59.000Z')
+    })
+  }
+  const openService = createTimelineService({ repository, competitionService: openCompetitionService })
+  const lockedService = createTimelineService({ repository, competitionService: lockedCompetitionService })
+
+  const created = await openService.createTimeline({
+    competitionId: '000000000000000000000101',
+    title: 'Locked Timeline',
+    startTime: '2026-06-03T09:00:00.000Z',
+    endTime: '2026-06-03T10:00:00.000Z'
+  })
+
+  await assert.rejects(
+    lockedService.createTimeline({
+      competitionId: '000000000000000000000101',
+      title: 'Late Timeline',
+      startTime: '2026-06-04T09:00:00.000Z',
+      endTime: '2026-06-04T10:00:00.000Z'
+    }),
+    error => error instanceof ApiError &&
+      error.errors.includes('Timeline cannot be changed after the competition has been completed or archived')
+  )
+
+  await assert.rejects(
+    lockedService.updateTimeline(created.id, { title: 'Renamed Timeline' }),
+    error => error instanceof ApiError &&
+      error.errors.includes('Timeline cannot be changed after the competition has been completed or archived')
+  )
+
+  await assert.rejects(
+    lockedService.deleteTimeline(created.id),
+    error => error instanceof ApiError &&
+      error.errors.includes('Timeline cannot be changed after the competition has been completed or archived')
+  )
+})

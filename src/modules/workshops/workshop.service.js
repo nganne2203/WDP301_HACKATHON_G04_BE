@@ -10,6 +10,7 @@ import { ERROR_CODES } from '#constants/errorCode.js'
 import { normalizePaginationQuery } from '#utils/pagination.js'
 import { pickSafeFields } from '#utils/pickSafeFieldUtil.js'
 import { buildSafeSearchRegex } from '#utils/sanitizeUtil.js'
+import { ensureCompetitionAllowsChildMutations } from '#utils/competitionLifecycleUtil.js'
 import {
   getActorId,
   getIdString,
@@ -124,6 +125,14 @@ const ensureWorkshopExists = async (id) => {
   }
 
   return workshop
+}
+
+const ensureWorkshopCompetitionAllowsMutations = async (workshop, resourceLabel = 'Workshops') => {
+  const competition = workshop?.competitionId?.status
+    ? workshop.competitionId
+    : await ensureCompetitionExists(getIdString(workshop?.competitionId))
+  ensureCompetitionAllowsChildMutations(competition, resourceLabel)
+  return competition
 }
 
 const canSubmitQuestion = (workshop) => {
@@ -438,6 +447,7 @@ const ensureWorkshopCanBeDeleted = async (workshop) => {
 
 const createWorkshop = async (payload = {}) => {
   const competition = await ensureCompetitionExists(payload.competitionId)
+  ensureCompetitionAllowsChildMutations(competition, 'Workshops')
   ensureWorkshopTimeRange(payload)
   ensureWorkshopWithinCompetitionWindow({
     competition,
@@ -460,9 +470,11 @@ const createWorkshop = async (payload = {}) => {
 const updateWorkshop = async (id, payload = {}) => {
   const existingWorkshop = await ensureWorkshopExists(id)
   const safePayload = pickSafeFields(payload, WORKSHOP_FIELDS)
+  await ensureWorkshopCompetitionAllowsMutations(existingWorkshop, 'Workshops')
 
   if (safePayload.competitionId) {
-    await ensureCompetitionExists(safePayload.competitionId)
+    const nextCompetition = await ensureCompetitionExists(safePayload.competitionId)
+    ensureCompetitionAllowsChildMutations(nextCompetition, 'Workshops')
   }
   const competitionId = safePayload.competitionId || getIdString(existingWorkshop.competitionId)
   const competition = await ensureCompetitionExists(competitionId)
@@ -495,12 +507,14 @@ const updateWorkshop = async (id, payload = {}) => {
 
 const deleteWorkshop = async (id) => {
   const workshop = await ensureWorkshopExists(id)
+  await ensureWorkshopCompetitionAllowsMutations(workshop, 'Workshops')
   await ensureWorkshopCanBeDeleted(workshop)
   await WORKSHOP_REPOSITORY.deleteWorkshopById(id)
 }
 
 const createGoogleMeet = async (workshopId, payload = {}, actor = {}) => {
   const workshop = await ensureWorkshopExists(workshopId)
+  await ensureWorkshopCompetitionAllowsMutations(workshop, 'Workshop meeting links')
   ensureCanCreateGoogleMeet({
     workshop,
     actor,
@@ -545,6 +559,7 @@ const createGoogleMeet = async (workshopId, payload = {}, actor = {}) => {
 
 const createQuestion = async (workshopId, payload = {}, actor = {}) => {
   const workshop = await ensureWorkshopExists(workshopId)
+  await ensureWorkshopCompetitionAllowsMutations(workshop, 'Workshop questions')
   await ensureActorJoinedWorkshopCompetition(workshop, actor)
 
   if (!canSubmitQuestion(workshop)) {
@@ -595,6 +610,7 @@ const voteQuestion = async (questionId, actor = {}) => {
   }
 
   const workshop = await ensureWorkshopExists(question.workshopId)
+  await ensureWorkshopCompetitionAllowsMutations(workshop, 'Workshop questions')
   await ensureActorJoinedWorkshopCompetition(workshop, actor)
   if (!canSubmitQuestion(workshop)) {
     throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Questions can only be voted before or during the workshop'])
@@ -610,6 +626,7 @@ const voteQuestion = async (questionId, actor = {}) => {
 
 const createRating = async (workshopId, payload = {}, actor = {}) => {
   const workshop = await ensureWorkshopExists(workshopId)
+  await ensureWorkshopCompetitionAllowsMutations(workshop, 'Workshop ratings')
   await ensureActorJoinedWorkshopCompetition(workshop, actor)
 
   if (!canSubmitPostWorkshopInteraction(workshop)) {
@@ -672,6 +689,7 @@ const listRatings = async (workshopId, query = {}, actor = {}) => {
 
 const createFeedback = async (workshopId, payload = {}, actor = {}) => {
   const workshop = await ensureWorkshopExists(workshopId)
+  await ensureWorkshopCompetitionAllowsMutations(workshop, 'Workshop feedback')
   await ensureActorJoinedWorkshopCompetition(workshop, actor)
 
   if (!canSubmitPostWorkshopInteraction(workshop)) {
