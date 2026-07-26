@@ -552,3 +552,64 @@ test('updateBoard sends an in-app notification only to newly assigned judges', a
     UserModel.find = originalUserFind
   }
 })
+
+test('completed competition locks judging board assignment changes', async () => {
+  const competitionModule = await import('../src/models/competition.model.js')
+  const roundModule = await import('../src/models/round.model.js')
+
+  const CompetitionModel = competitionModule.default
+  const RoundModel = roundModule.default
+
+  const originalCompetitionFindById = CompetitionModel.findById
+  const originalRoundFindById = RoundModel.findById
+
+  const competitionId = '000000000000000000000101'
+  const roundId = '000000000000000000000201'
+  const boardId = '000000000000000000000601'
+  const existingBoard = {
+    _id: boardId,
+    competitionId,
+    roundId,
+    trackId: null,
+    name: 'Board A',
+    boardNumber: 1,
+    teamIds: [],
+    judgeIds: [],
+    status: 'ASSIGNED'
+  }
+  const repository = {
+    findById: async () => existingBoard,
+    updateById: async () => {
+      throw new Error('should not update a board after competition completion')
+    },
+    findByRoundAndBoardNumber: async () => null
+  }
+
+  CompetitionModel.findById = async () => ({
+    _id: competitionId,
+    status: 'COMPLETED',
+    competitionConfig: { boardCount: 2, maxTeamsPerBoard: 10 }
+  })
+  RoundModel.findById = async () => ({ _id: roundId, competitionId, status: 'OPEN', roundType: 'PRELIMINARY' })
+
+  const service = createJudgingBoardService({ repository })
+
+  try {
+    await assert.rejects(
+      service.updateBoard(boardId, { judgeIds: ['000000000000000000000501'] }),
+      (error) => error instanceof ApiError &&
+        error.code === 'BAD_REQUEST' &&
+        error.errors.includes('Judging board assignments cannot be changed after the competition or judging round is completed')
+    )
+
+    await assert.rejects(
+      service.previewRandomizedBoards({ competitionId, roundId }),
+      (error) => error instanceof ApiError &&
+        error.code === 'BAD_REQUEST' &&
+        error.errors.includes('Judging board assignments cannot be changed after the competition has been completed')
+    )
+  } finally {
+    CompetitionModel.findById = originalCompetitionFindById
+    RoundModel.findById = originalRoundFindById
+  }
+})
