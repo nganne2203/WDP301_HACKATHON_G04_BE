@@ -613,6 +613,31 @@ test('finalist selection respects competition competitionConfig FIXED_PER_BOARD'
   assert.equal(result.summary.finalistSelectionMode, 'FIXED_PER_BOARD')
 })
 
+test('completed and archived competitions lock automatic and manual finalist selection', async () => {
+  for (const competitionStatus of ['COMPLETED', 'ARCHIVED']) {
+    const { service } = createRankingFixture({ competitionStatus })
+
+    for (const operation of [
+      () => service.selectFinalists({
+        competitionId: ids.competition,
+        roundId: ids.round
+      }, { id: ids.judge1 }),
+      () => service.selectManualFinalists({
+        competitionId: ids.competition,
+        roundId: ids.round,
+        teamIds: [ids.team1]
+      }, { id: ids.judge1 })
+    ]) {
+      await assert.rejects(
+        operation(),
+        error => error instanceof ApiError &&
+          error.code === 'BAD_REQUEST' &&
+          error.errors.includes('Finalist selection cannot be changed after the competition has been completed or archived')
+      )
+    }
+  }
+})
+
 test('ranking uses round-scoped placement before legacy team board fields', async () => {
   const { service } = createRankingFixture({
     placements: [

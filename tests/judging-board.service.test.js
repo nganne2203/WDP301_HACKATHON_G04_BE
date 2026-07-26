@@ -596,17 +596,91 @@ test('completed competition locks judging board assignment changes', async () =>
 
   try {
     await assert.rejects(
+      service.createBoard({ competitionId, roundId, name: 'Board B', boardNumber: 2 }),
+      (error) => error instanceof ApiError &&
+        error.code === 'BAD_REQUEST' &&
+        error.errors.includes('Judging board assignments cannot be changed after the competition has been completed or archived')
+    )
+
+    await assert.rejects(
       service.updateBoard(boardId, { judgeIds: ['000000000000000000000501'] }),
       (error) => error instanceof ApiError &&
         error.code === 'BAD_REQUEST' &&
-        error.errors.includes('Judging board assignments cannot be changed after the competition or judging round is completed')
+        error.errors.includes('Judging board assignments cannot be changed after the competition is completed or archived, or the judging round is completed')
     )
 
     await assert.rejects(
       service.previewRandomizedBoards({ competitionId, roundId }),
       (error) => error instanceof ApiError &&
         error.code === 'BAD_REQUEST' &&
-        error.errors.includes('Judging board assignments cannot be changed after the competition has been completed')
+        error.errors.includes('Judging board assignments cannot be changed after the competition has been completed or archived')
+    )
+
+    await assert.rejects(
+      service.deleteBoard(boardId),
+      (error) => error instanceof ApiError &&
+        error.code === 'BAD_REQUEST' &&
+        error.errors.includes('Judging board assignments cannot be changed after the competition has been completed or archived')
+    )
+  } finally {
+    CompetitionModel.findById = originalCompetitionFindById
+    RoundModel.findById = originalRoundFindById
+  }
+})
+
+test('archived competition locks judging board changes even with relaxed demo rules', async () => {
+  const competitionModule = await import('../src/models/competition.model.js')
+  const roundModule = await import('../src/models/round.model.js')
+
+  const CompetitionModel = competitionModule.default
+  const RoundModel = roundModule.default
+  const originalCompetitionFindById = CompetitionModel.findById
+  const originalRoundFindById = RoundModel.findById
+
+  const competitionId = '000000000000000000000101'
+  const roundId = '000000000000000000000201'
+  const boardId = '000000000000000000000601'
+  const existingBoard = {
+    _id: boardId,
+    competitionId,
+    roundId,
+    trackId: null,
+    name: 'Board A',
+    boardNumber: 1,
+    teamIds: [],
+    judgeIds: [],
+    status: 'ASSIGNED'
+  }
+  const repository = {
+    findById: async () => existingBoard,
+    updateById: async () => {
+      throw new Error('should not update an archived competition board')
+    },
+    findByRoundAndBoardNumber: async () => null
+  }
+
+  CompetitionModel.findById = async () => ({
+    _id: competitionId,
+    status: 'ARCHIVED',
+    competitionConfig: { boardCount: 2, maxTeamsPerBoard: 10 }
+  })
+  RoundModel.findById = async () => ({ _id: roundId, competitionId, status: 'OPEN', roundType: 'PRELIMINARY' })
+
+  const service = createJudgingBoardService({ repository, relaxedWorkflow: true })
+
+  try {
+    await assert.rejects(
+      service.updateBoard(boardId, { judgeIds: ['000000000000000000000501'] }),
+      (error) => error instanceof ApiError &&
+        error.code === 'BAD_REQUEST' &&
+        error.errors.includes('Judging board assignments cannot be changed after the competition is completed or archived, or the judging round is completed')
+    )
+
+    await assert.rejects(
+      service.previewRandomizedBoards({ competitionId, roundId }),
+      (error) => error instanceof ApiError &&
+        error.code === 'BAD_REQUEST' &&
+        error.errors.includes('Judging board assignments cannot be changed after the competition has been completed or archived')
     )
   } finally {
     CompetitionModel.findById = originalCompetitionFindById

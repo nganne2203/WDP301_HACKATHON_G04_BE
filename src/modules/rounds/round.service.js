@@ -18,6 +18,7 @@ import { isWithinCompetitionDateWindow } from '#utils/competitionDateWindow.js'
 import Ranking from '#models/ranking.model.js'
 import { JUDGING_BOARD_REPOSITORY } from '#modules/judging-boards/judging-board.repository.js'
 import { actorHasRole, getActorId, isActiveJudge, isParticipantOnlyActor, isPrivilegedCompetitionActor } from '#utils/domainAccessUtil.js'
+import { ensureCompetitionAllowsChildMutations } from '#utils/competitionLifecycleUtil.js'
 
 const ROUND_FIELDS = [
   'competitionId',
@@ -492,6 +493,7 @@ export const createRoundService = ({
   const createRound = async (payload = {}) => {
     ensureDateOrder(payload)
     const competition = await ensureCompetitionExists(payload.competitionId)
+    ensureCompetitionAllowsChildMutations(competition, 'Round')
     ensureRoundWindowWithinCompetition(competition, payload)
     await ensureTrackBelongsToCompetition({ competitionId: competition._id, trackId: payload.trackId })
     await ensureRubricBelongsToCompetition({ competitionId: competition._id, rubricId: payload.rubricId })
@@ -526,6 +528,7 @@ export const createRoundService = ({
 
     ensureDateOrder(mergedPayload)
     const competition = await ensureCompetitionExists(competitionId)
+    ensureCompetitionAllowsChildMutations(competition, 'Round')
     ensureRoundWindowWithinCompetition(competition, mergedPayload)
     await ensureTrackBelongsToCompetition({ competitionId, trackId })
     await ensureRubricBelongsToCompetition({
@@ -554,6 +557,8 @@ export const createRoundService = ({
 
   const deleteRound = async (id) => {
     const round = await ensureRoundExists(id)
+    const competitionId = round.competitionId?._id || round.competitionId
+    ensureCompetitionAllowsChildMutations(await ensureCompetitionExists(competitionId), 'Round')
     await ensureRoundCanBeDeleted(round)
     await repository.deleteById(id)
   }
