@@ -183,6 +183,73 @@ test('createWorkshop rejects schedules outside the competition window and non-sc
   }
 })
 
+test('workshop mutations reject completed or archived competitions', async () => {
+  const completedCompetition = {
+    _id: COMPETITION_ID,
+    title: 'Completed Competition',
+    status: 'COMPLETED',
+    startDate: new Date('2026-07-01T00:00:00.000Z'),
+    endDate: new Date('2026-07-02T00:00:00.000Z')
+  }
+  const existingWorkshop = {
+    _id: WORKSHOP_ID,
+    competitionId: completedCompetition,
+    title: 'Locked Workshop',
+    status: 'SCHEDULED',
+    startTime: new Date('2026-07-01T08:00:00.000Z'),
+    endTime: new Date('2026-07-01T10:00:00.000Z')
+  }
+  const restore = patchRepository({
+    findCompetitionById: async () => completedCompetition,
+    findWorkshopById: async () => existingWorkshop,
+    createWorkshop: async () => {
+      throw new Error('should not create workshop for completed competition')
+    },
+    updateWorkshopById: async () => {
+      throw new Error('should not update workshop for completed competition')
+    },
+    deleteWorkshopById: async () => {
+      throw new Error('should not delete workshop for completed competition')
+    },
+    findJoinedParticipant: async () => {
+      throw new Error('should not check participant before competition lifecycle')
+    }
+  })
+
+  try {
+    await assert.rejects(
+      () => WORKSHOP_SERVICE.createWorkshop({
+        competitionId: COMPETITION_ID,
+        title: 'Late Workshop',
+        startTime: '2026-07-01T08:00:00.000Z',
+        endTime: '2026-07-01T09:00:00.000Z'
+      }),
+      error => error instanceof ApiError &&
+        error.errors.includes('Workshops cannot be changed after the competition has been completed or archived')
+    )
+
+    await assert.rejects(
+      () => WORKSHOP_SERVICE.updateWorkshop(WORKSHOP_ID, { title: 'Renamed Workshop' }),
+      error => error instanceof ApiError &&
+        error.errors.includes('Workshops cannot be changed after the competition has been completed or archived')
+    )
+
+    await assert.rejects(
+      () => WORKSHOP_SERVICE.deleteWorkshop(WORKSHOP_ID),
+      error => error instanceof ApiError &&
+        error.errors.includes('Workshops cannot be changed after the competition has been completed or archived')
+    )
+
+    await assert.rejects(
+      () => WORKSHOP_SERVICE.createQuestion(WORKSHOP_ID, { content: 'Can I still ask?' }, { id: AUTHOR_ID, roles: ['PARTICIPANT'] }),
+      error => error instanceof ApiError &&
+        error.errors.includes('Workshop questions cannot be changed after the competition has been completed or archived')
+    )
+  } finally {
+    restore()
+  }
+})
+
 test('createWorkshop notifies an assigned speaker by in-app notification and email', async () => {
   const notifications = []
   const originalNotifyUser = NOTIFICATION_SERVICE.notifyUser
