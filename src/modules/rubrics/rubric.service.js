@@ -35,6 +35,8 @@ const RUBRIC_UPDATE_FIELDS = [
   'status'
 ]
 
+const RUBRIC_LOCKED_COMPETITION_STATUSES = new Set(['COMPLETED', 'ARCHIVED'])
+
 const normalizeCriterion = (criterion) => {
   if (!criterion) return null
   const plainCriterion = typeof criterion.toObject === 'function'
@@ -133,6 +135,9 @@ export const createRubricService = ({
     ensureObjectId(competitionId, 'competition id')
     const competition = await competitionModel.findById(competitionId)
     if (!competition) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Competition not found'])
+    if (RUBRIC_LOCKED_COMPETITION_STATUSES.has(String(competition.status || '').toUpperCase())) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubrics cannot be changed after the competition has been completed'])
+    }
 
     if (!roundId) return { competition, round: null }
 
@@ -151,7 +156,28 @@ export const createRubricService = ({
     return await scoreSheetModel.countDocuments({ rubricId })
   }
 
+  const getRubricCompetitionStatus = async (rubric) => {
+    const competitionRef = rubric?.competitionId
+    if (competitionRef && typeof competitionRef === 'object' && competitionRef.status) {
+      return competitionRef.status
+    }
+
+    const competitionId = competitionRef?._id?.toString?.() || competitionRef?.toString?.()
+    if (!competitionId || !competitionModel?.findById) return null
+
+    const query = competitionModel.findById(competitionId)
+    const competition = typeof query?.select === 'function'
+      ? await query.select('status')
+      : await query
+    return competition?.status || null
+  }
+
   const ensureRubricMutable = async (rubric) => {
+    const competitionStatus = await getRubricCompetitionStatus(rubric)
+    if (RUBRIC_LOCKED_COMPETITION_STATUSES.has(String(competitionStatus || '').toUpperCase())) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubrics cannot be changed after the competition has been completed'])
+    }
+
     const scoreSheetCount = await countScoreSheetsForRubric(rubric._id || rubric.id)
     if (scoreSheetCount > 0) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rubric cannot be changed after score sheets have been created; create a new rubric instead'])

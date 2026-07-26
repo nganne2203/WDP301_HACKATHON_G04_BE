@@ -187,7 +187,11 @@ test('rubric cannot leave draft until criterion weights equal the total weight',
     },
     async updateRubricById() { throw new Error('should not update an incomplete rubric') }
   }
-  const service = createRubricService({ repository, scoreSheetModel: countModel(0) })
+  const service = createRubricService({
+    repository,
+    competitionModel: createModel(new Map([[ids.competition, { _id: ids.competition, status: 'ONGOING' }]])),
+    scoreSheetModel: countModel(0)
+  })
 
   await assert.rejects(
     service.updateRubric(ids.rubric, { status: 'ARCHIVED' }),
@@ -249,5 +253,76 @@ test('rubric criteria cannot change after score sheets exist', async () => {
     service.deleteCriterion(ids.rubric, ids.criterion1),
     error => error instanceof Error &&
       error.errors.includes('Rubric cannot be changed after score sheets have been created; create a new rubric instead')
+  )
+})
+
+test('completed competition locks rubric and criteria changes', async () => {
+  const rubrics = new Map([[
+    ids.rubric,
+    {
+      _id: ids.rubric,
+      competitionId: ids.competition,
+      roundId: ids.round,
+      title: 'Completed Competition Rubric',
+      totalScore: 100,
+      criterionMaxScore: 10,
+      status: 'DRAFT'
+    }
+  ]])
+  const criteria = new Map([
+    [ids.criterion1, { _id: ids.criterion1, rubricId: ids.rubric, name: 'Correctness', maxScore: 10, weight: 40, order: 1 }]
+  ])
+  const repository = {
+    async findRubricById(id) {
+      return rubrics.get(id) || null
+    },
+    async updateRubricById() {
+      throw new Error('should not update rubric for completed competition')
+    },
+    async createCriterion() {
+      throw new Error('should not create criterion for completed competition')
+    },
+    async findCriterionById(id) {
+      return criteria.get(id) || null
+    },
+    async updateCriterionById() {
+      throw new Error('should not update criterion for completed competition')
+    },
+    async deleteCriterionById() {
+      throw new Error('should not delete criterion for completed competition')
+    },
+    async findCriteriaByRubricId(rubricId) {
+      return [...criteria.values()].filter(item => item.rubricId === rubricId)
+    }
+  }
+  const service = createRubricService({
+    repository,
+    competitionModel: createModel(new Map([[ids.competition, { _id: ids.competition, status: 'COMPLETED' }]])),
+    roundModel: createModel(new Map([[ids.round, { _id: ids.round, competitionId: ids.competition }]])),
+    scoreSheetModel: countModel(0)
+  })
+
+  await assert.rejects(
+    service.updateRubric(ids.rubric, { title: 'Updated' }),
+    error => error instanceof Error &&
+      error.errors.includes('Rubrics cannot be changed after the competition has been completed')
+  )
+
+  await assert.rejects(
+    service.addCriterion(ids.rubric, { name: 'Demo', maxScore: 10, weight: 10 }),
+    error => error instanceof Error &&
+      error.errors.includes('Rubrics cannot be changed after the competition has been completed')
+  )
+
+  await assert.rejects(
+    service.updateCriterion(ids.rubric, ids.criterion1, { weight: 20 }),
+    error => error instanceof Error &&
+      error.errors.includes('Rubrics cannot be changed after the competition has been completed')
+  )
+
+  await assert.rejects(
+    service.deleteCriterion(ids.rubric, ids.criterion1),
+    error => error instanceof Error &&
+      error.errors.includes('Rubrics cannot be changed after the competition has been completed')
   )
 })
