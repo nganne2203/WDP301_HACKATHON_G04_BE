@@ -146,7 +146,7 @@ test('createRound rejects teams outside the selected track', async () => {
         competitionId: '000000000000000000000101',
         trackId: '000000000000000000000201',
         name: 'Round 1',
-        assignedTeamIds: ['000000000000000000000501'],
+        promotedTeamIds: ['000000000000000000000501'],
         assignedJudgeIds: ['000000000000000000000401'],
         rubricId: '000000000000000000000301'
       }),
@@ -212,7 +212,7 @@ test('createRound rejects teams that are not confirmed', async () => {
           competitionId: '000000000000000000000101',
           trackId: '000000000000000000000201',
           name: 'Round 1',
-          assignedTeamIds: ['000000000000000000000501'],
+          promotedTeamIds: ['000000000000000000000501'],
           assignedJudgeIds: ['000000000000000000000401'],
           rubricId: '000000000000000000000301'
         }),
@@ -277,7 +277,7 @@ test('createRound rejects assigned judges without ACTIVE judge role', async () =
         competitionId: '000000000000000000000101',
         trackId: '000000000000000000000201',
         name: 'Round 1',
-        assignedTeamIds: ['000000000000000000000501'],
+        promotedTeamIds: ['000000000000000000000501'],
         assignedJudgeIds: ['000000000000000000000401'],
         rubricId: '000000000000000000000301'
       }),
@@ -292,7 +292,7 @@ test('createRound rejects assigned judges without ACTIVE judge role', async () =
         competitionId: '000000000000000000000101',
         trackId: '000000000000000000000201',
         name: 'Round 1',
-        assignedTeamIds: ['000000000000000000000501'],
+        promotedTeamIds: ['000000000000000000000501'],
         assignedJudgeIds: ['000000000000000000000401'],
         rubricId: '000000000000000000000301'
       }),
@@ -306,5 +306,56 @@ test('createRound rejects assigned judges without ACTIVE judge role', async () =
     rubricModel.findById = rubricFindById
     teamModel.find = teamFind
     userModel.find = userFind
+  }
+})
+
+test('round mutations reject completed and archived competitions', async () => {
+  const competitionModule = await import('../src/models/competition.model.js')
+  const CompetitionModel = competitionModule.default
+  const originalCompetitionFindById = CompetitionModel.findById
+
+  const competitionId = '000000000000000000000101'
+  const roundId = '000000000000000000000901'
+  const existingRound = {
+    _id: roundId,
+    competitionId,
+    name: 'Locked round',
+    status: 'DRAFT',
+    assignedTeamIds: [],
+    assignedJudgeIds: []
+  }
+  const repository = {
+    findById: async () => existingRound,
+    create: async () => {
+      throw new Error('should not create a round for a locked competition')
+    },
+    updateById: async () => {
+      throw new Error('should not update a round for a locked competition')
+    },
+    deleteById: async () => {
+      throw new Error('should not delete a round for a locked competition')
+    }
+  }
+  const service = createRoundService({ repository })
+
+  try {
+    for (const status of ['COMPLETED', 'ARCHIVED']) {
+      CompetitionModel.findById = async () => ({ _id: competitionId, status })
+
+      for (const operation of [
+        () => service.createRound({ competitionId, name: 'New round' }),
+        () => service.updateRound(roundId, { name: 'Updated round' }),
+        () => service.deleteRound(roundId)
+      ]) {
+        await assert.rejects(
+          operation(),
+          (error) => error instanceof ApiError &&
+            error.code === 'BAD_REQUEST' &&
+            error.errors.includes('Round cannot be changed after the competition has been completed or archived')
+        )
+      }
+    }
+  } finally {
+    CompetitionModel.findById = originalCompetitionFindById
   }
 })

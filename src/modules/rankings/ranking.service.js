@@ -14,6 +14,7 @@ import Round from '#models/round.model.js'
 import Team from '#models/team.model.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 import { env } from '#configs/environment.js'
+import { ensureCompetitionAllowsChildMutations } from '#utils/competitionLifecycleUtil.js'
 
 const IN_APP_ONLY = ['IN_APP']
 
@@ -555,6 +556,7 @@ export const createRankingService = ({
 
   const selectFinalists = async ({ competitionId, roundId }, actor = {}) => {
     const { competition, round } = await ensureCompetitionRoundContext({ competitionId, roundId })
+    ensureCompetitionAllowsChildMutations(competition, 'Finalist selection')
     const config = competition.competitionConfig || {}
     const mode = config.finalistSelectionMode || 'OVERALL_SCORE'
     const selectAcrossPreliminaryStage = round.roundType === 'PRELIMINARY' &&
@@ -718,6 +720,7 @@ export const createRankingService = ({
 
   const selectManualFinalists = async ({ competitionId, roundId, teamIds = [], selectionReason }, actor = {}) => {
     const { competition } = await ensureCompetitionRoundContext({ competitionId, roundId })
+    ensureCompetitionAllowsChildMutations(competition, 'Finalist selection')
 
     const requestedTeamIds = [...new Set(teamIds.map(teamId => teamId.toString()))]
     const rankings = await repository.findRankings({
