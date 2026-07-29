@@ -176,7 +176,8 @@ export const createSubmissionService = ({
   repositoryModel = Repository,
   boardModel = JudgingBoard,
   notificationService = null,
-  relaxedWorkflow = false
+  relaxedWorkflow = false,
+  allowJudgeHistoricalSubmissionAccess = false
 } = {}) => {
   const ensureSubmissionExists = async (id) => {
     ensureObjectId(id, 'submission id')
@@ -276,8 +277,10 @@ export const createSubmissionService = ({
 
     if (actorHasRole(actor, 'JUDGE') && boardModel?.find) {
       const boardFilter = {
-        judgeIds: actorId,
-      status: { $in: relaxedWorkflow ? ['SCORING', 'COMPLETED'] : ['SCORING'] }
+        judgeIds: actorId
+      }
+      if (!allowJudgeHistoricalSubmissionAccess) {
+        boardFilter.status = { $in: relaxedWorkflow ? ['SCORING', 'COMPLETED'] : ['SCORING'] }
       }
       if (filter.competitionId) boardFilter.competitionId = filter.competitionId
       if (filter.roundId) boardFilter.roundId = filter.roundId
@@ -311,16 +314,19 @@ export const createSubmissionService = ({
         ? submission.roundId
         : await roundModel.findById(roundId)
       const readableRoundStatuses = relaxedWorkflow ? ['SCORING', 'COMPLETED'] : ['SCORING']
-      if (!readableRoundStatuses.includes(round?.status)) {
+      if (!allowJudgeHistoricalSubmissionAccess && !readableRoundStatuses.includes(round?.status)) {
         throw new ApiError(ERROR_CODES.FORBIDDEN, ['Judge can only access assigned submissions while the round is scoring'])
       }
-      const board = await boardModel.findOne({
+      const boardFilter = {
         competitionId,
         roundId,
         judgeIds: actorId,
-        teamIds: teamId,
-        status: { $in: relaxedWorkflow ? ['SCORING', 'COMPLETED'] : ['SCORING'] }
-      })
+        teamIds: teamId
+      }
+      if (!allowJudgeHistoricalSubmissionAccess) {
+        boardFilter.status = { $in: relaxedWorkflow ? ['SCORING', 'COMPLETED'] : ['SCORING'] }
+      }
+      const board = await boardModel.findOne(boardFilter)
       if (board) return
     }
 
@@ -693,7 +699,8 @@ export const createSubmissionService = ({
 export const SUBMISSION_SERVICE = {
   ...createSubmissionService({
     notificationService: NOTIFICATION_SERVICE,
-    relaxedWorkflow: env.workflow.relaxedDemoRules
+    relaxedWorkflow: env.workflow.relaxedDemoRules,
+    allowJudgeHistoricalSubmissionAccess: env.workflow.allowJudgeHistoricalSubmissionAccess
   }),
   normalizeSubmission
 }

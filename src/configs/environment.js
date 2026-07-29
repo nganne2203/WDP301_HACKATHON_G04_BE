@@ -30,7 +30,8 @@ export const env = {
   workflow: {
     relaxedDemoRules: !process.env.NODE_TEST_CONTEXT &&
       !['prod', 'production'].includes(nodeEnv) &&
-      parseBoolean(process.env.RELAXED_DEMO_RULES, false)
+      parseBoolean(process.env.RELAXED_DEMO_RULES, false),
+    allowJudgeHistoricalSubmissionAccess: !process.env.NODE_TEST_CONTEXT && nodeEnv === 'development'
   },
   db: {
     uri: process.env.MONGODB_URI

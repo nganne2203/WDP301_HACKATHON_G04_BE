@@ -641,6 +641,7 @@ test('rejectUnconfirmedTeamsForRegistrationClosure rejects open teams and cancel
   }
   const updatedTeams = []
   const invitationUpdates = []
+  const participantUpdates = []
   const repository = {
     createSession,
     findTeams: async ({ filter }) => {
@@ -654,6 +655,10 @@ test('rejectUnconfirmedTeamsForRegistrationClosure rejects open teams and cancel
     },
     updateInvitations: async (filter, data) => {
       invitationUpdates.push({ filter, data })
+      return { modifiedCount: 1 }
+    },
+    updateParticipants: async (filter, data) => {
+      participantUpdates.push({ filter, data })
       return { modifiedCount: 1 }
     },
     findParticipantsByTeam: async () => [{
@@ -687,6 +692,9 @@ test('rejectUnconfirmedTeamsForRegistrationClosure rejects open teams and cancel
   assert.equal(invitationUpdates[0].filter.teamId, team._id)
   assert.equal(invitationUpdates[0].filter.status, 'PENDING')
   assert.equal(invitationUpdates[0].data.status, 'CANCELLED')
+  assert.equal(participantUpdates.length, 1)
+  assert.deepEqual(participantUpdates[0].filter.status.$in, ['INVITED', 'JOINED'])
+  assert.equal(participantUpdates[0].data.status, 'WITHDRAWN')
   assert.equal(notifications.length, 2)
   assert.equal(notifications[0].emailContext.rejectionReason, 'Registration has closed before this team was fully confirmed.')
 })

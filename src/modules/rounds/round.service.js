@@ -162,7 +162,8 @@ const normalizeRubric = (rubric) => {
     id: rubric._id?.toString() || rubric.id,
     title: rubric.title,
     description: rubric.description,
-    totalScore: rubric.totalScore
+    totalScore: rubric.totalScore,
+    criterionMaxScore: rubric.criterionMaxScore
   }
 }
 
