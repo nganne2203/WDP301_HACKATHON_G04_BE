@@ -28,7 +28,7 @@ const createBoard = {
     boardNumber: Joi.number().integer().min(1).required(),
     teamIds: Joi.array().items(objectId).unique().default([]),
     judgeIds: Joi.array().items(objectId).unique().default([]),
-    maxTeams: Joi.number().integer().min(1).default(10),
+    maxTeams: Joi.number().integer().min(1),
     status: boardStatus.default('DRAFT')
   })
 }

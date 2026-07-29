@@ -37,6 +37,16 @@ const ensureDateRange = (payload = {}) => {
   }
 }
 
+const ensureTimesAreNotInPast = ({ startTime, endTime, now = new Date() }) => {
+  for (const [field, value] of [['startTime', startTime], ['endTime', endTime]]) {
+    if (value && new Date(value) < now) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, [`Timeline ${field} cannot be in the past`])
+    }
+  }
+}
+
+const isSameMoment = (left, right) => new Date(left).getTime() === new Date(right).getTime()
+
 const ensureTimelineWithinCompetitionWindow = ({ competition, startTime, endTime }) => {
   if (!competition || !startTime || !endTime) return
   if (!isWithinCompetitionDateWindow({ competition, value: startTime })) {
@@ -129,7 +139,8 @@ const normalizeTimeline = (timeline) => {
 
 export const createTimelineService = ({
   repository = TIMELINE_REPOSITORY,
-  competitionService = COMPETITION_SERVICE
+  competitionService = COMPETITION_SERVICE,
+  now = () => new Date()
 } = {}) => {
   const ensureTimelineExists = async (id) => {
     ensureObjectId(id)
@@ -187,6 +198,7 @@ export const createTimelineService = ({
 
   const createTimeline = async (payload = {}) => {
     ensureDateRange(payload)
+    ensureTimesAreNotInPast({ ...payload, now: now() })
     const competition = await competitionService.getRawCompetitionById(payload.competitionId)
     ensureCompetitionAllowsChildMutations(competition, 'Timeline')
     ensureTimelineWithinCompetitionWindow({
@@ -222,6 +234,11 @@ export const createTimelineService = ({
       endTime: safePayload.endTime ?? existingTimeline.endTime
     }
     ensureDateRange(nextSchedule)
+    ensureTimesAreNotInPast({
+      startTime: safePayload.startTime && !isSameMoment(safePayload.startTime, existingTimeline.startTime) ? safePayload.startTime : null,
+      endTime: safePayload.endTime && !isSameMoment(safePayload.endTime, existingTimeline.endTime) ? safePayload.endTime : null,
+      now: now()
+    })
     ensureTimelineWithinCompetitionWindow({ competition, ...nextSchedule })
     ensureTimelineStatusTransition({
       fromStatus: existingTimeline.status || 'SCHEDULED',

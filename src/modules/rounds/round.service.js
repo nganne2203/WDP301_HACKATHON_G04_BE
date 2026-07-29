@@ -27,6 +27,7 @@ const ROUND_FIELDS = [
   'roundType',
   'problemStatement',
   'examDriveUrl',
+  'assignedTeamIds',
   'promotedTeamIds',
   'maxPromotedTeams',
   'startTime',
@@ -317,6 +318,10 @@ const syncSingleJudgingBoardForRound = async (round) => {
   const trackId = round.trackId?._id?.toString?.() || round.trackId?.toString?.() || round.trackId || null
   const teamIds = extractIds(round.assignedTeamIds || [])
   const judgeIds = extractIds(round.assignedJudgeIds || [])
+  // Board capacity belongs to the competition's judging configuration.  The
+  // model default of 10 must not silently override a configured value.
+  const configuredCapacity = Number(round.competitionId?.competitionConfig?.maxTeamsPerBoard || 0)
+  const trackCapacity = Number(round.trackId?.maxTeams || 0)
 
   const existingBoards = await JUDGING_BOARD_REPOSITORY.findByRoundId(roundId)
   if (existingBoards.length > 1) return
@@ -329,7 +334,7 @@ const syncSingleJudgingBoardForRound = async (round) => {
     boardNumber: existingBoards[0]?.boardNumber || 1,
     teamIds,
     judgeIds,
-    maxTeams: Math.max(teamIds.length, existingBoards[0]?.maxTeams || 10),
+    maxTeams: Math.max(teamIds.length, configuredCapacity || trackCapacity || existingBoards[0]?.maxTeams || 1),
     status: teamIds.length > 0 ? 'ASSIGNED' : 'DRAFT'
   }
 
@@ -369,6 +374,16 @@ export const createRoundService = ({
     const round = await repository.findById(id)
     if (!round) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Round not found'])
     return round
+  }
+
+  const ensureUniqueRoundName = async ({ competitionId, name, ignoreRoundId }) => {
+    if (!competitionId || !name || !repository.findByCompetitionAndName) return
+
+    const existingRound = await repository.findByCompetitionAndName(competitionId, name.trim())
+    const existingRoundId = existingRound?._id?.toString?.() || existingRound?.id?.toString?.()
+    if (existingRound && existingRoundId !== ignoreRoundId) {
+      throw new ApiError(ERROR_CODES.CONFLICT, ['Round name already exists in this competition'])
+    }
   }
 
   const applyParticipantRoundScope = async (filter = {}, actor = {}) => {
@@ -496,17 +511,26 @@ export const createRoundService = ({
     const competition = await ensureCompetitionExists(payload.competitionId)
     ensureCompetitionAllowsChildMutations(competition, 'Round')
     ensureRoundWindowWithinCompetition(competition, payload)
+    await ensureUniqueRoundName({ competitionId: competition._id, name: payload.name })
     await ensureTrackBelongsToCompetition({ competitionId: competition._id, trackId: payload.trackId })
     await ensureRubricBelongsToCompetition({ competitionId: competition._id, rubricId: payload.rubricId })
     await ensureUsersExist(payload.assignedJudgeIds || [])
     await ensureTeamsBelongToRoundContext({
       competitionId: competition._id,
       trackId: payload.trackId,
-      teamIds: payload.promotedTeamIds || []
+      teamIds: payload.assignedTeamIds ?? payload.promotedTeamIds ?? []
     })
     ensurePromotionRuleConsistency(payload)
 
-    const round = await repository.create(pickSafeFields(payload, ROUND_FIELDS))
+    let round
+    try {
+      round = await repository.create(pickSafeFields(payload, ROUND_FIELDS))
+    } catch (error) {
+      if (error?.code === 11000 && error?.keyPattern?.name) {
+        throw new ApiError(ERROR_CODES.CONFLICT, ['Round name already exists in this competition'])
+      }
+      throw error
+    }
     const hydratedRound = await repository.findById(round._id)
     await notifyAssignedJudges(hydratedRound)
     await syncSingleJudgingBoardForRound(hydratedRound)
@@ -531,6 +555,11 @@ export const createRoundService = ({
     const competition = await ensureCompetitionExists(competitionId)
     ensureCompetitionAllowsChildMutations(competition, 'Round')
     ensureRoundWindowWithinCompetition(competition, mergedPayload)
+    await ensureUniqueRoundName({
+      competitionId,
+      name: safePayload.name || existingRound.name,
+      ignoreRoundId: id
+    })
     await ensureTrackBelongsToCompetition({ competitionId, trackId })
     await ensureRubricBelongsToCompetition({
       competitionId,
@@ -538,8 +567,9 @@ export const createRoundService = ({
     })
 
     if (safePayload.assignedJudgeIds) await ensureUsersExist(safePayload.assignedJudgeIds)
-    if (safePayload.promotedTeamIds) {
-      await ensureTeamsBelongToRoundContext({ competitionId, trackId, teamIds: safePayload.promotedTeamIds })
+    const teamIdsToValidate = safePayload.assignedTeamIds ?? safePayload.promotedTeamIds
+    if (teamIdsToValidate) {
+      await ensureTeamsBelongToRoundContext({ competitionId, trackId, teamIds: teamIdsToValidate })
     }
 
     ensurePromotionRuleConsistency({
@@ -550,7 +580,15 @@ export const createRoundService = ({
     const previousJudgeIds = (existingRound.assignedJudgeIds || [])
       .map(judge => judge?._id?.toString?.() || judge?.id || judge?.toString?.())
       .filter(Boolean)
-    const round = await repository.updateById(id, safePayload)
+    let round
+    try {
+      round = await repository.updateById(id, safePayload)
+    } catch (error) {
+      if (error?.code === 11000 && error?.keyPattern?.name) {
+        throw new ApiError(ERROR_CODES.CONFLICT, ['Round name already exists in this competition'])
+      }
+      throw error
+    }
     if (safePayload.assignedJudgeIds !== undefined) await notifyAssignedJudges(round, previousJudgeIds)
     await syncSingleJudgingBoardForRound(round)
     return normalizeRound(await repository.findById(id))

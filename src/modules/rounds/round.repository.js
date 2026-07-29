@@ -29,6 +29,10 @@ const findById = async (id) => {
   return await Round.findById(id).populate(roundPopulate)
 }
 
+const findByCompetitionAndName = async (competitionId, name) => {
+  return await Round.findOne({ competitionId, name }).collation({ locale: 'en', strength: 2 })
+}
+
 const updateById = async (id, data) => {
   return await Round.findByIdAndUpdate(id, data, {
     new: true,
@@ -45,6 +49,7 @@ export const ROUND_REPOSITORY = {
   create,
   findAll,
   findById,
+  findByCompetitionAndName,
   updateById,
   deleteById
 }
