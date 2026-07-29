@@ -29,7 +29,7 @@ export const RANKING_VALIDATION = {
       decisions: Joi.array().items(Joi.object({
         teamId: objectId.required(),
         tieBreakMethod: Joi.string().trim().uppercase().valid('PENALTY_EVALUATION', 'MINI_TEST').required(),
-        tieBreakScore: Joi.number().min(0),
+        tieBreakScore: Joi.number().min(0).precision(2).required(),
         penaltyScore: Joi.number().min(0),
         miniTestScore: Joi.number().min(0),
         tieBreakReason: Joi.string().trim().min(1).max(1000).required()

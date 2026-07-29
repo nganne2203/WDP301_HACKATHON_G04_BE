@@ -6,7 +6,7 @@ const roundPopulate = [
   { path: 'assignedTeamIds', select: 'name chapterName projectName status trackId boardNumber placementSlot' },
   { path: 'promotedTeamIds', select: 'name chapterName projectName status trackId boardNumber placementSlot' },
   { path: 'assignedJudgeIds', select: 'email fullName status roles', populate: { path: 'roles', select: 'name code' } },
-  { path: 'rubricId', select: 'title description totalScore' }
+  { path: 'rubricId', select: 'title description totalScore criterionMaxScore' }
 ]
 
 const count = async (filter = {}) => {

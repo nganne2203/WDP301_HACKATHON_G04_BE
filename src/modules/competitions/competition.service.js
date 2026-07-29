@@ -216,6 +216,15 @@ const ensureCompetitionRule = (competitionConfig = {}) => {
 const syncLegacyCompetitionFields = (safePayload = {}, competitionConfig = {}, existingCompetition = null) => {
   const syncedPayload = { ...safePayload }
 
+  // Board configuration is the source of truth for registration capacity.
+  // Keeping maxTeams in sync preserves compatibility with existing APIs while
+  // preventing a competition from accepting more teams than its boards hold.
+  const boardCount = Number(competitionConfig.boardCount)
+  const maxTeamsPerBoard = Number(competitionConfig.maxTeamsPerBoard)
+  if (boardCount > 0 && maxTeamsPerBoard > 0) {
+    syncedPayload.maxTeams = boardCount * maxTeamsPerBoard
+  }
+
   if (competitionConfig.finalistsPerBoard !== undefined) {
     syncedPayload.finalistSlotsPerTrack = competitionConfig.finalistsPerBoard
   } else if (syncedPayload.finalistSlotsPerTrack === undefined && existingCompetition?.finalistSlotsPerTrack !== undefined) {

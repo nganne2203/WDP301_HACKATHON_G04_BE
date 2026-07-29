@@ -237,8 +237,10 @@ const createRankingFixture = ({
     _id: ids.round,
     competitionId: ids.competition,
     roundType,
+    rubricId: ids.rubric,
     tieBreakRule: '10-minute mini test'
   })
+  const rubrics = new Map([[ids.rubric, { _id: ids.rubric, criterionMaxScore: 10 }]])
   teams.set(ids.team1, {
     _id: ids.team1,
     name: 'Alpha',
@@ -342,6 +344,7 @@ const createRankingFixture = ({
       },
       competitionModel: createModel(competitions),
       roundModel: createModel(rounds),
+      rubricModel: createModel(rubrics),
       teamModel: createModel(teams),
       notificationService,
       repositoryModel: {
@@ -734,6 +737,8 @@ test('resolveTieBreak stores tie-break decision and allows cutoff selection', as
   }, { id: ids.judge1 })
   assert.equal(resolved.summary.resolvedCount, 2)
   assert.equal(resolved.rankings[0].tieBreakResolvedBy, ids.judge1)
+  const resolvedRankings = [...stores.rankings.values()]
+  assert.notEqual(resolvedRankings[0].rank, resolvedRankings[1].rank)
 
   const result = await service.selectFinalists({
     competitionId: ids.competition,
@@ -742,6 +747,28 @@ test('resolveTieBreak stores tie-break decision and allows cutoff selection', as
 
   assert.deepEqual(result.finalists.map(item => item.teamId), [ids.team1])
   assert.equal(stores.auditLogs.at(-2).action, 'RANKING_TIE_BREAK_RESOLVED')
+})
+
+test('resolveTieBreak limits scores to the round rubric scoring coefficient', async () => {
+  const { service, stores } = createRankingFixture()
+  stores.scoreSheets[1].finalScore = 95
+  await service.generateRankings({
+    competitionId: ids.competition,
+    roundId: ids.round,
+    rankingType: 'TEAM'
+  }, { id: ids.judge1 })
+
+  await assert.rejects(
+    service.resolveTieBreak({
+      competitionId: ids.competition,
+      roundId: ids.round,
+      decisions: [
+        { teamId: ids.team1, tieBreakMethod: 'MINI_TEST', tieBreakScore: 10.01, tieBreakReason: 'Mini test result' },
+        { teamId: ids.team2, tieBreakMethod: 'MINI_TEST', tieBreakScore: 8, tieBreakReason: 'Mini test result' }
+      ]
+    }, { id: ids.judge1 }),
+    error => error instanceof ApiError && error.errors.includes('tieBreakScore must be between 0 and 10 with at most two decimal places')
+  )
 })
 
 test('CUSTOM finalist mode requires manual finalist selection', async () => {
