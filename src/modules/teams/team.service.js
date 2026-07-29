@@ -154,6 +154,12 @@ export const isRegistrationOpen = (competition, now = new Date()) => {
 }
 
 const getMaxTeams = (competition) => {
+  const boardCount = Number(competition?.competitionConfig?.boardCount || competition?.competitionConfig?.trackCount)
+  const maxTeamsPerBoard = Number(competition?.competitionConfig?.maxTeamsPerBoard)
+  if (boardCount > 0 && maxTeamsPerBoard > 0) {
+    return boardCount * maxTeamsPerBoard
+  }
+
   return competition?.maxTeams || 30
 }
 
