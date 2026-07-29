@@ -474,23 +474,16 @@ export const createJudgingBoardService = ({
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Competition competitionConfig.boardCount is required for board randomization'])
     }
 
-    // Preliminary boards are one judging stage. Include every configured track
-    // in that stage, then draw from all confirmed teams in those tracks.
+    // Preliminary boards are one judging stage.  Every confirmed team in the
+    // competition must be considered; filtering by only the tracks that
+    // already have a round silently drops confirmed teams from a newer track.
     const isFinalRound = round.roundType === 'FINAL'
     const stageRounds = round.roundType === 'PRELIMINARY'
       ? await Round.find({ competitionId: competition._id, roundType: 'PRELIMINARY' }).select('_id trackId')
       : [round]
     const teamFilter = { competitionId: competition._id }
 
-    if (!isFinalRound) {
-      const stageTrackIds = [...new Set(stageRounds
-        .map(item => item.trackId?.toString?.() || item.trackId)
-        .filter(Boolean))]
-      const stageHasAllTracksRound = stageRounds.some(item => !item.trackId)
-      if (!stageHasAllTracksRound && stageTrackIds.length > 0) {
-        teamFilter.trackId = { $in: stageTrackIds }
-      }
-    } else {
+    if (isFinalRound) {
       // Final rounds receive only the finalists selected from preliminary rounds.
       const preliminaryRounds = await Round.find({ competitionId: competition._id, roundType: 'PRELIMINARY' }).select('promotedTeamIds')
       const finalistIds = [...new Set(preliminaryRounds.flatMap(item =>
