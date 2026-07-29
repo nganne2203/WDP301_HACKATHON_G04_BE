@@ -307,6 +307,13 @@ const countDocuments = async (model, filter) => {
   return await model.countDocuments(filter)
 }
 
+const getBoardStatusForRound = ({ round, teamIds = [] }) => {
+  if (teamIds.length === 0) return 'DRAFT'
+  if (round.status === 'SCORING') return 'SCORING'
+  if (round.status === 'COMPLETED') return 'COMPLETED'
+  return 'ASSIGNED'
+}
+
 const syncSingleJudgingBoardForRound = async (round) => {
   if (!round) return
 
@@ -332,7 +339,7 @@ const syncSingleJudgingBoardForRound = async (round) => {
     teamIds,
     judgeIds,
     maxTeams: Math.max(teamIds.length, configuredCapacity || trackCapacity || existingBoards[0]?.maxTeams || 1),
-    status: teamIds.length > 0 ? 'ASSIGNED' : 'DRAFT'
+    status: getBoardStatusForRound({ round, teamIds })
   }
 
   if (existingBoards.length === 0) {

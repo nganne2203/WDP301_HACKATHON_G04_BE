@@ -370,9 +370,8 @@ export const createRankingService = ({
     }
 
     const { competition, round } = await ensureCompetitionRoundContext({ competitionId, roundId })
-    if (round.roundType !== 'FINAL') {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Rankings can only be generated for the final round'])
-    }
+    // Every round, including each preliminary board, needs an official
+    // ranking before finalist selection can be carried out.
     const scoreSheets = await repository.findScoreSheetsForRanking({ competitionId, roundId })
     if (scoreSheets.length === 0) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['No submitted score sheets found for ranking generation'])
@@ -595,11 +594,14 @@ export const createRankingService = ({
     ensureCompetitionAllowsChildMutations(competition, 'Finalist selection')
     const config = competition.competitionConfig || {}
     const mode = config.finalistSelectionMode || 'OVERALL_SCORE'
+    // A PRELIMINARY round represents one judging board. Fixed-per-board
+    // selection is therefore resolved within the currently selected round;
+    // it must not wait for rankings from the other preliminary boards.
     const selectAcrossPreliminaryStage = round.roundType === 'PRELIMINARY' &&
-      ['FIXED_PER_BOARD', 'TOP_PER_BOARD_WITH_WILDCARD'].includes(mode)
+      mode === 'TOP_PER_BOARD_WITH_WILDCARD'
 
     const scopedRounds = selectAcrossPreliminaryStage
-      ? await roundModel.find({ competitionId, roundType: 'PRELIMINARY' }).select('_id')
+      ? await roundModel.find({ competitionId, roundType: 'PRELIMINARY' }).select('_id name')
       : [round]
     const scopedRoundIds = scopedRounds.map(item => item._id?.toString?.() || item.id || item.toString())
     const rankings = await repository.findRankings({
@@ -616,6 +618,9 @@ export const createRankingService = ({
 
     const finalistCount = Number(config.finalistCount || 0)
     const finalistsPerBoard = Number(config.finalistsPerBoard || 0)
+    const finalistCountForSelection = round.roundType === 'PRELIMINARY' && mode === 'FIXED_PER_BOARD'
+      ? finalistsPerBoard
+      : finalistCount
     const normalizedRankings = rankings.map(item => ({
       ranking: item,
       teamId: item.teamId?._id?.toString?.() || item.teamId?.toString?.(),
@@ -659,9 +664,23 @@ export const createRankingService = ({
       selected = normalizedRankings.slice(0, finalistCount)
     }
 
+    if (selectAcrossPreliminaryStage && selected.length < finalistCount) {
+      const rankedRoundIds = new Set(normalizedRankings.map(item => item.roundId))
+      const roundsWithoutRankings = scopedRounds
+        .filter(item => !rankedRoundIds.has(item._id?.toString?.() || item.id?.toString?.()))
+        .map(item => item.name)
+
+      if (roundsWithoutRankings.length > 0) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, [
+          `Generate rankings for ${roundsWithoutRankings.join(', ')} before selecting finalists`,
+          `This competition advances ${finalistsPerBoard} team(s) from each preliminary board (${finalistCount} total)`
+        ])
+      }
+    }
+
     ensureExactFinalistCount({
       selectedCount: selected.length,
-      finalistCount,
+      finalistCount: finalistCountForSelection,
       mode
     })
     ensureNoUnresolvedCutoffTie({
@@ -972,10 +991,15 @@ export const createRankingService = ({
       .map(item => item.teamId?._id?.toString?.() || item.teamId?.toString?.())
       .filter(Boolean)
     const finalistCount = Number(competition.competitionConfig?.finalistCount || 0)
+    const finalistsPerBoard = Number(competition.competitionConfig?.finalistsPerBoard || 0)
+    const finalistCountForRound = round.roundType === 'PRELIMINARY' &&
+      competition.competitionConfig?.finalistSelectionMode === 'FIXED_PER_BOARD'
+      ? finalistsPerBoard
+      : finalistCount
     const selectionExceptionReason = selectedRankings.find(item => item.selectionReason)?.selectionReason || null
     ensureExactFinalistCount({
       selectedCount: selectedRankings.length,
-      finalistCount,
+      finalistCount: finalistCountForRound,
       mode: competition.competitionConfig?.finalistSelectionMode || 'OVERALL_SCORE',
       exceptionReason: selectionExceptionReason
     })

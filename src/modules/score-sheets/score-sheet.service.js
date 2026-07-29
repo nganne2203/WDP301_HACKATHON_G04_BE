@@ -212,7 +212,7 @@ export const createScoreSheetService = ({
       roundModel.findById(roundId),
       boardModel.findById(boardId),
       teamModel.findById(teamId),
-      submissionModel.findById(submissionId),
+      submissionId ? submissionModel.findById(submissionId) : Promise.resolve(null),
       findJudgeById(judgeId)
     ])
 
@@ -220,7 +220,7 @@ export const createScoreSheetService = ({
     if (!round) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Round not found'])
     if (!board) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Judging board not found'])
     if (!team) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Team not found'])
-    if (!submission) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Submission not found'])
+    if (submissionId && !submission) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Submission not found'])
     if (!judge) throw new ApiError(ERROR_CODES.NOT_FOUND, ['Judge not found'])
 
     const scoreableRoundStatuses = relaxedWorkflow ? ['OPEN', 'SCORING'] : ['SCORING']
@@ -234,7 +234,7 @@ export const createScoreSheetService = ({
     if (team.status !== 'CONFIRMED') {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only confirmed teams can be scored'])
     }
-    if (!['SUBMITTED', 'ACCEPTED'].includes(submission.status)) {
+    if (submission && !['SUBMITTED', 'ACCEPTED'].includes(submission.status)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only submitted or accepted submissions can be scored'])
     }
     if (!isActiveJudge(judge)) {
@@ -250,9 +250,9 @@ export const createScoreSheetService = ({
     if (team.competitionId?.toString() !== competitionId.toString()) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Team does not belong to the specified competition'])
     }
-    if (submission.competitionId?.toString() !== competitionId.toString() ||
+    if (submission && (submission.competitionId?.toString() !== competitionId.toString() ||
       submission.roundId?.toString() !== roundId.toString() ||
-      submission.teamId?.toString() !== teamId.toString()) {
+      submission.teamId?.toString() !== teamId.toString())) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Submission does not match the scoring context'])
     }
 
@@ -425,7 +425,7 @@ export const createScoreSheetService = ({
       roundId: payload.roundId,
       boardId: payload.boardId,
       teamId: payload.teamId,
-      submissionId: payload.submissionId,
+      submissionId: payload.submissionId || null,
       judgeId: actor.id,
       rubricId: payload.rubricId
     })
@@ -450,7 +450,7 @@ export const createScoreSheetService = ({
       roundId: payload.roundId,
       boardId: payload.boardId,
       teamId: payload.teamId,
-      submissionId: payload.submissionId,
+      submissionId: payload.submissionId || null,
       judgeId: actor.id,
       rubricId: context.rubric._id,
       scoreIds: [],
@@ -460,7 +460,7 @@ export const createScoreSheetService = ({
 
     const createdScores = await replaceSheetScores({
       scoreSheetId: scoreSheet._id,
-      submissionId: payload.submissionId,
+      submissionId: payload.submissionId || null,
       judgeId: actor.id,
       scores
     })
