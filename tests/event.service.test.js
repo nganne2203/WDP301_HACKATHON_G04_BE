@@ -83,6 +83,21 @@ test('createCompetition stores dynamic competition config and syncs legacy final
   assert.equal(competition.totalFinalistSlots, 6)
 })
 
+test('only one competition can be active at a time', async () => {
+  const service = createService()
+  const actor = { id: '000000000000000000000099' }
+  const first = await service.createCompetition({ title: 'First competition' }, actor)
+  const second = await service.createCompetition({ title: 'Second competition' }, actor)
+
+  await service.updateCompetitionStatus(first.id, 'OPEN_REGISTRATION', actor)
+  await assert.rejects(
+    service.updateCompetitionStatus(second.id, 'OPEN_REGISTRATION', actor),
+    (error) => error instanceof ApiError &&
+      error.code === 'CONFLICT' &&
+      error.errors.includes('First competition is already active. Complete or archive it before activating another competition.')
+  )
+})
+
 test('createCompetition rejects unsupported ranking scopes until official generation exists', async () => {
   const service = createService()
 

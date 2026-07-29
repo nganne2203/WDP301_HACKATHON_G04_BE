@@ -24,6 +24,7 @@ import { isActiveJudge } from '#utils/domainAccessUtil.js'
 import { isWithinCompetitionDateWindow } from '#utils/competitionDateWindow.js'
 
 const COMPETITION_STATUSES = ['DRAFT', 'OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING', 'COMPLETED', 'ARCHIVED']
+const ACTIVE_COMPETITION_STATUSES = ['OPEN_REGISTRATION', 'REGISTRATION_CLOSED', 'ONGOING', 'SCORING']
 const COMPETITION_TRANSITIONS = {
   DRAFT: ['OPEN_REGISTRATION'],
   OPEN_REGISTRATION: ['REGISTRATION_CLOSED'],
@@ -695,6 +696,20 @@ const createCompetitionService = ({
     }
     if (status === 'SCORING' && !env.workflow.relaxedDemoRules) {
       await ensureScoringReady(id)
+    }
+
+    if (ACTIVE_COMPETITION_STATUSES.includes(status)) {
+      const competitions = await repository.findAll({
+        filter: { status: { $in: ACTIVE_COMPETITION_STATUSES } },
+        limit: 1000
+      })
+      const activeCompetition = competitions.find(competition => {
+        const competitionId = competition?._id?.toString?.() || competition?.id?.toString?.()
+        return competitionId !== id && ACTIVE_COMPETITION_STATUSES.includes(competition.status)
+      })
+      if (activeCompetition) {
+        throw new ApiError(ERROR_CODES.CONFLICT, [`${activeCompetition.title || 'Another competition'} is already active. Complete or archive it before activating another competition.`])
+      }
     }
 
     const updatePayload = { status }

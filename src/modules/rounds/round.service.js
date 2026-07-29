@@ -390,6 +390,34 @@ export const createRoundService = ({
     }
   }
 
+  const ensureRoundTypeCapacity = async ({ competition, roundType = 'PRELIMINARY', ignoreRoundId }) => {
+    if (!repository.count) return
+
+    const normalizedType = String(roundType).toUpperCase()
+    const competitionId = competition?._id || competition?.id
+    const configuredBoardCount = Number(
+      competition?.competitionConfig?.boardCount
+      ?? competition?.competitionConfig?.trackCount
+      ?? 0
+    )
+    const limit = normalizedType === 'FINAL' ? 1 : configuredBoardCount
+
+    // Legacy competitions without a board configuration keep their existing
+    // unrestricted behaviour; configured competitions must respect their setup.
+    if (!competitionId || !Number.isFinite(limit) || limit < 1) return
+
+    const filter = { competitionId, roundType: normalizedType }
+    if (ignoreRoundId) filter._id = { $ne: ignoreRoundId }
+    const existingCount = await repository.count(filter)
+
+    if (existingCount >= limit) {
+      const message = normalizedType === 'FINAL'
+        ? 'Only one FINAL round can be created for this competition'
+        : `This competition is configured for a maximum of ${limit} PRELIMINARY rounds`
+      throw new ApiError(ERROR_CODES.CONFLICT, [message])
+    }
+  }
+
   const applyParticipantRoundScope = async (filter = {}, actor = {}) => {
     if (!isParticipantOnlyActor(actor)) return filter
 
@@ -516,6 +544,7 @@ export const createRoundService = ({
     ensureCompetitionAllowsChildMutations(competition, 'Round')
     ensureRoundWindowWithinCompetition(competition, payload)
     await ensureUniqueRoundName({ competitionId: competition._id, name: payload.name })
+    await ensureRoundTypeCapacity({ competition, roundType: payload.roundType })
     await ensureTrackBelongsToCompetition({ competitionId: competition._id, trackId: payload.trackId })
     await ensureRubricBelongsToCompetition({ competitionId: competition._id, rubricId: payload.rubricId })
     await ensureUsersExist(payload.assignedJudgeIds || [])
@@ -563,6 +592,9 @@ export const createRoundService = ({
       name: safePayload.name || existingRound.name,
       ignoreRoundId: id
     })
+    if (safePayload.roundType && safePayload.roundType !== existingRound.roundType) {
+      await ensureRoundTypeCapacity({ competition, roundType: safePayload.roundType, ignoreRoundId: id })
+    }
     await ensureTrackBelongsToCompetition({ competitionId, trackId })
     await ensureRubricBelongsToCompetition({
       competitionId,
