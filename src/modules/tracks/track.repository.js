@@ -23,7 +23,11 @@ const findById = async (id) => {
 }
 
 const findByCompetitionAndName = async (competitionId, name) => {
-  return await Track.findOne({ competitionId, name })
+  return await Track.findOne({ competitionId, name }).collation({ locale: 'en', strength: 2 })
+}
+
+const findByCompetitionAndCode = async (competitionId, code) => {
+  return await Track.findOne({ competitionId, code })
 }
 
 const updateById = async (id, data) => {
@@ -61,6 +65,7 @@ export const TRACK_REPOSITORY = {
   findAll,
   findById,
   findByCompetitionAndName,
+  findByCompetitionAndCode,
   updateById,
   deleteById,
   findCompetitionIdsForParticipant,

@@ -124,6 +124,16 @@ export const createRubricService = ({
     return rubric
   }
 
+  const ensureUniqueRubricTitle = async ({ competitionId, title, ignoreRubricId }) => {
+    if (!competitionId || !title || !repository.findByCompetitionAndTitle) return
+
+    const existingRubric = await repository.findByCompetitionAndTitle(competitionId, title.trim())
+    const existingRubricId = existingRubric?._id?.toString?.() || existingRubric?.id?.toString?.()
+    if (existingRubric && existingRubricId !== ignoreRubricId) {
+      throw new ApiError(ERROR_CODES.CONFLICT, ['Rubric title already exists in this competition'])
+    }
+  }
+
   const ensureCriterionExists = async (id) => {
     ensureObjectId(id, 'criterion id')
     const criterion = await repository.findCriterionById(id)
@@ -264,6 +274,10 @@ export const createRubricService = ({
       competitionId: safePayload.competitionId,
       roundId: safePayload.roundId
     })
+    await ensureUniqueRubricTitle({
+      competitionId: safePayload.competitionId,
+      title: safePayload.title
+    })
 
     const rubric = await repository.createRubric({
       ...safePayload,
@@ -280,6 +294,11 @@ export const createRubricService = ({
     const existingRubricPlain = typeof existingRubric.toObject === 'function'
       ? existingRubric.toObject({ getters: true, virtuals: false })
       : existingRubric
+    await ensureUniqueRubricTitle({
+      competitionId: existingRubricPlain.competitionId?._id || existingRubricPlain.competitionId,
+      title: safePayload.title || existingRubricPlain.title,
+      ignoreRubricId: id
+    })
     const candidateRubric = {
       ...existingRubricPlain,
       ...safePayload

@@ -4,6 +4,39 @@ import test from 'node:test'
 import ApiError from '../src/utils/ApiError.js'
 import { createRoundService } from '../src/modules/rounds/round.service.js'
 
+test('createRound rejects a duplicate name within the same competition', async () => {
+  const competitionModel = (await import('../src/models/competition.model.js')).default
+  const competitionFindById = competitionModel.findById
+  competitionModel.findById = async () => ({
+    _id: '000000000000000000000101',
+    title: 'SEAL'
+  })
+
+  const repository = {
+    count: async () => 0,
+    findAll: async () => [],
+    findById: async () => null,
+    findByCompetitionAndName: async () => ({ _id: '000000000000000000000901' }),
+    create: async () => null,
+    updateById: async () => null,
+    deleteById: async () => null
+  }
+
+  try {
+    await assert.rejects(
+      createRoundService({ repository }).createRound({
+        competitionId: '000000000000000000000101',
+        name: 'Preliminary Round'
+      }),
+      (error) => error instanceof ApiError &&
+        error.code === 'CONFLICT' &&
+        error.errors.includes('Round name already exists in this competition')
+    )
+  } finally {
+    competitionModel.findById = competitionFindById
+  }
+})
+
 test('createRound and updateRound reject windows outside the competition dates', async () => {
   const originalCompetitionFindById = await import('../src/models/competition.model.js')
   const originalTeamFind = await import('../src/models/team.model.js')

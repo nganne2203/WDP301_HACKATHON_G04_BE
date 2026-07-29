@@ -23,6 +23,10 @@ const findRubricById = async (id) => {
   return await Rubric.findById(id).populate(rubricPopulate)
 }
 
+const findByCompetitionAndTitle = async (competitionId, title) => {
+  return await Rubric.findOne({ competitionId, title }).collation({ locale: 'en', strength: 2 })
+}
+
 const createRubric = async (data) => {
   return await Rubric.create(data)
 }
@@ -65,6 +69,7 @@ export const RUBRIC_REPOSITORY = {
   countRubrics,
   findRubrics,
   findRubricById,
+  findByCompetitionAndTitle,
   createRubric,
   updateRubricById,
   createCriterion,

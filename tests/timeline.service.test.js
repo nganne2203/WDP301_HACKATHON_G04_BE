@@ -61,10 +61,13 @@ const competitionService = {
   })
 }
 
+const testClock = () => new Date('2026-05-01T00:00:00.000Z')
+
 test('createTimeline stores timeline for an existing competition', async () => {
   const service = createTimelineService({
     repository: createRepository(),
-    competitionService
+    competitionService,
+    now: testClock
   })
 
   const timeline = await service.createTimeline({
@@ -80,9 +83,29 @@ test('createTimeline stores timeline for an existing competition', async () => {
   assert.equal(timeline.activityType, 'CHECK_IN')
 })
 
+test('createTimeline rejects a schedule in the past', async () => {
+  const service = createTimelineService({
+    repository: createRepository(),
+    competitionService,
+    now: () => new Date('2026-06-10T00:00:00.000Z')
+  })
+
+  await assert.rejects(
+    service.createTimeline({
+      competitionId: '000000000000000000000101',
+      title: 'Past milestone',
+      startTime: '2026-06-09T09:00:00.000Z',
+      endTime: '2026-06-09T10:00:00.000Z'
+    }),
+    (error) => error instanceof ApiError &&
+      error.code === 'BAD_REQUEST' &&
+      error.errors.includes('Timeline startTime cannot be in the past')
+  )
+})
+
 test('updateTimeline rejects invalid date range', async () => {
   const repository = createRepository()
-  const service = createTimelineService({ repository, competitionService })
+  const service = createTimelineService({ repository, competitionService, now: testClock })
 
   const created = await service.createTimeline({
     competitionId: '000000000000000000000101',
@@ -106,7 +129,7 @@ test('listTimelines scopes participant to joined or open-registration competitio
     participantCompetitions: ['000000000000000000000101'],
     openRegistrationCompetitions: ['000000000000000000000102']
   })
-  const service = createTimelineService({ repository, competitionService })
+  const service = createTimelineService({ repository, competitionService, now: testClock })
 
   await service.createTimeline({
     competitionId: '000000000000000000000101',
@@ -131,7 +154,7 @@ test('getTimelineById hides competition children outside actor scope', async () 
   repository.seedVisibility({
     participantCompetitions: ['000000000000000000000101']
   })
-  const service = createTimelineService({ repository, competitionService })
+  const service = createTimelineService({ repository, competitionService, now: testClock })
 
   const created = await service.createTimeline({
     competitionId: '000000000000000000000103',
@@ -149,7 +172,7 @@ test('getTimelineById hides competition children outside actor scope', async () 
 
 test('timeline validates competition window and status transitions', async () => {
   const repository = createRepository()
-  const service = createTimelineService({ repository, competitionService })
+  const service = createTimelineService({ repository, competitionService, now: testClock })
 
   await assert.rejects(
     service.createTimeline({
@@ -206,8 +229,8 @@ test('timeline mutations reject completed or archived competitions', async () =>
       endDate: new Date('2026-06-30T23:59:59.000Z')
     })
   }
-  const openService = createTimelineService({ repository, competitionService: openCompetitionService })
-  const lockedService = createTimelineService({ repository, competitionService: lockedCompetitionService })
+  const openService = createTimelineService({ repository, competitionService: openCompetitionService, now: testClock })
+  const lockedService = createTimelineService({ repository, competitionService: lockedCompetitionService, now: testClock })
 
   const created = await openService.createTimeline({
     competitionId: '000000000000000000000101',
