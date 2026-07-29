@@ -102,6 +102,48 @@ const FINAL_RESULTS = [
   ['WORKA GANG', 60.6, 6]
 ]
 
+// Keep the public demo repository used by the showcase stable across seed runs.
+// The remaining showcase repositories are synthetic fixtures.
+const REPOSITORY_OVERRIDES = {
+  '404NotFound': {
+    githubOwner: 'VinhTimoon28',
+    githubRepo: 'SWP_Demo',
+    defaultBranch: 'master',
+    latestCommitSha: '15559b4537b2351a91ec2221fbb3943160393e00',
+    lastProcessedCommitSha: '3d65591731ab3a26cbed47ad311888ad97365f85',
+    latestCommit: {
+      authorName: 'Vinh Timoon',
+      authorEmail: 'vinhm281@gmail.com',
+      authorUsername: 'VinhTimoon',
+      parentCommitShas: ['cbca2ddfa70a42cb14646f2b1c22accc47d77bb0'],
+      timestamp: '2026-07-22T17:32:38.000Z',
+      message: 'feat: track demo authentication session lifecycle',
+      linesAdded: 3,
+      linesRemoved: 0,
+      filesChanged: 1,
+      rawStats: { total: 3, additions: 3, deletions: 0 }
+    },
+    historicalCommits: [
+      ['1667d7ef02ca99ec02b330e0af3dede1ffb1ae7c', [], '2025-05-16T06:52:56.000Z', 'Test', 1185, 0, 10],
+      ['8cc55293a79db0c526e5ae5e9fc070addbdce043', ['1667d7ef02ca99ec02b330e0af3dede1ffb1ae7c'], '2025-05-16T07:24:43.000Z', 'Test2', 11, 10, 1],
+      ['64498e56490a4b59689f345b8549b7a05f1e583f', ['8cc55293a79db0c526e5ae5e9fc070addbdce043'], '2026-07-22T16:57:10.000Z', 'test: trigger SEAL per-push n8n workflow', 5, 0, 1],
+      ['6aee749cea378bd55ad30e05e3c1bdd1feab7759', ['64498e56490a4b59689f345b8549b7a05f1e583f'], '2026-07-22T17:11:13.000Z', 'test: verify GitHub webhook per-push delivery', 2, 1, 1],
+      ['3d65591731ab3a26cbed47ad311888ad97365f85', ['6aee749cea378bd55ad30e05e3c1bdd1feab7759'], '2026-07-22T17:14:47.000Z', 'test: verify public webhook callback', 2, 1, 1],
+      ['e670370d5bd8d50923177879b44e929ea3eeb949', ['3d65591731ab3a26cbed47ad311888ad97365f85'], '2026-07-22T17:28:44.000Z', 'feat: add client session guard for demo actions', 23, 1, 1],
+      ['cbca2ddfa70a42cb14646f2b1c22accc47d77bb0', ['e670370d5bd8d50923177879b44e929ea3eeb949'], '2026-07-22T17:29:47.000Z', 'feat: record authenticated demo actions', 4, 1, 1]
+    ],
+    latestDiff: {
+      baseCommitSha: 'cbca2ddfa70a42cb14646f2b1c22accc47d77bb0',
+      diffText: '@@ -17,9 +17,12 @@ document.addEventListener(\'DOMContentLoaded\', function() {\n+            sessionStorage.setItem(\'schoolhealth.authenticatedAt\', new Date().toISOString());\n+            sessionStorage.removeItem(\'schoolhealth.authenticatedAt\');\n+            sessionStorage.removeItem(\'schoolhealth.lastAuthenticatedAction\');',
+      totalFiles: 1,
+      includedFiles: 1,
+      excludedFiles: 0,
+      totalRawPatchSize: 577,
+      totalCleanPatchSize: 577
+    }
+  }
+}
+
 const PRELIMINARY_CRITERIA = [
   ['Domain accuracy and relevance', 'Accuracy, evidence quality, and fit with the selected domain.', 30, false],
   ['Agentic RAG architecture and algorithms', 'Retrieval, agent design, grounding, and technical reasoning.', 30, true],
@@ -253,6 +295,9 @@ export const seedCompletedCycleShowcase = async ({
   }))
   const judgeByName = new Map(judgeUsers.map(user => [user.fullName, user]))
   const finalJudges = judgeNames.slice(6).map(name => judgeByName.get(name))
+  // An archive is a user-managed terminal state. Do not revive it merely by
+  // rerunning the idempotent demo seed.
+  const existingCompetition = await Competition.findOne(COMPETITION_KEY).select('status').lean()
   const competition = await upsertOne(Competition, COMPETITION_KEY, {
     ...COMPETITION_KEY,
     title: 'SEAL Hackathon Spring 2026',
@@ -265,7 +310,7 @@ export const seedCompletedCycleShowcase = async ({
     registrationCloseReason: 'REGISTRATION_ENDED',
     startDate: at('2026-04-09T20:00:00+07:00'),
     endDate: at('2026-04-12T19:00:00+07:00'),
-    maxTeams: 30,
+    maxTeams: 27,
     minTeamMembers: 3,
     maxTeamMembers: 5,
     competitionConfig: {
@@ -281,7 +326,7 @@ export const seedCompletedCycleShowcase = async ({
     },
     finalistSlotsPerTrack: 2,
     totalFinalistSlots: 6,
-    status: 'COMPLETED',
+    status: existingCompetition?.status === 'ARCHIVED' ? 'ARCHIVED' : 'COMPLETED',
     createdBy: coordinatorUser._id
   })
 
@@ -442,7 +487,9 @@ export const seedCompletedCycleShowcase = async ({
           eligibilityStatus: scenario === 'REJECTED' ? 'INELIGIBLE' : 'PENDING',
           checkInStatus: 'NOT_CHECKED_IN',
           githubAccessStatus: 'NOT_GRANTED',
-          status: scenario === 'CANCELLED' ? 'WITHDRAWN' : 'INVITED'
+          // Terminal team outcomes retain the participant history without
+          // presenting an inactive member as someone awaiting an invitation.
+          status: 'WITHDRAWN'
         })
         members.push(user)
       }
@@ -624,19 +671,26 @@ export const seedCompletedCycleShowcase = async ({
 
   for (const record of officialTeams) {
     const slug = slugify(record.team.name)
+    const repositoryOverride = REPOSITORY_OVERRIDES[record.team.name]
+    const githubOwner = repositoryOverride?.githubOwner || 'seal-hackathon-spring-2026'
+    const githubRepo = repositoryOverride?.githubRepo || slug
+    const repositoryFullName = `${githubOwner}/${githubRepo}`
+    const repositoryUrl = `https://github.com/${repositoryFullName}`
+    const latestCommitSha = repositoryOverride?.latestCommitSha
+      || `spring2026${record.trackIndex}${String(record.teamIndex).padStart(2, '0')}`
     const repo = await upsertOne(Repository, { teamId: record.team._id }, {
       competitionId: competition._id,
       teamId: record.team._id,
       roundId: preliminaryRounds[record.trackIndex]._id,
-      githubOwner: 'seal-hackathon-spring-2026',
-      githubRepo: slug,
-      repositoryFullName: `seal-hackathon-spring-2026/${slug}`,
-      repositoryUrl: `https://github.com/seal-hackathon-spring-2026/${slug}`,
-      repoUrl: `https://github.com/seal-hackathon-spring-2026/${slug}`,
+      githubOwner,
+      githubRepo,
+      repositoryFullName,
+      repositoryUrl,
+      repoUrl: repositoryUrl,
       contributors: record.members.map(member => member._id),
-      defaultBranch: 'main',
-      latestCommitSha: `spring2026${record.trackIndex}${String(record.teamIndex).padStart(2, '0')}`,
-      lastProcessedCommitSha: `spring2026${record.trackIndex}${String(record.teamIndex).padStart(2, '0')}`,
+      defaultBranch: repositoryOverride?.defaultBranch || 'main',
+      latestCommitSha,
+      lastProcessedCommitSha: repositoryOverride?.lastProcessedCommitSha || latestCommitSha,
       status: 'ARCHIVED',
       accessState: 'REVOKED',
       submissionStatus: 'APPROVED',
@@ -646,34 +700,63 @@ export const seedCompletedCycleShowcase = async ({
       webhookRegisteredAt: at('2026-04-06T10:05:00+07:00')
     })
     const sha = repo.latestCommitSha
+    const latestCommit = repositoryOverride?.latestCommit
     const commit = await upsertOne(Commit, { commitSha: sha }, {
       repositoryId: repo._id,
       commitSha: sha,
-      branch: 'main',
+      branch: repo.defaultBranch,
       provider: 'GITHUB',
       repositoryFullName: repo.repositoryFullName,
-      authorName: record.members[0].fullName,
-      authorEmail: record.members[0].email,
-      timestamp: at('2026-04-12T13:30:00+07:00'),
-      message: 'Complete final implementation and presentation evidence',
+      authorName: latestCommit?.authorName || record.members[0].fullName,
+      authorEmail: latestCommit?.authorEmail || record.members[0].email,
+      authorUsername: latestCommit?.authorUsername,
+      parentCommitShas: latestCommit?.parentCommitShas || [],
+      timestamp: latestCommit ? at(latestCommit.timestamp) : at('2026-04-12T13:30:00+07:00'),
+      message: latestCommit?.message || 'Complete final implementation and presentation evidence',
       commitUrl: `${repo.repositoryUrl}/commit/${sha}`,
-      linesAdded: 420 + record.teamIndex,
-      linesRemoved: 35,
-      filesChanged: 18
+      linesAdded: latestCommit?.linesAdded ?? (420 + record.teamIndex),
+      linesRemoved: latestCommit?.linesRemoved ?? 35,
+      filesChanged: latestCommit?.filesChanged ?? 18,
+      rawStats: latestCommit?.rawStats || null
     })
+    if (repositoryOverride?.historicalCommits) {
+      await Promise.all(repositoryOverride.historicalCommits.map(([commitSha, parentCommitShas, timestamp, message, linesAdded, linesRemoved, filesChanged]) => {
+        return upsertOne(Commit, { commitSha }, {
+          repositoryId: repo._id,
+          commitSha,
+          branch: repo.defaultBranch,
+          provider: 'GITHUB',
+          repositoryFullName: repo.repositoryFullName,
+          authorName: 'Vinh Timoon',
+          authorEmail: 'vinhm281@gmail.com',
+          authorUsername: 'VinhTimoon',
+          parentCommitShas,
+          timestamp: at(timestamp),
+          message,
+          commitUrl: `${repo.repositoryUrl}/commit/${commitSha}`,
+          linesAdded,
+          linesRemoved,
+          filesChanged,
+          rawStats: { total: linesAdded + linesRemoved, additions: linesAdded, deletions: linesRemoved }
+        })
+      }))
+    }
+    const latestDiff = repositoryOverride?.latestDiff
     const diff = await upsertOne(CommitDiff, { repositoryId: repo._id, headCommitSha: sha }, {
       repositoryId: repo._id,
       commitId: commit._id,
-      baseCommitSha: `${sha}-base`,
+      baseCommitSha: latestDiff?.baseCommitSha || `${sha}-base`,
       headCommitSha: sha,
       status: 'READY',
       diffHash: `${sha}-diff`,
-      diffText: 'Representative source changes for the completed showcase.',
-      cleanDiffText: 'Sanitized representative source changes.',
-      totalFiles: 18,
-      includedFiles: 18,
-      excludedFiles: 0,
-      fetchedAt: at('2026-04-12T13:35:00+07:00')
+      diffText: latestDiff?.diffText || 'Representative source changes for the completed showcase.',
+      cleanDiffText: latestDiff?.diffText || 'Sanitized representative source changes.',
+      totalFiles: latestDiff?.totalFiles ?? 18,
+      includedFiles: latestDiff?.includedFiles ?? 18,
+      excludedFiles: latestDiff?.excludedFiles ?? 0,
+      totalRawPatchSize: latestDiff?.totalRawPatchSize ?? 0,
+      totalCleanPatchSize: latestDiff?.totalCleanPatchSize ?? 0,
+      fetchedAt: latestDiff ? at('2026-07-22T17:42:54.835Z') : at('2026-04-12T13:35:00+07:00')
     })
     await upsertOne(GitHubWebhookEvent, { deliveryId: `seal-spring-2026-${slug}` }, {
       deliveryId: `seal-spring-2026-${slug}`,
@@ -840,6 +923,9 @@ export const seedCompletedCycleShowcase = async ({
       competitionId: competition._id,
       rankingType: 'TEAM',
       roundId: finalRound._id,
+      // The final is cross-board, but each finalist retains its originating
+      // track so published results can identify the team's competition track.
+      trackId: record.track._id,
       teamId: record.team._id,
       score: actualFinalScore,
       rankSortScore: actualFinalScore,
@@ -847,8 +933,8 @@ export const seedCompletedCycleShowcase = async ({
       calculationSource: 'OFFICIAL_JUDGE_SCORES_ONLY',
       calculationSummary: { assignedJudges: 5, lockedSheets: 5, aiInfluence: false },
       calculatedAt: at('2026-04-12T18:30:00+07:00'),
-      isSelectedForFinal: true,
-      selectionReason: 'Advanced as a top-two preliminary team.',
+      isSelectedForFinal: false,
+      selectionReason: 'Final round completed; no further advancement applies.',
       note: index < 4 ? 'Award-winning finalist.' : 'Finalist.',
       publishedAt: at('2026-04-12T18:40:00+07:00'),
       publishedBy: coordinatorUser._id
@@ -875,12 +961,16 @@ export const seedCompletedCycleShowcase = async ({
     teamId: record.team._id
   })))
 
+  const questionVotes = officialTeams.slice(0, 3).map(record => ({
+    voterId: record.members[0]._id,
+    votedAt: at('2026-04-09T21:00:00+07:00')
+  }))
   const question = await upsertOne(WorkshopQuestion, { workshopId: workshop._id, content: 'Can AI review change the official judge score?' }, {
     workshopId: workshop._id,
     authorId: officialTeams[0].members[0]._id,
     content: 'Can AI review change the official judge score?',
-    voteCount: 18,
-    votes: officialTeams.slice(0, 3).map(record => ({ voterId: record.members[0]._id, votedAt: at('2026-04-09T21:00:00+07:00') }))
+    voteCount: questionVotes.length,
+    votes: questionVotes
   })
   void question
   await upsertOne(WorkshopFeedback, { workshopId: workshop._id, authorId: officialTeams[0].members[0]._id }, {

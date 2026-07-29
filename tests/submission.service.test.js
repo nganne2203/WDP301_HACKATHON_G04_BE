@@ -19,6 +19,7 @@ const leaderActor = { id: ids.leader, roles: ['PARTICIPANT'] }
 const memberActor = { id: ids.member, roles: ['PARTICIPANT'] }
 const outsiderActor = { id: '111111111111111111111119', roles: ['PARTICIPANT'] }
 const coordinatorActor = { id: '111111111111111111111118', roles: ['COORDINATOR'] }
+const judgeActor = { id: '111111111111111111111116', roles: ['JUDGE'] }
 
 const getId = (value) => value?._id?.toString?.() || value?.toString?.()
 
@@ -67,7 +68,9 @@ const createSubmissionFixture = ({
   roundStatus = 'OPEN',
   assignedTeamIds = [ids.team],
   memberParticipantStatus = 'JOINED',
-  notificationService = null
+  notificationService = null,
+  boards = new Map(),
+  allowJudgeHistoricalSubmissionAccess = false
 } = {}) => {
   const competitions = new Map([[ids.competition, { _id: ids.competition, status: 'ONGOING' }]])
   const rounds = new Map([[
@@ -158,9 +161,10 @@ const createSubmissionFixture = ({
       roundModel: createModel(rounds),
       teamModel: createModel(teams),
       repositoryModel: createRepositoryModel(repositories),
-      boardModel: createModel(new Map()),
+      boardModel: createModel(boards),
       participantModel: createModel(participants),
-      notificationService
+      notificationService,
+      allowJudgeHistoricalSubmissionAccess
     }),
     stores: {
       submissions,
@@ -304,6 +308,37 @@ test('listSubmissions scopes participant results to their own team', async () =>
   assert.equal(submissions.length, 1)
   assert.equal(submissions[0].teamId, ids.team)
   assert.equal(pagination.totalItems, 1)
+})
+
+test('development judge access allows assigned judges to read archived submission artifacts', async () => {
+  const boards = new Map([[ids.board, {
+    _id: ids.board,
+    competitionId: ids.competition,
+    roundId: ids.round,
+    judgeIds: [judgeActor.id],
+    teamIds: [ids.team],
+    status: 'COMPLETED'
+  }]])
+  const { service, stores } = createSubmissionFixture({
+    roundStatus: 'COMPLETED',
+    boards,
+    allowJudgeHistoricalSubmissionAccess: true
+  })
+  stores.submissions.set(ids.submission, {
+    _id: ids.submission,
+    competitionId: ids.competition,
+    roundId: ids.round,
+    teamId: ids.team,
+    reportUrl: 'https://example.com/report.pdf',
+    presentationUrl: 'https://example.com/slides.pdf',
+    status: 'ACCEPTED'
+  })
+
+  const submission = await service.getSubmissionById(ids.submission, judgeActor)
+  const { submissions } = await service.listSubmissions({ competitionId: ids.competition }, judgeActor)
+
+  assert.equal(submission.reportUrl, 'https://example.com/report.pdf')
+  assert.equal(submissions.length, 1)
 })
 
 test('updateSubmissionStatus notifies team when submission is reviewed', async () => {
