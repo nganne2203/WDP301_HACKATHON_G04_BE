@@ -54,6 +54,16 @@ const getGithubErrorMessage = (data, fallback) => {
   return fallback
 }
 
+// ApiError intentionally has a generic `message` for the global HTTP handler.
+// Bulk operations return per-team results instead, so retain the safe, actionable
+// detail that was placed in `errors` (for example a GitHub 422 response).
+const getBulkOperationErrorMessage = (error) => {
+  const details = Array.isArray(error?.errors) ? error.errors : []
+  const firstDetail = details.find(detail => typeof detail === 'string' && detail.trim())
+
+  return firstDetail || error?.message || 'Unknown error during repository creation'
+}
+
 const createGithubClient = ({ fetchImpl = globalThis.fetch } = {}) => {
   if (!fetchImpl) {
     throw new Error('Fetch API is not available in this Node.js runtime')
@@ -885,7 +895,7 @@ export const createGithubService = ({
         failed.push({
           teamId: team._id.toString(),
           teamName: team.name,
-          error: error.message || 'Unknown error during repository creation'
+          error: getBulkOperationErrorMessage(error)
         })
       }
     }

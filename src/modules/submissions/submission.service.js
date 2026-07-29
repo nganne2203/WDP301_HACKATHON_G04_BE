@@ -41,7 +41,9 @@ const SUBMISSION_CREATE_FIELDS = [
   'status'
 ]
 
-const SUBMISSION_EDITABLE_STATUSES = new Set(['DRAFT'])
+// A submitted entry remains editable until its round's submission window
+// closes.  ACCEPTED and REJECTED are review decisions and remain locked.
+const SUBMISSION_EDITABLE_STATUSES = new Set(['DRAFT', 'SUBMITTED'])
 const SUBMISSION_REVIEWABLE_STATUSES = new Set(['ACCEPTED', 'REJECTED'])
 const SUBMISSION_TEAM_STATUSES = new Set(['CONFIRMED'])
 const ACTIVE_TEAM_STATUSES = ['WAITING_FOR_MEMBERS', 'WAITLISTED', 'CONFIRMED']
@@ -548,7 +550,7 @@ export const createSubmissionService = ({
   const updateSubmission = async (id, payload = {}, actor = {}) => {
     const submission = await ensureSubmissionExists(id)
     if (!SUBMISSION_EDITABLE_STATUSES.has(submission.status)) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only draft submissions can be edited'])
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['This submission can no longer be edited'])
     }
 
     const safePayload = pickSafeFields(payload, SUBMISSION_FIELDS)

@@ -17,7 +17,9 @@ const create = async (data) => {
   return await Round.create(data)
 }
 
-const findAll = async ({ filter = {}, skip = 0, limit = 10, sort = { startTime: 1, createdAt: 1 } } = {}) => {
+// `PRELIMINARY` sorts ahead of `FINAL` in descending lexical order.  This is
+// intentional: the final round must remain at the end of every round list.
+const findAll = async ({ filter = {}, skip = 0, limit = 10, sort = { roundType: -1, startTime: 1, name: 1, createdAt: 1 } } = {}) => {
   return await Round.find(filter)
     .populate(roundPopulate)
     .sort(sort)
