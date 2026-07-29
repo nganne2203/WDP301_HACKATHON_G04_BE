@@ -28,7 +28,7 @@ const createTrack = {
     problemStatement: Joi.string().trim().max(10000).allow('', null),
     type: trackType.default('PRELIMINARY_GROUP'),
     teamIds: Joi.array().items(objectId).unique().default([]),
-    maxTeams: Joi.number().integer().min(1),
+    maxTeams: Joi.number().integer().min(2).required(),
     status: trackStatus.default('DRAFT')
   })
 }
@@ -44,7 +44,7 @@ const updateTrack = {
     problemStatement: Joi.string().trim().max(10000).allow('', null),
     type: trackType,
     teamIds: Joi.array().items(objectId).unique(),
-    maxTeams: Joi.number().integer().min(1).allow(null),
+    maxTeams: Joi.number().integer().min(2),
     status: trackStatus
   }).min(1)
 }

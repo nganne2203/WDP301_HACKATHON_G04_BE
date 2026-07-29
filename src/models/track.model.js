@@ -16,7 +16,7 @@ const trackSchema = new Schema(
       default: 'PRELIMINARY_GROUP'
     },
     teamIds: [{ type: Schema.Types.ObjectId, ref: 'Team' }],
-    maxTeams: { type: Number },
+    maxTeams: { type: Number, min: 2 },
     status: {
       type: String,
       enum: ['DRAFT', 'OPEN', 'LOCKED', 'COMPLETED'],

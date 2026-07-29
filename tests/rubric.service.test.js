@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { createRubricService } from '../src/modules/rubrics/rubric.service.js'
+import ApiError from '../src/utils/ApiError.js'
 
 const ids = {
   competition: 'aaaaaaaaaaaaaaaaaaaaaaaa',
@@ -21,6 +22,36 @@ const countModel = (value) => ({
   async countDocuments() {
     return value
   }
+})
+
+test('createRubric rejects a duplicate title within the same competition', async () => {
+  const repository = {
+    async findByCompetitionAndTitle() {
+      return { _id: ids.rubric }
+    },
+    async createRubric() {
+      throw new Error('should not create a duplicate rubric')
+    }
+  }
+
+  const service = createRubricService({
+    repository,
+    competitionModel: createModel(new Map([[ids.competition, { _id: ids.competition, status: 'DRAFT' }]])),
+    scoreSheetModel: countModel(0)
+  })
+
+  await assert.rejects(
+    service.createRubric({
+      competitionId: ids.competition,
+      title: 'Technical Rubric',
+      totalScore: 100,
+      criterionMaxScore: 10,
+      status: 'DRAFT'
+    }),
+    (error) => error instanceof ApiError &&
+      error.code === 'CONFLICT' &&
+      error.errors.includes('Rubric title already exists in this competition')
+  )
 })
 
 test('updateCriterion and deleteCriterion recompute total weight without changing the configured total', async () => {
