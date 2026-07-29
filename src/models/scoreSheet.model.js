@@ -8,7 +8,7 @@ const scoreSheetSchema = new Schema(
     roundId: { type: Schema.Types.ObjectId, ref: 'Round', required: true },
     boardId: { type: Schema.Types.ObjectId, ref: 'JudgingBoard' },
     teamId: { type: Schema.Types.ObjectId, ref: 'Team', required: true },
-    submissionId: { type: Schema.Types.ObjectId, ref: 'Submission', required: true },
+    submissionId: { type: Schema.Types.ObjectId, ref: 'Submission', default: null },
     judgeId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     rubricId: { type: Schema.Types.ObjectId, ref: 'Rubric' },
     scoreIds: [{ type: Schema.Types.ObjectId, ref: 'Score' }],

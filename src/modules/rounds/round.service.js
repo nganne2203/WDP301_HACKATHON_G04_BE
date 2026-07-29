@@ -274,7 +274,7 @@ const ensureUsersExist = async (userIds = []) => {
   }
 }
 
-const ensureTeamsBelongToRoundContext = async ({ competitionId, trackId, teamIds = [] }) => {
+const ensureTeamsBelongToRoundContext = async ({ competitionId, teamIds = [] }) => {
   for (const teamId of teamIds) {
     ensureObjectId(teamId, 'team id')
   }
@@ -287,9 +287,6 @@ const ensureTeamsBelongToRoundContext = async ({ competitionId, trackId, teamIds
   for (const team of teams) {
     if (team.competitionId?.toString() !== competitionId.toString()) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned teams must belong to the specified competition'])
-    }
-    if (trackId && team.trackId?.toString() !== trackId.toString()) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned teams must belong to the selected track'])
     }
     if (!ROUND_ASSIGNABLE_TEAM_STATUSES.includes(team.status)) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Only confirmed teams can be assigned to rounds'])
@@ -308,6 +305,13 @@ const extractIds = (values = []) => values.map(value => value?._id?.toString?.()
 const countDocuments = async (model, filter) => {
   if (!model?.countDocuments) return 0
   return await model.countDocuments(filter)
+}
+
+const getBoardStatusForRound = ({ round, teamIds = [] }) => {
+  if (teamIds.length === 0) return 'DRAFT'
+  if (round.status === 'SCORING') return 'SCORING'
+  if (round.status === 'COMPLETED') return 'COMPLETED'
+  return 'ASSIGNED'
 }
 
 const syncSingleJudgingBoardForRound = async (round) => {
@@ -335,7 +339,7 @@ const syncSingleJudgingBoardForRound = async (round) => {
     teamIds,
     judgeIds,
     maxTeams: Math.max(teamIds.length, configuredCapacity || trackCapacity || existingBoards[0]?.maxTeams || 1),
-    status: teamIds.length > 0 ? 'ASSIGNED' : 'DRAFT'
+    status: getBoardStatusForRound({ round, teamIds })
   }
 
   if (existingBoards.length === 0) {
@@ -517,7 +521,6 @@ export const createRoundService = ({
     await ensureUsersExist(payload.assignedJudgeIds || [])
     await ensureTeamsBelongToRoundContext({
       competitionId: competition._id,
-      trackId: payload.trackId,
       teamIds: payload.assignedTeamIds ?? payload.promotedTeamIds ?? []
     })
     ensurePromotionRuleConsistency(payload)
@@ -569,7 +572,7 @@ export const createRoundService = ({
     if (safePayload.assignedJudgeIds) await ensureUsersExist(safePayload.assignedJudgeIds)
     const teamIdsToValidate = safePayload.assignedTeamIds ?? safePayload.promotedTeamIds
     if (teamIdsToValidate) {
-      await ensureTeamsBelongToRoundContext({ competitionId, trackId, teamIds: teamIdsToValidate })
+      await ensureTeamsBelongToRoundContext({ competitionId, teamIds: teamIdsToValidate })
     }
 
     ensurePromotionRuleConsistency({

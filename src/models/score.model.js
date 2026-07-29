@@ -4,7 +4,9 @@ const { Schema } = mongoose
 
 const scoreSchema = new Schema(
   {
-    submissionId: { type: Schema.Types.ObjectId, ref: 'Submission', required: true },
+    // Scores can belong to a team that did not submit a deliverable. The
+    // score-sheet remains the canonical owner in both cases.
+    submissionId: { type: Schema.Types.ObjectId, ref: 'Submission', default: null },
     scoreSheetId: { type: Schema.Types.ObjectId, ref: 'ScoreSheet' },
     judgeId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     criterionId: { type: Schema.Types.ObjectId, ref: 'Criterion' },
@@ -16,7 +18,7 @@ const scoreSchema = new Schema(
   { timestamps: true }
 )
 
-scoreSchema.index({ submissionId: 1, judgeId: 1, criterionId: 1 }, { unique: true })
+scoreSchema.index({ scoreSheetId: 1, criterionId: 1 }, { unique: true })
 scoreSchema.index({ scoreSheetId: 1 })
 scoreSchema.index({ judgeId: 1 })
 
