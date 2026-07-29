@@ -469,18 +469,11 @@ export const createJudgingBoardService = ({
     const competition = await ensureCompetitionExists(competitionId)
     ensureCompetitionAllowsBoardChanges(competition)
     const round = await ensureRoundBelongsToCompetition({ competitionId: competition._id, roundId })
-    const boardCount = Number(competition.competitionConfig?.boardCount || competition.competitionConfig?.trackCount || 0)
-    if (!boardCount) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Competition competitionConfig.boardCount is required for board randomization'])
-    }
-
-    // Preliminary boards are one judging stage.  Every confirmed team in the
-    // competition must be considered; filtering by only the tracks that
-    // already have a round silently drops confirmed teams from a newer track.
     const isFinalRound = round.roundType === 'FINAL'
-    const stageRounds = round.roundType === 'PRELIMINARY'
-      ? await Round.find({ competitionId: competition._id, roundType: 'PRELIMINARY' }).select('_id trackId')
-      : [round]
+    const stageRounds = isFinalRound
+      ? [round]
+      : await Round.find({ competitionId: competition._id, roundType: 'PRELIMINARY' }).select('_id name trackId')
+    const boardCount = stageRounds.length
     const teamFilter = { competitionId: competition._id }
 
     if (isFinalRound) {
@@ -497,10 +490,7 @@ export const createJudgingBoardService = ({
     const eligibleTeams = roundTeams.filter(team => ELIGIBLE_TEAM_STATUSES.has(team.status))
     const ineligibleTeams = roundTeams.filter(team => !ELIGIBLE_TEAM_STATUSES.has(team.status))
     const configuredMaxTeamsPerBoard = Number(competition.competitionConfig?.maxTeamsPerBoard || 0) || null
-    const derivedMaxTeamsPerBoard = eligibleTeams.length > 0
-      ? Math.ceil(eligibleTeams.length / boardCount)
-      : configuredMaxTeamsPerBoard || 0
-    const maxTeamsPerBoard = configuredMaxTeamsPerBoard || derivedMaxTeamsPerBoard || 0
+    const maxTeamsPerBoard = Number(configuredMaxTeamsPerBoard || Math.ceil(eligibleTeams.length / Math.max(boardCount, 1)) || 0)
     const stageRoundIds = stageRounds.map(item => item._id)
 
     if (maxTeamsPerBoard && eligibleTeams.length > boardCount * maxTeamsPerBoard) {
@@ -514,6 +504,7 @@ export const createJudgingBoardService = ({
       maxTeamsPerBoard,
       eligibleTeams,
       ineligibleTeams,
+      stageRounds,
       stageRoundIds
     }
   }
@@ -528,6 +519,7 @@ export const createJudgingBoardService = ({
     let boardPlans
     if (predefinedBoards) {
       boardPlans = predefinedBoards.map(board => ({
+        roundId: board.roundId || roundId,
         boardNumber: board.boardNumber,
         boardLabel: buildBoardLabel(board.boardNumber),
         name: board.name || `Board ${buildBoardLabel(board.boardNumber)}`,
@@ -549,6 +541,7 @@ export const createJudgingBoardService = ({
         boardCount: context.boardCount
       })
       boardPlans = Array.from({ length: context.boardCount }, (_, index) => {
+        const targetRound = context.stageRounds[index]
         const boardNumber = index + 1
         const boardLabel = buildBoardLabel(boardNumber)
         const boardTeams = distributedTeams[index]
@@ -557,7 +550,8 @@ export const createJudgingBoardService = ({
         return {
           boardNumber,
           boardLabel,
-          name: `Board ${boardLabel}`,
+          roundId: targetRound?._id?.toString?.() || targetRound?.id || roundId,
+          name: targetRound?.name || `Board ${boardLabel}`,
           maxTeams: context.maxTeamsPerBoard,
           judgeIds: existingBoard?.judgeIds || [],
           teams: boardTeams.map((team, teamIndex) => ({
@@ -627,7 +621,11 @@ export const createJudgingBoardService = ({
 
     // The round mirrors the confirmed board lineup for read-only display and
     // participant access. Coordinators cannot manually alter this list.
-    await Round.findByIdAndUpdate(roundId, { assignedTeamIds: [...eligibleIds] })
+    const teamIdsByRound = new Map()
+    for (const board of result.boards) teamIdsByRound.set(board.roundId || roundId, board.teamIds)
+    await Promise.all([...teamIdsByRound.entries()].map(([targetRoundId, teamIds]) =>
+      Round.findByIdAndUpdate(targetRoundId, { assignedTeamIds: teamIds })
+    ))
 
     await Team.updateMany(
       { _id: { $in: [...eligibleIds] } },
@@ -643,24 +641,18 @@ export const createJudgingBoardService = ({
       }
     }
 
-    // Collapse legacy per-track preliminary boards into the selected stage
-    // round before writing the new balanced A/B/C lineup.
-    if (result.round.roundType === 'PRELIMINARY') {
-      const siblingRounds = await Round.find({ competitionId, roundType: 'PRELIMINARY', _id: { $ne: roundId } }).select('_id')
-      if (siblingRounds.length) await repository.deleteByRoundIds(siblingRounds.map(item => item._id))
-    }
-
     const confirmedBoards = []
     const boardIdsByNumber = new Map()
     for (const board of result.boards) {
+      const targetRoundId = board.roundId || roundId
       const existingBoard = await repository.findByRoundAndBoardNumber({
-        roundId,
+        roundId: targetRoundId,
         boardNumber: board.boardNumber
       })
 
       const payload = {
         competitionId,
-        roundId,
+        roundId: targetRoundId,
         trackId: undefined,
         name: board.name,
         boardNumber: board.boardNumber,
@@ -678,10 +670,10 @@ export const createJudgingBoardService = ({
       confirmedBoards.push(normalizeBoard(await repository.findById(savedBoard._id)))
     }
 
-    await repository.deleteManyByRoundExcludingBoardNumbers({
-      roundId,
-      boardNumbers: result.boards.map(board => board.boardNumber)
-    })
+    await Promise.all([...teamIdsByRound.keys()].map((targetRoundId) => repository.deleteManyByRoundExcludingBoardNumbers({
+      roundId: targetRoundId,
+      boardNumbers: result.boards.filter((board) => (board.roundId || roundId) === targetRoundId).map(board => board.boardNumber)
+    })))
 
     if (repository.replaceRoundTeamPlacements) {
       await repository.replaceRoundTeamPlacements({
@@ -689,7 +681,7 @@ export const createJudgingBoardService = ({
         roundId,
         placements: result.boards.flatMap(board => board.teamIds.map((teamId, index) => ({
           competitionId,
-          roundId,
+          roundId: board.roundId || roundId,
           teamId,
           boardId: boardIdsByNumber.get(board.boardNumber),
           boardNumber: board.boardNumber,

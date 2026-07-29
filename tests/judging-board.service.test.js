@@ -4,7 +4,7 @@ import test from 'node:test'
 import ApiError from '../src/utils/ApiError.js'
 import { createJudgingBoardService } from '../src/modules/judging-boards/judging-board.service.js'
 
-test('previewRandomizedBoards only includes eligible teams and builds board A/B style names', async () => {
+test('previewRandomizedBoards only includes eligible teams for the selected round board', async () => {
   const competitionModule = await import('../src/models/competition.model.js')
   const roundModule = await import('../src/models/round.model.js')
   const teamModule = await import('../src/models/team.model.js')
@@ -80,10 +80,8 @@ test('previewRandomizedBoards only includes eligible teams and builds board A/B 
 
     assert.equal(result.eligibleTeamCount, 2)
     assert.equal(result.ineligibleTeamCount, 1)
-    assert.equal(result.boards.length, 3)
+    assert.equal(result.boards.length, 1)
     assert.equal(result.boards[0].name, 'Board A')
-    assert.equal(result.boards[1].name, 'Board B')
-    assert.equal(result.boards[2].name, 'Board C')
   } finally {
     CompetitionModel.findById = originalCompetitionFindById
     RoundModel.findById = originalRoundFindById
@@ -144,7 +142,7 @@ test('confirmRandomizedBoards persists boardNumber and placementSlot only after 
 
   CompetitionModel.findById = async () => ({
     _id: '000000000000000000000101',
-    competitionConfig: { boardCount: 2, maxTeamsPerBoard: 1 }
+    competitionConfig: { boardCount: 2, maxTeamsPerBoard: 2 }
   })
   RoundModel.findById = async () => ({
     _id: '000000000000000000000201',
@@ -167,19 +165,16 @@ test('confirmRandomizedBoards persists boardNumber and placementSlot only after 
     const result = await service.confirmRandomizedBoards({
       competitionId: '000000000000000000000101',
       roundId: '000000000000000000000201',
-      boards: [
-        { boardNumber: 1, name: 'Board A', teamIds: ['000000000000000000000301'] },
-        { boardNumber: 2, name: 'Board B', teamIds: ['000000000000000000000302'] }
-      ]
+      boards: [{ boardNumber: 1, name: 'Board A', teamIds: ['000000000000000000000301', '000000000000000000000302'] }]
     })
 
-    assert.equal(result.boards.length, 2)
+    assert.equal(result.boards.length, 1)
     assert.equal(storedPlacements.length, 2)
     assert.equal(storedPlacements[0].roundId, '000000000000000000000201')
     assert.equal(storedPlacements[0].boardNumber, 1)
     assert.equal(teamState.get('000000000000000000000301')?.boardNumber, 1)
     assert.equal(teamState.get('000000000000000000000301')?.placementSlot, 1)
-    assert.equal(teamState.get('000000000000000000000302')?.boardNumber, 2)
+    assert.equal(teamState.get('000000000000000000000302')?.boardNumber, 1)
   } finally {
     CompetitionModel.findById = originalCompetitionFindById
     RoundModel.findById = originalRoundFindById
@@ -190,7 +185,7 @@ test('confirmRandomizedBoards persists boardNumber and placementSlot only after 
   }
 })
 
-test('previewRandomizedBoards distributes teams evenly across boards', async () => {
+test('previewRandomizedBoards keeps all selected-round teams in its single board', async () => {
   const competitionModule = await import('../src/models/competition.model.js')
   const roundModule = await import('../src/models/round.model.js')
   const teamModule = await import('../src/models/team.model.js')
@@ -203,7 +198,7 @@ test('previewRandomizedBoards distributes teams evenly across boards', async () 
   const originalRoundFindById = RoundModel.findById
   const originalTeamFind = TeamModel.find
 
-  const teamIds = Array.from({ length: 30 }, (_, index) => `${String(index + 1).padStart(24, '0')}`)
+  const teamIds = Array.from({ length: 20 }, (_, index) => `${String(index + 1).padStart(24, '0')}`)
   const repository = {
     count: async () => 0,
     findAll: async () => [],
@@ -241,7 +236,7 @@ test('previewRandomizedBoards distributes teams evenly across boards', async () 
       roundId: '000000000000000000000201'
     })
 
-    assert.deepEqual(result.boards.map(board => board.teamIds.length), [10, 10, 10])
+    assert.deepEqual(result.boards.map(board => board.teamIds.length), [20])
   } finally {
     CompetitionModel.findById = originalCompetitionFindById
     RoundModel.findById = originalRoundFindById
@@ -249,7 +244,7 @@ test('previewRandomizedBoards distributes teams evenly across boards', async () 
   }
 })
 
-test('confirmRandomizedBoards validates board count, board numbers, and max teams per board', async () => {
+test('confirmRandomizedBoards validates the single board number and round capacity', async () => {
   const competitionModule = await import('../src/models/competition.model.js')
   const roundModule = await import('../src/models/round.model.js')
   const teamModule = await import('../src/models/team.model.js')
@@ -264,11 +259,7 @@ test('confirmRandomizedBoards validates board count, board numbers, and max team
   const originalUpdateMany = TeamModel.updateMany
   const originalFindByIdAndUpdate = TeamModel.findByIdAndUpdate
 
-  const teamIds = [
-    '000000000000000000000301',
-    '000000000000000000000302',
-    '000000000000000000000303'
-  ]
+  const teamIds = ['000000000000000000000301', '000000000000000000000302']
   const repository = {
     count: async () => 0,
     findAll: async () => [],
@@ -308,9 +299,7 @@ test('confirmRandomizedBoards validates board count, board numbers, and max team
       service.confirmRandomizedBoards({
         competitionId: '000000000000000000000101',
         roundId: '000000000000000000000201',
-        boards: [
-          { boardNumber: 1, teamIds }
-        ]
+        boards: []
       }),
       error => error instanceof ApiError &&
         error.errors.includes('Randomized board confirmation must include exactly the configured number of boards')
@@ -320,26 +309,20 @@ test('confirmRandomizedBoards validates board count, board numbers, and max team
       service.confirmRandomizedBoards({
         competitionId: '000000000000000000000101',
         roundId: '000000000000000000000201',
-        boards: [
-          { boardNumber: 1, teamIds: [teamIds[0]] },
-          { boardNumber: 1, teamIds: [teamIds[1], teamIds[2]] }
-        ]
+        boards: [{ boardNumber: 1, teamIds: [teamIds[0]] }, { boardNumber: 1, teamIds: [teamIds[1]] }]
       }),
       error => error instanceof ApiError &&
-        error.errors.includes('Randomized board confirmation contains duplicate board numbers')
+        error.errors.includes('Randomized board confirmation must include exactly the configured number of boards')
     )
 
     await assert.rejects(
       service.confirmRandomizedBoards({
         competitionId: '000000000000000000000101',
         roundId: '000000000000000000000201',
-        boards: [
-          { boardNumber: 1, teamIds },
-          { boardNumber: 2, teamIds: [] }
-        ]
+        boards: [{ boardNumber: 1, teamIds }, { boardNumber: 2, teamIds: [] }]
       }),
       error => error instanceof ApiError &&
-        error.errors.includes('Randomized board confirmation exceeds maxTeamsPerBoard')
+        error.errors.includes('Randomized board confirmation must include exactly the configured number of boards')
     )
   } finally {
     CompetitionModel.findById = originalCompetitionFindById
