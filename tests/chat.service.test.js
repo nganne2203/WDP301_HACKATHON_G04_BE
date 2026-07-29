@@ -15,7 +15,11 @@ const ids = {
 
 const makeTeam = ({ _id = ids.team, competitionStatus = 'ONGOING' } = {}) => ({
   _id,
-  competitionId: { _id: '000000000000000000000401', status: competitionStatus },
+  competitionId: {
+    _id: '000000000000000000000401',
+    title: 'SEAL Hackathon 2026',
+    status: competitionStatus
+  },
   leaderId: ids.actor,
   memberIds: [],
   mentorIds: [ids.mentor],
@@ -73,6 +77,7 @@ test('completed competition team chat is read-only while archived competition ch
   })
   assert.equal(rooms.length, 1)
   assert.equal(rooms[0].teamId, ids.completedTeam)
+  assert.equal(rooms[0].team.competition.title, 'SEAL Hackathon 2026')
   assert.equal(rooms[0].team.competitionStatus, 'COMPLETED')
 
   const beforeSendUpserts = upsertCount

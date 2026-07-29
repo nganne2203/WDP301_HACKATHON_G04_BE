@@ -120,11 +120,22 @@ const normalizeMessage = (message) => {
   }
 }
 
+const normalizeCompetition = (competition) => {
+  if (!competition) return null
+
+  return {
+    id: getId(competition),
+    title: competition.title,
+    status: competition.status
+  }
+}
+
 const normalizeTeam = (team) => {
   if (!team) return null
 
   return {
     id: getId(team),
+    competition: normalizeCompetition(team.competitionId || team.competition),
     competitionId: getId(team.competitionId),
     name: team.name,
     projectName: team.projectName || null,
