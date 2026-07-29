@@ -28,7 +28,9 @@ export const SCORE_SHEET_VALIDATION = {
       roundId: objectId.required(),
       boardId: objectId.required(),
       teamId: objectId.required(),
-      submissionId: objectId.required(),
+      // A judge can record a zero-score sheet when an assigned team has not
+      // submitted any deliverables. In that case there is no submission to link.
+      submissionId: objectId.allow(null).optional(),
       rubricId: objectId.allow(null),
       generalComment: Joi.string().trim().max(2000).allow('', null),
       scores: Joi.array().items(scoreItem).default([])
