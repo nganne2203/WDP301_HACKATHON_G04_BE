@@ -108,6 +108,12 @@ const normalizeBoard = (board) => {
     ? board.toObject({ getters: true, virtuals: false })
     : board
 
+  const configuredCapacity = Number(plainBoard.competitionId?.competitionConfig?.maxTeamsPerBoard || 0)
+  const effectiveMaxTeams = Math.max(
+    (plainBoard.teamIds || []).length,
+    configuredCapacity || plainBoard.maxTeams || 1
+  )
+
   return {
     id: plainBoard._id?.toString() || plainBoard.id,
     competition: normalizeCompetition(plainBoard.competitionId),
@@ -122,7 +128,10 @@ const normalizeBoard = (board) => {
     teamIds: (plainBoard.teamIds || []).map(team => team._id?.toString?.() || team.toString?.() || team),
     judges: (plainBoard.judgeIds || []).map(normalizeJudge),
     judgeIds: (plainBoard.judgeIds || []).map(judge => judge._id?.toString?.() || judge.toString?.() || judge),
-    maxTeams: plainBoard.maxTeams,
+    // The competition configuration is the source of truth.  This also makes
+    // boards created before the configuration was saved stop displaying the
+    // schema's legacy default (10) after the next read.
+    maxTeams: effectiveMaxTeams,
     status: plainBoard.status,
     createdAt: plainBoard.createdAt,
     updatedAt: plainBoard.updatedAt
@@ -383,9 +392,11 @@ export const createJudgingBoardService = ({
     const round = await ensureRoundBelongsToCompetition({ competitionId: competition._id, roundId: payload.roundId })
     const trackId = payload.trackId || round.trackId
     await ensureTrackBelongsToCompetition({ competitionId: competition._id, trackId })
+    const configuredCapacity = Number(competition.competitionConfig?.maxTeamsPerBoard || 0)
+    const resolvedMaxTeams = payload.maxTeams ?? (configuredCapacity || round.trackId?.maxTeams || 1)
     await ensureTeamsBelongToBoardContext({ competitionId: competition._id, trackId, teamIds: payload.teamIds || [] })
     await ensureUsersExist(payload.judgeIds || [])
-    ensureBoardCapacity({ teamIds: payload.teamIds || [], maxTeams: payload.maxTeams })
+    ensureBoardCapacity({ teamIds: payload.teamIds || [], maxTeams: resolvedMaxTeams })
 
     const existingBoard = await repository.findByRoundAndBoardNumber({
       roundId: payload.roundId,
@@ -397,7 +408,8 @@ export const createJudgingBoardService = ({
 
     const board = await repository.create({
       ...pickSafeFields(payload, BOARD_FIELDS),
-      trackId: trackId || undefined
+      trackId: trackId || undefined,
+      maxTeams: resolvedMaxTeams
     })
     const createdBoard = await repository.findById(board._id)
     await notifyAssignedJudges({ board: createdBoard })

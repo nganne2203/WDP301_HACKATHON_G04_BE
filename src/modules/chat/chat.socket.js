@@ -1,12 +1,18 @@
 import { CHAT_SERVICE } from './chat.service.js'
 import { SOCKET_EVENTS } from './socketEvents.js'
 import { LOGGER } from '#utils/logger.js'
+import ApiError from '#utils/ApiError.js'
+
+const getPublicSocketError = (error) => {
+  if (error instanceof ApiError) return error.errors?.[0] || error.message
+  return 'We could not complete that chat action. Please try again.'
+}
 
 const emitSocketError = (socket, error) => {
   socket.emit(SOCKET_EVENTS.ERROR, {
-    code: error.code || 'SOCKET_ERROR',
-    message: error.message || 'Realtime chat error',
-    errors: error.errors || []
+    code: error instanceof ApiError ? error.code : 'SOCKET_ERROR',
+    message: getPublicSocketError(error),
+    errors: error instanceof ApiError ? error.errors || [] : []
   })
 }
 
@@ -27,7 +33,7 @@ export const registerChatSocketHandlers = (io, socket) => {
     } catch (error) {
       LOGGER.warn('Socket join team room failed', { socketId: socket.id, error: error.message })
       emitSocketError(socket, error)
-      acknowledge(callback, { ok: false, error: error.message })
+      acknowledge(callback, { ok: false, error: getPublicSocketError(error) })
     }
   })
 
@@ -53,7 +59,7 @@ export const registerChatSocketHandlers = (io, socket) => {
     } catch (error) {
       LOGGER.warn('Socket send message failed', { socketId: socket.id, error: error.message })
       emitSocketError(socket, error)
-      acknowledge(callback, { ok: false, error: error.message })
+      acknowledge(callback, { ok: false, error: getPublicSocketError(error) })
     }
   })
 
@@ -87,7 +93,7 @@ export const registerChatSocketHandlers = (io, socket) => {
     } catch (error) {
       LOGGER.warn('Socket mark seen failed', { socketId: socket.id, error: error.message })
       emitSocketError(socket, error)
-      acknowledge(callback, { ok: false, error: error.message })
+      acknowledge(callback, { ok: false, error: getPublicSocketError(error) })
     }
   })
 }
