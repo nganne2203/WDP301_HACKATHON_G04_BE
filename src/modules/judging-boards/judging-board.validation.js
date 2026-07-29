@@ -56,6 +56,7 @@ const autoAssignBoards = {
 }
 
 const boardPlanItem = Joi.object({
+  roundId: objectId,
   boardNumber: Joi.number().integer().min(1).required(),
   name: Joi.string().trim().min(2).max(200).required(),
   teamIds: Joi.array().items(objectId).unique().required()
