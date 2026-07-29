@@ -27,6 +27,8 @@ const createRepository = () => {
     findById: async (id) => records.get(id) || null,
     findByCompetitionAndName: async (competitionId, name) => [...records.values()]
       .find(record => getId(record.competitionId) === getId(competitionId) && record.name === name) || null,
+    findByCompetitionAndCode: async (competitionId, code) => [...records.values()]
+      .find(record => getId(record.competitionId) === getId(competitionId) && record.code === code) || null,
     create: async (data) => {
       const id = String(sequence).padStart(24, '0')
       const record = { ...data, _id: id }
@@ -133,6 +135,26 @@ test('track status follows the configured workflow', async () => {
 
   const opened = await service.updateTrack(created.id, { status: 'OPEN' })
   assert.equal(opened.status, 'OPEN')
+})
+
+test('track code must be unique within a competition', async () => {
+  const repository = createRepository()
+  const service = createTrackService({ repository, competitionService })
+
+  await service.createTrack({
+    competitionId: '000000000000000000000101',
+    code: 'A',
+    name: 'First Track'
+  })
+
+  await assert.rejects(
+    service.createTrack({
+      competitionId: '000000000000000000000101',
+      code: 'A',
+      name: 'Second Track'
+    }),
+    error => error instanceof ApiError && error.errors.includes('A track with code “A” already exists in this competition')
+  )
 })
 
 test('track mutations reject completed or archived competitions', async () => {

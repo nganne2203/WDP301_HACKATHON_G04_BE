@@ -157,8 +157,9 @@ export const createGithubService = ({
       try {
         tokenEncrypted = encryption.encrypt(nextToken)
       } catch (error) {
+        LOGGER.error('GitHub token encryption failed', { error: error.message })
         throw new ApiError(ERROR_CODES.BAD_REQUEST, [
-          `Could not encrypt GitHub token: ${error.message}`
+          'GitHub token could not be saved. Please verify the server configuration and try again.'
         ])
       }
     }
@@ -220,8 +221,9 @@ export const createGithubService = ({
     try {
       token = encryption.decrypt(encryptedToken)
     } catch (error) {
+      LOGGER.error('GitHub token decryption failed', { error: error.message })
       throw new ApiError(ERROR_CODES.BAD_REQUEST, [
-        `Could not decrypt GitHub token: ${error.message}`
+        'GitHub token could not be read. Please reconnect the GitHub integration.'
       ])
     }
 

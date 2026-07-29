@@ -7,6 +7,7 @@ import Submission from '#models/submission.model.js'
 import Team from '#models/team.model.js'
 import { QUEUE_SERVICE } from '#services/queue.service.js'
 import { env } from '#configs/environment.js'
+import { LOGGER } from '#utils/logger.js'
 
 const buildCompetitionRoundFilter = ({ competitionId, roundId }) => {
   const filter = {}
@@ -58,6 +59,7 @@ export const createOperationsService = ({
     try {
       queueSummary = await queueService.getQueueSummary()
     } catch (error) {
+      LOGGER.warn('Queue status retrieval failed', { error: error.message })
       queueSummary = {
         queueName: 'github-push-competitions',
         redisStatus: 'not_ready',
@@ -69,7 +71,7 @@ export const createOperationsService = ({
           delayed: 0,
           paused: 0
         },
-        error: error.message
+        error: 'Unable to retrieve queue status.'
       }
     }
 
@@ -129,11 +131,12 @@ export const createOperationsService = ({
     try {
       queueSummary = await queueService.getQueueSummary()
     } catch (error) {
+      LOGGER.warn('Queue pipeline summary retrieval failed', { error: error.message })
       queueSummary = {
         queueName: 'github-push-competitions',
         redisStatus: 'not_ready',
         counts: {},
-        error: error.message
+        error: 'Unable to retrieve queue status.'
       }
     }
 
