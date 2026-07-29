@@ -318,6 +318,10 @@ const syncSingleJudgingBoardForRound = async (round) => {
   const trackId = round.trackId?._id?.toString?.() || round.trackId?.toString?.() || round.trackId || null
   const teamIds = extractIds(round.assignedTeamIds || [])
   const judgeIds = extractIds(round.assignedJudgeIds || [])
+  // Board capacity belongs to the competition's judging configuration.  The
+  // model default of 10 must not silently override a configured value.
+  const configuredCapacity = Number(round.competitionId?.competitionConfig?.maxTeamsPerBoard || 0)
+  const trackCapacity = Number(round.trackId?.maxTeams || 0)
 
   const existingBoards = await JUDGING_BOARD_REPOSITORY.findByRoundId(roundId)
   if (existingBoards.length > 1) return
@@ -330,7 +334,7 @@ const syncSingleJudgingBoardForRound = async (round) => {
     boardNumber: existingBoards[0]?.boardNumber || 1,
     teamIds,
     judgeIds,
-    maxTeams: Math.max(teamIds.length, existingBoards[0]?.maxTeams || 10),
+    maxTeams: Math.max(teamIds.length, configuredCapacity || trackCapacity || existingBoards[0]?.maxTeams || 1),
     status: teamIds.length > 0 ? 'ASSIGNED' : 'DRAFT'
   }
 
