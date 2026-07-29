@@ -194,7 +194,7 @@ const ensureTrackBelongsToCompetition = async ({ competitionId, trackId }) => {
   return track
 }
 
-const ensureTeamsBelongToBoardContext = async ({ competitionId, trackId, teamIds = [] }) => {
+const ensureTeamsBelongToBoardContext = async ({ competitionId, teamIds = [] }) => {
   for (const teamId of teamIds) ensureObjectId(teamId, 'team id')
   const teams = await Team.find({ _id: { $in: teamIds } })
   if (teams.length !== teamIds.length) {
@@ -203,9 +203,6 @@ const ensureTeamsBelongToBoardContext = async ({ competitionId, trackId, teamIds
   for (const team of teams) {
     if (team.competitionId?.toString() !== competitionId.toString()) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned teams must belong to the specified competition'])
-    }
-    if (trackId && team.trackId?.toString() !== trackId.toString()) {
-      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Assigned teams must belong to the selected track'])
     }
   }
 }
@@ -394,7 +391,7 @@ export const createJudgingBoardService = ({
     await ensureTrackBelongsToCompetition({ competitionId: competition._id, trackId })
     const configuredCapacity = Number(competition.competitionConfig?.maxTeamsPerBoard || 0)
     const resolvedMaxTeams = payload.maxTeams ?? (configuredCapacity || round.trackId?.maxTeams || 1)
-    await ensureTeamsBelongToBoardContext({ competitionId: competition._id, trackId, teamIds: payload.teamIds || [] })
+    await ensureTeamsBelongToBoardContext({ competitionId: competition._id, teamIds: payload.teamIds || [] })
     await ensureUsersExist(payload.judgeIds || [])
     ensureBoardCapacity({ teamIds: payload.teamIds || [], maxTeams: resolvedMaxTeams })
 
@@ -431,7 +428,7 @@ export const createJudgingBoardService = ({
     const trackId = safePayload.trackId !== undefined ? safePayload.trackId : (existingBoard.trackId?._id || existingBoard.trackId || round.trackId)
 
     await ensureTrackBelongsToCompetition({ competitionId, trackId })
-    if (safePayload.teamIds) await ensureTeamsBelongToBoardContext({ competitionId, trackId, teamIds: safePayload.teamIds })
+    if (safePayload.teamIds) await ensureTeamsBelongToBoardContext({ competitionId, teamIds: safePayload.teamIds })
     if (safePayload.judgeIds) await ensureUsersExist(safePayload.judgeIds)
     ensureBoardCapacity({
       teamIds: safePayload.teamIds || existingBoard.teamIds || [],
