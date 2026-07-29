@@ -450,6 +450,10 @@ export const createJudgingBoardService = ({
       .filter(Boolean)
     const board = await repository.updateById(id, safePayload)
     if (safePayload.judgeIds !== undefined) {
+      // A round owns exactly one judging board in the configured workflow.
+      // Keep the Round assignment in sync when coordinators edit judges from
+      // the Judging screen, so both management views show the same roster.
+      await Round.findByIdAndUpdate(roundId, { assignedJudgeIds: safePayload.judgeIds })
       await notifyAssignedJudges({ board, previousJudgeIds })
     }
     return normalizeBoard(board)
@@ -472,7 +476,7 @@ export const createJudgingBoardService = ({
     const isFinalRound = round.roundType === 'FINAL'
     const stageRounds = isFinalRound
       ? [round]
-      : await Round.find({ competitionId: competition._id, roundType: 'PRELIMINARY' }).select('_id name trackId')
+      : await Round.find({ competitionId: competition._id, roundType: 'PRELIMINARY' }).select('_id name trackId assignedJudgeIds')
     const boardCount = stageRounds.length
     const teamFilter = { competitionId: competition._id }
 
@@ -518,22 +522,25 @@ export const createJudgingBoardService = ({
 
     let boardPlans
     if (predefinedBoards) {
-      boardPlans = predefinedBoards.map(board => ({
-        roundId: board.roundId || roundId,
-        boardNumber: board.boardNumber,
-        boardLabel: buildBoardLabel(board.boardNumber),
-        name: board.name || `Board ${buildBoardLabel(board.boardNumber)}`,
-        maxTeams: context.maxTeamsPerBoard,
-        judgeIds: normalizedExistingBoards.find(item => item.boardNumber === board.boardNumber)?.judgeIds || [],
-        teams: (board.teamIds || [])
-          .map(teamId => context.eligibleTeams.find(team => team._id.toString() === teamId))
-          .filter(Boolean)
-          .map((team, index) => ({
-            ...normalizeTeam(team),
-            placementSlot: index + 1
-          })),
-        teamIds: board.teamIds || []
-      }))
+      boardPlans = predefinedBoards.map(board => {
+        const targetRound = context.stageRounds.find((item) => (item._id?.toString?.() || item.id) === (board.roundId || roundId))
+        return {
+          roundId: board.roundId || roundId,
+          boardNumber: board.boardNumber,
+          boardLabel: buildBoardLabel(board.boardNumber),
+          name: board.name || `Board ${buildBoardLabel(board.boardNumber)}`,
+          maxTeams: context.maxTeamsPerBoard,
+          judgeIds: (targetRound?.assignedJudgeIds || []).map((judge) => judge._id?.toString?.() || judge.toString?.() || judge),
+          teams: (board.teamIds || [])
+            .map(teamId => context.eligibleTeams.find(team => team._id.toString() === teamId))
+            .filter(Boolean)
+            .map((team, index) => ({
+              ...normalizeTeam(team),
+              placementSlot: index + 1
+            })),
+          teamIds: board.teamIds || []
+        }
+      })
     } else {
       const shuffledTeams = randomize ? shuffleItems(context.eligibleTeams, randomFn) : [...context.eligibleTeams]
       const distributedTeams = distributeTeamsAcrossBoards({
@@ -545,15 +552,13 @@ export const createJudgingBoardService = ({
         const boardNumber = index + 1
         const boardLabel = buildBoardLabel(boardNumber)
         const boardTeams = distributedTeams[index]
-        const existingBoard = normalizedExistingBoards.find(item => item.boardNumber === boardNumber)
-
         return {
           boardNumber,
           boardLabel,
           roundId: targetRound?._id?.toString?.() || targetRound?.id || roundId,
           name: targetRound?.name || `Board ${boardLabel}`,
           maxTeams: context.maxTeamsPerBoard,
-          judgeIds: existingBoard?.judgeIds || [],
+          judgeIds: (targetRound?.assignedJudgeIds || []).map((judge) => judge._id?.toString?.() || judge.toString?.() || judge),
           teams: boardTeams.map((team, teamIndex) => ({
             ...normalizeTeam(team),
             placementSlot: teamIndex + 1
@@ -657,7 +662,7 @@ export const createJudgingBoardService = ({
         name: board.name,
         boardNumber: board.boardNumber,
         teamIds: board.teamIds,
-        judgeIds: (existingBoard?.judgeIds || []).map(judge => judge._id?.toString?.() || judge.toString?.() || judge),
+        judgeIds: board.judgeIds || [],
         maxTeams: board.maxTeams,
         status: board.teamIds.length > 0 ? 'ASSIGNED' : 'DRAFT'
       }

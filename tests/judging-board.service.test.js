@@ -348,6 +348,7 @@ test('createBoard rejects teamIds beyond maxTeams', async () => {
 
   const originalCompetitionFindById = CompetitionModel.findById
   const originalRoundFindById = RoundModel.findById
+  const originalRoundFindByIdAndUpdate = RoundModel.findByIdAndUpdate
   const originalTrackFindById = TrackModel.findById
   const originalTeamFind = TeamModel.find
   const originalUserFind = UserModel.find
@@ -516,6 +517,7 @@ test('updateBoard sends an in-app notification only to newly assigned judges', a
 
   CompetitionModel.findById = async () => ({ _id: competitionId, title: 'SEAL Hackathon', status: 'ONGOING' })
   RoundModel.findById = async () => ({ _id: roundId, competitionId, name: 'Preliminary', status: 'OPEN', trackId })
+  RoundModel.findByIdAndUpdate = async () => null
   TrackModel.findById = async () => ({ _id: trackId, competitionId })
   UserModel.find = async () => [judgeOne, judgeTwo]
 
@@ -531,6 +533,7 @@ test('updateBoard sends an in-app notification only to newly assigned judges', a
   } finally {
     CompetitionModel.findById = originalCompetitionFindById
     RoundModel.findById = originalRoundFindById
+    RoundModel.findByIdAndUpdate = originalRoundFindByIdAndUpdate
     TrackModel.findById = originalTrackFindById
     UserModel.find = originalUserFind
   }
