@@ -138,6 +138,16 @@ export const createTrackService = ({
     }
   }
 
+  const ensureUniqueTrackCodeWithRepository = async ({ competitionId, code, ignoreTrackId }) => {
+    if (!competitionId || !code) return
+
+    const normalizedCode = code.trim().toUpperCase()
+    const existingTrack = await repository.findByCompetitionAndCode(competitionId, normalizedCode)
+    if (existingTrack && existingTrack._id.toString() !== ignoreTrackId) {
+      throw new ApiError(ERROR_CODES.CONFLICT, [`A track with code “${normalizedCode}” already exists in this competition`])
+    }
+  }
+
   const listTracks = async (query = {}, actor = {}) => {
     const { page, limit } = normalizePaginationQuery(query)
     const filter = await applyCompetitionVisibilityScope({
@@ -198,8 +208,20 @@ export const createTrackService = ({
       isCreate: true
     })
     await ensureUniqueTrackNameWithRepository(payload)
+    await ensureUniqueTrackCodeWithRepository(payload)
 
-    const track = await repository.create(pickSafeFields(payload, TRACK_FIELDS))
+    let track
+    try {
+      track = await repository.create(pickSafeFields(payload, TRACK_FIELDS))
+    } catch (error) {
+      if (error?.code === 11000 && error?.keyPattern?.code) {
+        throw new ApiError(ERROR_CODES.CONFLICT, [`A track with code “${payload.code?.trim().toUpperCase()}” already exists in this competition`])
+      }
+      if (error?.code === 11000 && error?.keyPattern?.name) {
+        throw new ApiError(ERROR_CODES.CONFLICT, ['A track with this name already exists in this competition'])
+      }
+      throw error
+    }
     return normalizeTrack(await repository.findById(track._id))
   }
 
@@ -221,6 +243,11 @@ export const createTrackService = ({
     await ensureUniqueTrackNameWithRepository({
       competitionId: safePayload.competitionId || getCompetitionIdValue(existingTrack.competitionId),
       name: safePayload.name || existingTrack.name,
+      ignoreTrackId: id
+    })
+    await ensureUniqueTrackCodeWithRepository({
+      competitionId: safePayload.competitionId || getCompetitionIdValue(existingTrack.competitionId),
+      code: safePayload.code || existingTrack.code,
       ignoreTrackId: id
     })
 

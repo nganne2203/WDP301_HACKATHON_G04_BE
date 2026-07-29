@@ -510,8 +510,9 @@ export const createMediaService = ({
         try {
           serviceRoleKey = encryption.decrypt(config.serviceRoleKeyEncrypted)
         } catch (error) {
+          LOGGER.error('Supabase service role key decryption failed', { error: error.message })
           throw new ApiError(ERROR_CODES.BAD_REQUEST, [
-            `Could not decrypt Supabase service role key: ${error.message}`
+            'Media storage configuration could not be read. Please review the integration settings.'
           ])
         }
       }
@@ -540,8 +541,9 @@ export const createMediaService = ({
         try {
           cloudinaryApiSecret = encryption.decrypt(config.cloudinaryApiSecretEncrypted)
         } catch (error) {
+          LOGGER.error('Cloudinary API secret decryption failed', { error: error.message })
           throw new ApiError(ERROR_CODES.BAD_REQUEST, [
-            `Could not decrypt Cloudinary API secret: ${error.message}`
+            'Media storage configuration could not be read. Please review the integration settings.'
           ])
         }
       }
@@ -583,8 +585,9 @@ export const createMediaService = ({
       try {
         encryptedServiceRoleKey = encryption.encrypt(payload.serviceRoleKey)
       } catch (error) {
+        LOGGER.error('Supabase service role key encryption failed', { error: error.message })
         throw new ApiError(ERROR_CODES.BAD_REQUEST, [
-          `Could not encrypt Supabase service role key: ${error.message}`
+          'Media storage configuration could not be saved. Please try again.'
         ])
       }
 
@@ -600,8 +603,9 @@ export const createMediaService = ({
       try {
         encryptedCloudinaryApiSecret = encryption.encrypt(payload.cloudinaryApiSecret)
       } catch (error) {
+        LOGGER.error('Cloudinary API secret encryption failed', { error: error.message })
         throw new ApiError(ERROR_CODES.BAD_REQUEST, [
-          `Could not encrypt Cloudinary API secret: ${error.message}`
+          'Media storage configuration could not be saved. Please try again.'
         ])
       }
 
