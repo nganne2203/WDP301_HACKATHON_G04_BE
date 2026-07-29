@@ -5,26 +5,87 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
+concurrency:
+  group: railway-production
+  cancel-in-progress: true
+
+env:
+  RAILWAY_PROJECT_ID: b7d27a46-a347-4736-81a2-91b4b4c15f91
+  RAILWAY_SERVICE_ID: d4de34df-72ae-4cb0-9a57-0ed19896b543
+  RAILWAY_ENVIRONMENT_ID: bfa1069a-f339-41ef-b8b9-f1da6db1ce37
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
-          cache: npm
+          node-version: 24
+          package-manager-cache: false
 
       - name: Install Railway CLI
-        run: npm install -g @railway/cli
+        run: npm install -g @railway/cli@5.30.1
+
+      - name: Validate Railway project token
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${RAILWAY_TOKEN:-}" ]]; then
+            echo "::error::GitHub Actions secret RAILWAY_TOKEN is empty or unavailable. Add it under Settings > Secrets and variables > Actions > Repository secrets."
+            exit 1
+          fi
+
+          response="$(
+            curl --silent --show-error \
+              --request POST \
+              --url https://backboard.railway.com/graphql/v2 \
+              --header "Project-Access-Token: ${RAILWAY_TOKEN}" \
+              --header "Content-Type: application/json" \
+              --data '{"query":"query { projectToken { projectId environmentId } }"}'
+          )"
+
+          if ! jq --exit-status . >/dev/null 2>&1 <<< "${response}"; then
+            echo "::error::Railway returned an invalid authentication response. Regenerate the Project Token and save it without quotes or whitespace."
+            exit 1
+          fi
+
+          token_project_id="$(jq -r '.data.projectToken.projectId // empty' <<< "${response}")"
+          token_environment_id="$(jq -r '.data.projectToken.environmentId // empty' <<< "${response}")"
+
+          if [[ -z "${token_project_id}" || -z "${token_environment_id}" ]]; then
+            message="$(jq -r '.errors[0].message // "Railway rejected the project token."' <<< "${response}")"
+            echo "::error::${message} Create a Project Token in Railway Project Settings > Tokens, then save the raw token (without quotes) as the GitHub repository secret RAILWAY_TOKEN."
+            exit 1
+          fi
+
+          if [[ "${token_project_id}" != "${RAILWAY_PROJECT_ID}" ]]; then
+            echo "::error::RAILWAY_TOKEN belongs to project ${token_project_id}, but this workflow deploys project ${RAILWAY_PROJECT_ID}."
+            exit 1
+          fi
+
+          if [[ "${token_environment_id}" != "${RAILWAY_ENVIRONMENT_ID}" ]]; then
+            echo "::error::RAILWAY_TOKEN belongs to environment ${token_environment_id}, but this workflow deploys environment ${RAILWAY_ENVIRONMENT_ID}."
+            exit 1
+          fi
+
+          echo "Railway project token scope is valid."
 
       - name: Deploy
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          railway up --project b7d27a46-a347-4736-81a2-91b4b4c15f91 \
-            --service d4de34df-72ae-4cb0-9a57-0ed19896b543 \
-            --environment bfa1069a-f339-41ef-b8b9-f1da6db1ce37
+          railway up --ci \
+            --project "${RAILWAY_PROJECT_ID}" \
+            --service "${RAILWAY_SERVICE_ID}" \
+            --environment "${RAILWAY_ENVIRONMENT_ID}"
