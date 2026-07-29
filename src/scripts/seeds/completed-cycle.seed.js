@@ -487,7 +487,9 @@ export const seedCompletedCycleShowcase = async ({
           eligibilityStatus: scenario === 'REJECTED' ? 'INELIGIBLE' : 'PENDING',
           checkInStatus: 'NOT_CHECKED_IN',
           githubAccessStatus: 'NOT_GRANTED',
-          status: scenario === 'CANCELLED' ? 'WITHDRAWN' : 'INVITED'
+          // Terminal team outcomes retain the participant history without
+          // presenting an inactive member as someone awaiting an invitation.
+          status: 'WITHDRAWN'
         })
         members.push(user)
       }
@@ -921,6 +923,9 @@ export const seedCompletedCycleShowcase = async ({
       competitionId: competition._id,
       rankingType: 'TEAM',
       roundId: finalRound._id,
+      // The final is cross-board, but each finalist retains its originating
+      // track so published results can identify the team's competition track.
+      trackId: record.track._id,
       teamId: record.team._id,
       score: actualFinalScore,
       rankSortScore: actualFinalScore,

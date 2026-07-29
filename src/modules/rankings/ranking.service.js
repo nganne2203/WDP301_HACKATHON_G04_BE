@@ -11,10 +11,12 @@ import { isActiveJudge } from '#utils/domainAccessUtil.js'
 import Competition from '#models/competition.model.js'
 import Repository from '#models/repository.model.js'
 import Round from '#models/round.model.js'
+import Rubric from '#models/rubric.model.js'
 import Team from '#models/team.model.js'
 import { NOTIFICATION_SERVICE } from '#modules/notifications/notification.service.js'
 import { env } from '#configs/environment.js'
 import { ensureCompetitionAllowsChildMutations } from '#utils/competitionLifecycleUtil.js'
+import { hasAtMostTwoDecimals, isAllowedScoringCoefficient } from '#utils/scoringScale.js'
 
 const IN_APP_ONLY = ['IN_APP']
 
@@ -317,6 +319,7 @@ export const createRankingService = ({
   auditLogRepository = AUDIT_LOG_REPOSITORY,
   competitionModel = Competition,
   roundModel = Round,
+  rubricModel = Rubric,
   teamModel = Team,
   notificationService = null,
   repositoryModel = Repository,
@@ -477,7 +480,16 @@ export const createRankingService = ({
   }
 
   const resolveTieBreak = async ({ competitionId, roundId, decisions = [] }, actor = {}) => {
-    await ensureCompetitionRoundContext({ competitionId, roundId })
+    const { round } = await ensureCompetitionRoundContext({ competitionId, roundId })
+
+    if (!round.rubricId) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Tie-break resolution requires a rubric assigned to the round'])
+    }
+    const rubric = await rubricModel.findById(round.rubricId)
+    const tieBreakScoreMax = Number(rubric?.criterionMaxScore)
+    if (!isAllowedScoringCoefficient(tieBreakScoreMax)) {
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Round rubric must define a valid scoring coefficient for tie-break resolution'])
+    }
 
     if (!Array.isArray(decisions) || decisions.length < 2) {
       throw new ApiError(ERROR_CODES.BAD_REQUEST, ['Tie-break resolution requires at least two team decisions'])
@@ -515,6 +527,9 @@ export const createRankingService = ({
       if (!decision.tieBreakReason?.trim()) {
         throw new ApiError(ERROR_CODES.BAD_REQUEST, ['tieBreakReason is required for tie-break resolution'])
       }
+      if (!Number.isFinite(tieBreakScore) || tieBreakScore < 0 || tieBreakScore > tieBreakScoreMax || !hasAtMostTwoDecimals(tieBreakScore)) {
+        throw new ApiError(ERROR_CODES.BAD_REQUEST, [`tieBreakScore must be between 0 and ${tieBreakScoreMax} with at most two decimal places`])
+      }
 
       updatedRankings.push(await repository.updateRankingById(ranking._id, {
         tieBreakMethod: method,
@@ -527,6 +542,27 @@ export const createRankingService = ({
         tieBreakResolvedBy: actor.id || null,
         note: null
       }))
+    }
+
+    const refreshedRankings = await repository.findRankings({
+      filter: { competitionId, roundId, rankingType: 'TEAM' },
+      limit: 500
+    })
+    const orderedRankings = [...refreshedRankings].sort((left, right) => {
+      if (Number(right.score || 0) !== Number(left.score || 0)) return Number(right.score || 0) - Number(left.score || 0)
+      if (Number(right.rankSortScore || 0) !== Number(left.rankSortScore || 0)) return Number(right.rankSortScore || 0) - Number(left.rankSortScore || 0)
+      return (left.teamId?.name || '').localeCompare(right.teamId?.name || '')
+    })
+
+    let previous = null
+    for (const [index, ranking] of orderedRankings.entries()) {
+      const sharesRank = previous &&
+        Number(previous.score || 0) === Number(ranking.score || 0) &&
+        Number(previous.rankSortScore || 0) === Number(ranking.rankSortScore || 0)
+      const rank = sharesRank ? previous.rank : index + 1
+      if (ranking.rank !== rank) await repository.updateRankingById(ranking._id, { rank })
+      ranking.rank = rank
+      previous = ranking
     }
 
     await auditLogRepository.create({

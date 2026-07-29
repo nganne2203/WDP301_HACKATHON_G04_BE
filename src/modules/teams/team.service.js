@@ -1297,6 +1297,14 @@ const rejectOpenTeams = async ({ repository, competition, reason, excludeTeamId 
       rejectionReason: reason
     }, { session })
 
+    await repository.updateParticipants({
+      competitionId: getId(competition),
+      teamId: getId(team),
+      status: { $in: ACTIVE_PARTICIPANT_STATUSES }
+    }, {
+      status: 'WITHDRAWN'
+    }, { session })
+
     await repository.updateInvitations({
       teamId: getId(team),
       status: INVITATION_STATUSES.PENDING
@@ -2372,6 +2380,22 @@ export const createTeamService = ({
             status: TEAM_STATUSES.REJECTED,
             rejectedAt: new Date(),
             rejectionReason: payload.rejectionReason || 'Rejected by coordinator'
+          }, { session })
+
+          await repository.updateParticipants({
+            competitionId: getId(competition),
+            teamId: getId(team),
+            status: { $in: ACTIVE_PARTICIPANT_STATUSES }
+          }, {
+            status: 'WITHDRAWN'
+          }, { session })
+
+          await repository.updateInvitations({
+            teamId: getId(team),
+            status: INVITATION_STATUSES.PENDING
+          }, {
+            status: INVITATION_STATUSES.CANCELLED,
+            cancelledAt: new Date()
           }, { session })
         } else if (nextStatus === TEAM_STATUSES.WAITING_FOR_MEMBERS || nextStatus === TEAM_STATUSES.WAITLISTED) {
           throw new ApiError(
